@@ -115,16 +115,21 @@ class AreaFile(object):
 	def read_and_verify_letter(self, verification):
 		letter = self.read_letter()
 		if letter != verification:
-			self.parse_fail("Not section start: %s" % letter)
+			self.parse_fail("Expected %s got %s" % (verification, letter))
 		return letter
 
 	def load_section(self, object_loader):
 		while True:
-			self.read_and_verify_letter('#')
-			vnum = self.read_number()
+			vnum = self.read_vnum()
 			if vnum == 0:
 				break
 			object_loader(vnum)
+
+	def read_vnum(self):
+		self.read_and_verify_letter('#')
+		vnum = self.read_number()
+		return vnum
+
 
 	def load_mobiles(self):
 		loader = lambda vnum: setitem(self.area.mobs, vnum, self.load_mob(vnum))
