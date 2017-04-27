@@ -215,7 +215,7 @@ class AreaFile(object):
 		if obj.item_type == 'weapon':
 			obj.value = [self.read_word(), self.read_number(), self.read_number(), self.read_word(), self.read_flag(), ]
 		elif obj.item_type == 'container':
-			self.value = [self.read_number(), self.read_flag(), self.read_number(), self.read_number(), self.read_number(), ]
+			obj.value = [self.read_number(), self.read_flag(), self.read_number(), self.read_number(), self.read_number(), ]
 		elif obj.item_type == 'drink' or obj.item_type == 'fountain':
 			obj.value = [self.read_number(), self.read_number(), self.read_word(), self.read_number(), self.read_number(), ]
 		elif obj.item_type == 'wand' or obj.item_type == 'staff':
