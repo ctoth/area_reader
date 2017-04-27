@@ -1,17 +1,18 @@
 from logging import getLogger
 logger = getLogger('area_reader')
 from collections import OrderedDict
+import io
 import json
 import os
 from attr import asdict, attr, attributes, Factory
 from operator import setitem
-MAX_TRADES = 5
 
 
 class ParseError(Exception): pass
 
 class AreaFile(object):
 	area_type = None
+	MAX_TRADES = 5
 
 	def __init__(self, filename):
 		super(AreaFile, self).__init__()
@@ -307,7 +308,7 @@ class AreaFile(object):
 				break
 			shop = RomShop(keeper=keeper)
 			self.area.shops.append(shop)
-			for iTrade in xrange(MAX_TRADES):
+			for iTrade in range(self.MAX_TRADES):
 				shop.buy_type.append(self.read_number())
 			shop.profit_buy = self.read_number()
 			shop.profit_sell = self.read_number()
@@ -343,11 +344,12 @@ class AreaFile(object):
 
 	def save_as_json(self):
 		fname = os.path.splitext(self.filename)[0] + '.json'
-		with open(fname, 'wb') as f:
+		with open(fname, 'w') as f:
 			json.dump(self.as_dict(), f, indent=2)
 
 
 class RomAreaFile(AreaFile):
+
 
 	def load_mob(self, vnum):
 		mob = RomMob(vnum=vnum)
@@ -620,7 +622,6 @@ class SmaugAreaFile(RomAreaFile):
 		room.area_number = self.read_number()
 		room.room_flags = self.read_flag()
 		line = self.read_line()
-		print line
 		#room.sector_type, room.tele_delay, room.tele_vnum, room.tunnel, room.max_weight = map(int, line.split())
 		self.read_room_data(room)
 		return room
