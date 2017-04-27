@@ -73,12 +73,9 @@ class AreaFile(object):
 		return self.read_until('\n')
 
 	def read_until(self, endchar):
-		result = ""
-		while True:
-			if self.current_char == endchar:
-				break
-			result += self.current_char
-			self.advance()
+		ahead = self.data.find(endchar, self.index)
+		result = self.data[self.index:ahead]
+		self.index = ahead
 		self.advance()
 		return result
 
