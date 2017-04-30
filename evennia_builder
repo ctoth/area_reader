@@ -1,0 +1,130 @@
+"""
+This file is intended to build viable batchcode files from the JSON output of
+area_reader.
+
+Use in cmd:
+    python area_builder.py <JSON file>.json
+
+NOTES:
+    Should be able to provide room, npc and object typeclasses to use instead of the defaults.
+    Should be able to specify which values to draw and attach to different typeclasses.
+    Should be able to set values for exit alias
+    -Make file name lower case.
+"""
+
+from sys import argv
+import json
+import os
+
+# Load JSON file.
+script, filename = argv
+with open(filename) as data_file:
+    data = json.load(data_file)
+
+# Prep Batchcode file.
+print "Creating Batchcode from " + filename
+filepath = os.getcwd()
+path = filepath + data["name"]
+batch = open(data["name"], 'w')
+
+########################
+# Generate documentation.
+########################
+batch.write("""\
+\"\"\"
+This is a Batchcode file to recreate the area of {0} based on the JSON file
+located at {1}.
+
+{0} has {2} rooms, {3} mobs and {4} objects.
+
+Batchcode is used through the superuser only command @batchcode. The command
+will look in batchcode folders (definable in settings.py) for the named file.
+
+Usage:
+    # If the bathcode is in your mygame/world folder:
+    @batchcode {5}
+
+\"\"\"
+""".format(data["name"],
+           filepath, len(data["rooms"]),
+           len(data["mobs"]),
+           len(data["objects"]),
+           data["name"],
+           path))
+
+########################
+# Generate imports.
+########################
+batch.write("""\
+from evennia import create_object
+from typeclasses import characters, exits, objects, rooms
+""")
+
+########################
+# Generate rooms. ref: "r<vnum>"
+########################
+batch.write("""\
+
+# First create rooms and store in ref_dict for obj to reference later.
+ref_dict = {}
+
+""")
+
+for key in sorted(data["rooms"]):
+    # Room creation and set description.
+    batch.write("""\
+# Create {0}
+ref_dict["{1}"] = create_object(rooms.Room,
+                                  key="{0}")
+ref_dict["{1}"].db.desc = \"\"\"\\
+{2}
+\"\"\"
+
+""".format(data["rooms"][key]["name"],
+           "r"+key,
+           data["rooms"][key]["description"]))
+
+    # Set extra_descriptions.
+    for detail in data["rooms"][key]["extra_descriptions"]:
+        batch.write("""\
+ref_dict["{0}"].db.details["{1}"] = \"\"\"
+{2}
+\"\"\"
+
+""".format("r"+key,
+           detail["keyword"],
+           detail["description"]))
+
+print "Batchcode " + data["name"] + ".py Completed!"
+
+########################
+# Generate room exits.
+########################
+exits = ["North", "East", "South", "West", "Up", "Down"]
+aliases = {
+    "North": ["n"],
+    "East": ["e"],
+    "South": ["s"],
+    "West": ["w"],
+    "Up": ["u"],
+    "Down": ["d"],
+}
+for key in sorted(data["rooms"]):
+    batch.write("# Create exits in {0}\n".format(data["rooms"][key]["name"]))
+
+    for exitobj in data["rooms"][key]["exits"]:
+        batch.write("""\
+temp = create_object(exits.Exit,
+                     key="{0}",
+                     aliases={1},
+                     location=ref_dict["{2}"],
+                     destination=ref_dict["{3}"])
+temp.db.desc = \"\"\"\\
+{4}
+\"\"\"
+
+""".format(exits[exitobj["door"]],
+           aliases[exits[exitobj["door"]]],
+           "r"+key,
+           "r"+str(exitobj["destination"]),
+           exitobj["description"]))
