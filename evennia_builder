@@ -6,8 +6,10 @@ Use in cmd:
     python area_builder.py <JSON file>.json
 
 NOTES:
-    Should be able to provide room, npc and object typeclasses to use instead of the defaults.
-    Should be able to specify which values to draw and attach to different typeclasses.
+    Should be able to provide room, npc and object typeclasses to use instead
+    of the defaults.
+    Should be able to specify which values to draw and attach to different
+    typeclasses.
     Should be able to set values for exit alias
     -Make file name lower case.
 """
@@ -25,12 +27,13 @@ with open(filename) as data_file:
 print "Creating Batchcode from " + filename
 filepath = os.getcwd()
 path = filepath + data["name"]
-batch = open(data["name"], 'w')
+batch = open(data["name"]+".py", 'w')
 
 ########################
 # Generate documentation.
 ########################
 batch.write("""\
+
 \"\"\"
 This is a Batchcode file to recreate the area of {0} based on the JSON file
 located at {1}.
@@ -45,6 +48,7 @@ Usage:
     @batchcode {5}
 
 \"\"\"
+
 """.format(data["name"],
            filepath, len(data["rooms"]),
            len(data["mobs"]),
@@ -79,6 +83,7 @@ ref_dict["{1}"] = create_object(rooms.Room,
 ref_dict["{1}"].db.desc = \"\"\"\\
 {2}
 \"\"\"
+ref_dict["{1}"].db.details = {{}}
 
 """.format(data["rooms"][key]["name"],
            "r"+key,
@@ -117,8 +122,8 @@ for key in sorted(data["rooms"]):
 temp = create_object(exits.Exit,
                      key="{0}",
                      aliases={1},
-                     location=ref_dict["{2}"],
-                     destination=ref_dict["{3}"])
+                     location=ref_dict["{2}"] if "{2}" in ref_dict else None,
+                     destination=ref_dict["{3}"] if "{3}" in ref_dict else None)
 temp.db.desc = \"\"\"\\
 {4}
 \"\"\"
@@ -128,3 +133,17 @@ temp.db.desc = \"\"\"\\
            "r"+key,
            "r"+str(exitobj["destination"]),
            exitobj["description"]))
+
+########################
+# Generate Mobs. ref: "m<vnum>"
+########################
+
+########################
+# Generate Objects. ref: "o<vnum>"
+########################
+
+########################
+# Execute reset.
+########################
+
+batch.close()
