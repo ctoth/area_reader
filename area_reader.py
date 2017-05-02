@@ -303,6 +303,29 @@ class AreaFile(object):
 		self.jump_to_section('shops')
 		self.load_shops()
 
+	def load_sections(self):
+		readers = {
+			'area': self.read_area_metadata,
+			'mobiles': self.load_mobiles,
+			'rooms': self.load_rooms,
+			'objects': self.load_objects,
+			'helps': self.load_helps,
+			'resets': self.load_resets,
+			'shops': self.load_shops,
+			'specials': self.load_specials,
+		}
+		while True:
+			section_name = self.read_section_name()
+			if section_name == '$':
+				break
+			readers[section_name]()
+
+
+	def read_section_name(self):
+		self.read_and_verify_letter('#')
+		name = self.read_word()
+		return name.lower()
+
 	def load_shops(self):
 		while True:
 			keeper = self.read_number()
@@ -441,6 +464,20 @@ class RomAreaFile(AreaFile):
 			if reset.command == 'R':
 				r_vnum = reset.arg1
 
+	def load_specials(self):
+		while True:
+			letter = self.read_letter()
+			if letter == 'S':
+				break
+			if letter == '*':
+				self.read_to_eol()
+				continue
+			special = RomSpecial()
+			self.area.specials.append(special)
+			special.command = letter
+			special.arg1 = self.read_number()
+			special.arg2 = self.read_word()
+			self.read_to_eol()
 
 @attributes
 class MudBase(object):
@@ -537,6 +574,7 @@ class RomArea(object):
 	mobs = attr(default=Factory(OrderedDict))
 	objects = attr(default=Factory(OrderedDict))
 	resets = attr(default=Factory(list))
+	specials = attr(default=Factory(list))
 	shops = attr(default=Factory(list))
 
 @attributes
@@ -563,6 +601,12 @@ class RomShop(object):
 	profit_sell = attr(default=0)
 	open_hour = attr(default=0)
 	close_hour = attr(default=0)
+
+@attributes
+class RomSpecial(object):
+	command = attr(default=None)
+	arg1 = attr(default=None)
+	arg2 = attr(default=None)
 
 @attributes
 class SmaugArea(RomArea):
@@ -650,7 +694,6 @@ def flag_convert(letter):
 
 if __name__ == '__main__':
 	area_file = RomAreaFile('midgaard.are')
-	area_file.load_area()
+	area_file.load_sections()
 	area = area_file.area
-	area_file.save_as_json()
-
+	
