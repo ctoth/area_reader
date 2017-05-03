@@ -50,7 +50,9 @@ class AreaFile(object):
 		return self.read_until('~')
 
 	def read_number(self):
-		self.skip_whitespace()
+		#self.skip_whitespace()
+		while self.current_char.isspace():
+			self.advance()
 		number = 0
 		sign = False
 		while self.current_char.isspace():
@@ -66,6 +68,7 @@ class AreaFile(object):
 		if sign:
 			number *= -1
 		if self.current_char == '|':
+			self.advance()
 			number += self.read_number()
 		return number
 
@@ -93,6 +96,8 @@ class AreaFile(object):
 	def read_flag(self):
 		negative = False
 		self.skip_whitespace()
+		if self.current_char == '+':
+			self.advance()
 		if self.current_char == '-':
 			negative = True
 			self.advance()
@@ -105,10 +110,10 @@ class AreaFile(object):
 			number = number * 10 + int(self.current_char)
 			self.advance()
 		if self.current_char == '|':
+			self.advance()
 			number += self.read_flag()
 		if negative:
 			number *= -1
-		self.advance()
 		return number
 
 
@@ -158,39 +163,16 @@ class AreaFile(object):
 		self.read_room_data(room)
 		return room
 
-	def read_room_data(self, room):
-		while True:
-			letter = self.read_letter()
-			if letter == 'S':
-				break
-			if letter == 'H':
-				room.heal_rate = self.read_number()
-			elif letter == 'M':
-				room.mana_rate = self.read_number()
-			elif letter == 'C':
-				room.clan = self.read_string()
-			elif letter == 'D':
-				room.exits.append(self.read_exit())
-			elif letter == 'E':
-				room.extra_descriptions.append(self.read_extra_descr())
-			elif letter == 'O':
-				room.owner = self.read_string()
-			else:
-				self.parse_fail("Don't know how to process room attribute: %s" % letter)
-		return room
-
 	def read_exit(self):
 		exit = Exit()
 		locks = 0
-		door = self.read_number()
-		exit.door = door
+		exit.door = self.read_number()
 		exit.description = self.read_string()
 		exit.keyword = self.read_string()
 		exit.exit_info = 0
 		locks = self.read_number()
 		exit.key = self.read_number()
 		exit.destination = self.read_number()
-		exit.orig_door = door
 		return exit
 
 	def read_extra_descr(self):
@@ -203,105 +185,54 @@ class AreaFile(object):
 		loader = lambda vnum: setitem(self.area.objects, vnum, self.load_object(vnum))
 		self.load_section(object_loader=loader)
 
-	def load_object(self, vnum):
-		obj = MudObject(vnum=vnum)
-		obj.name = self.read_string()
-		obj.short_desc = self.read_string()
-		obj.description = self.read_string()
-		obj.material = self.read_string()
-		obj.item_type = self.read_word()
-		obj.extra_flags = self.read_flag()
-		obj.wear_flags = self.read_flag()
-		if obj.item_type == 'weapon':
-			obj.value = [self.read_word(), self.read_number(), self.read_number(), self.read_word(), self.read_flag(), ]
-		elif obj.item_type == 'container':
-			obj.value = [self.read_number(), self.read_flag(), self.read_number(), self.read_number(), self.read_number(), ]
-		elif obj.item_type == 'drink' or obj.item_type == 'fountain':
-			obj.value = [self.read_number(), self.read_number(), self.read_word(), self.read_number(), self.read_number(), ]
-		elif obj.item_type == 'wand' or obj.item_type == 'staff':
-			obj.value = [self.read_number(), self.read_number(), self.read_number(), self.read_word(), self.read_number(), ]
-		elif obj.item_type in ('potion', 'pill', 'scroll'):
-			obj.value = [self.read_number(), self.read_word(), self.read_word(), self.read_word(), self.read_word(), ]
-		else:
-			obj.value = [self.read_flag(), self.read_flag(), self.read_flag(), self.read_flag(), self.read_flag(), ]
-		obj.level = self.read_number()
-		obj.weight = self.read_number()
-		obj.cost = self.read_number()
-		letter = self.read_letter()
-		if letter == 'P':
-			obj.condition = 100
-		elif letter == 'G':
-			obj.condition = 90
-		elif letter == 'A':
-			obj.condition = 75
-		elif letter == 'W':
-			obj.condition = 50
-		elif letter == 'D':
-			obj.condition = 25
-		elif letter == 'B':
-			obj.condition = 10
-		elif letter == 'R':
-			obj.condition = 0
-		else:
-			self.parse_fail("Unknown condition for object: %s" % letter)
+
+	def load_resets(self):
 		while True:
 			letter = self.read_letter()
-			if letter == 'A':
-				af = AffectData()
-				af.where = 'TO_OBJECT',
-				af.type = -1
-				af.level = obj.level
-				af.duration = -1
-				af.location = self.read_number()
-				af.modifier = self.read_number()
-				obj.affected.append(af)
-			elif letter == 'F':
-				af = AffectData()
-				letter = self.read_letter()
-				if letter == 'A':
-					af.where = 'TO_AFFECTS'
-				elif letter == 'I':
-					af.where = 'TO_IMMUNE'
-				elif letter == 'R':
-					af.where = 'TO_RESIST'
-				elif letter == 'V':
-					af.where = 'TO_VULN'
-				else:
-					self.parse_fail("Bad where on flag set")
-				af.type = -1
-				af.level = obj.level
-				af.duration = -1
-				af.location = self.read_number()
-				af.modifier = self.read_number()
-				af.bitvector = self.read_flag()
-			elif letter == 'E':
-				obj.extra_descriptions.append(self.read_extra_descr())
-			else:
-				self.index -= 1
+			if letter == 'S':
 				break
-		return obj
+			if letter == '*':
+				self.read_to_eol()
+				continue
+			reset = Reset()
+			reset.command = letter
+			self.read_number() #if_flag
+			reset.arg1 = self.read_number()
+			reset.arg2 = self.read_number()
+			if letter == 'G' or letter == 'R':
+				reset.arg3 = 0
+			else:
+				reset.arg3 = self.read_number()
+			if letter == 'P' or letter == 'M':
+				reset.arg4 = 0
+			else:
+				reset.arg4 = self.read_number()
+			self.read_to_eol()
+			self.area.resets.append(reset)
+			if reset.command == 'M' or reset.command == 'O':
+				r_vnum = reset.arg3
+			if reset.command == 'P' or reset.command == 'G' or reset.command == 'E':
+				continue
+			if reset.command == 'R':
+				r_vnum = reset.arg1
 
+	def load_specials(self):
+		while True:
+			letter = self.read_letter()
+			if letter == 'S':
+				break
+			if letter == '*':
+				self.read_to_eol()
+				continue
+			special = RomSpecial()
+			self.area.specials.append(special)
+			special.command = letter
+			special.arg1 = self.read_number()
+			special.arg2 = self.read_word()
+			self.read_to_eol()
 
 	def read_area_metadata(self):
-		self.area.original_filename = self.read_string()
-		self.area.name = self.read_string()
-		self.area.metadata = self.read_string()
-		self.area.first_vnum = self.read_number()
-		self.area.last_vnum = self.read_number()
-
-	def load_area(self):
-		self.jump_to_section('area')
-		self.read_area_metadata()
-		self.jump_to_section('mobiles')
-		self.load_mobiles()
-		self.jump_to_section('rooms')
-		self.load_rooms()
-		self.jump_to_section('objects')
-		self.load_objects()
-		self.jump_to_section('resets')
-		self.load_resets()
-		self.jump_to_section('shops')
-		self.load_shops()
+		raise NotImplementedError
 
 	def load_sections(self):
 		readers = {
@@ -318,8 +249,8 @@ class AreaFile(object):
 			section_name = self.read_section_name()
 			if section_name == '$':
 				break
+			logger.info("Processing section %s" % section_name)
 			readers[section_name]()
-
 
 	def read_section_name(self):
 		self.read_and_verify_letter('#')
@@ -347,7 +278,7 @@ class AreaFile(object):
 			keyword = self.read_string()
 			if keyword[0] == '$':
 				break
-			help = RomHelp(level=level, keyword=keyword)
+			help = Help(level=level, keyword=keyword)
 			self.area.helps.append(help)
 			help.text = self.read_string()
 
@@ -375,8 +306,8 @@ class AreaFile(object):
 
 class RomAreaFile(AreaFile):
 
-
 	def load_mob(self, vnum):
+		logger.debug("Reading mob %d" % vnum)
 		mob = RomMob(vnum=vnum)
 		mob.name = self.read_string()
 		mob.short_desc = self.read_string()
@@ -433,51 +364,115 @@ class RomAreaFile(AreaFile):
 		mprog.trig_phrase = self.read_string()
 		return mprog
 
-	def load_resets(self):
+
+	def read_room_data(self, room):
 		while True:
 			letter = self.read_letter()
 			if letter == 'S':
 				break
-			if letter == '*':
-				self.read_to_eol()
-				continue
-			reset = RomReset()
-			reset.command = letter
-			self.read_number() #if_flag
-			reset.arg1 = self.read_number()
-			reset.arg2 = self.read_number()
-
-			if letter == 'G' or letter == 'R':
-				reset.arg3 = 0
+			if letter == 'H':
+				room.heal_rate = self.read_number()
+			elif letter == 'M':
+				room.mana_rate = self.read_number()
+			elif letter == 'C':
+				room.clan = self.read_string()
+			elif letter == 'D':
+				room.exits.append(self.read_exit())
+			elif letter == 'E':
+				room.extra_descriptions.append(self.read_extra_descr())
+			elif letter == 'O':
+				room.owner = self.read_string()
 			else:
-				reset.arg3 = self.read_number()
-			if letter == 'P' or letter == 'M':
-				reset.arg4 = 0
-			else:
-				reset.arg4 = self.read_number()
-			self.read_to_eol()
-			self.area.resets.append(reset)
-			if reset.command == 'M' or reset.command == 'O':
-				r_vnum = reset.arg3
-			if reset.command == 'P' or reset.command == 'G' or reset.command == 'E':
-				continue
-			if reset.command == 'R':
-				r_vnum = reset.arg1
+				self.parse_fail("Don't know how to process room attribute: %s" % letter)
+		return room
 
-	def load_specials(self):
+
+	def load_object(self, vnum):
+		logger.debug("Reading object %d" % vnum)
+		obj = RomObject(vnum=vnum)
+		obj.name = self.read_string()
+		obj.short_desc = self.read_string()
+		obj.description = self.read_string()
+		obj.material = self.read_string()
+		obj.item_type = self.read_word()
+		obj.extra_flags = self.read_flag()
+		obj.wear_flags = self.read_flag()
+		if obj.item_type == 'weapon':
+			obj.value = [self.read_word(), self.read_number(), self.read_number(), self.read_word(), self.read_flag(), ]
+		elif obj.item_type == 'container':
+			obj.value = [self.read_number(), self.read_flag(), self.read_number(), self.read_number(), self.read_number(), ]
+		elif obj.item_type == 'drink' or obj.item_type == 'fountain':
+			obj.value = [self.read_number(), self.read_number(), self.read_word(), self.read_number(), self.read_number(), ]
+		elif obj.item_type == 'wand' or obj.item_type == 'staff':
+			obj.value = [self.read_number(), self.read_number(), self.read_number(), self.read_word(), self.read_number(), ]
+		elif obj.item_type in ('potion', 'pill', 'scroll'):
+			obj.value = [self.read_number(), self.read_word(), self.read_word(), self.read_word(), self.read_word(), ]
+		else:
+			obj.value = [self.read_flag(), self.read_flag(), self.read_flag(), self.read_flag(), self.read_flag(), ]
+		obj.level = self.read_number()
+		obj.weight = self.read_number()
+		obj.cost = self.read_number()
+		letter = self.read_letter()
+		if letter == 'P':
+			obj.condition = 100
+		elif letter == 'G':
+			obj.condition = 90
+		elif letter == 'A':
+			obj.condition = 75
+		elif letter == 'W':
+			obj.condition = 50
+		elif letter == 'D':
+			obj.condition = 25
+		elif letter == 'B':
+			obj.condition = 10
+		elif letter == 'R':
+			obj.condition = 0
+		else:
+			self.parse_fail("Unknown condition for object: %s" % letter)
 		while True:
 			letter = self.read_letter()
-			if letter == 'S':
+			if letter == 'A':
+				af = RomAffectData()
+				af.where = 'TO_OBJECT',
+				af.type = -1
+				af.level = obj.level
+				af.duration = -1
+				af.location = self.read_number()
+				af.modifier = self.read_number()
+				obj.affected.append(af)
+			elif letter == 'F':
+				af = RomAffectData()
+				letter = self.read_letter()
+				if letter == 'A':
+					af.where = 'TO_AFFECTS'
+				elif letter == 'I':
+					af.where = 'TO_IMMUNE'
+				elif letter == 'R':
+					af.where = 'TO_RESIST'
+				elif letter == 'V':
+					af.where = 'TO_VULN'
+				else:
+					self.parse_fail("Bad where on flag set")
+				af.type = -1
+				af.level = obj.level
+				af.duration = -1
+				af.location = self.read_number()
+				af.modifier = self.read_number()
+				af.bitvector = self.read_flag()
+			elif letter == 'E':
+				obj.extra_descriptions.append(self.read_extra_descr())
+			else:
+				self.index -= 1
 				break
-			if letter == '*':
-				self.read_to_eol()
-				continue
-			special = RomSpecial()
-			self.area.specials.append(special)
-			special.command = letter
-			special.arg1 = self.read_number()
-			special.arg2 = self.read_word()
-			self.read_to_eol()
+		return obj
+
+	def read_area_metadata(self):
+		self.area.original_filename = self.read_string()
+		self.area.name = self.read_string()
+		self.area.metadata = self.read_string()
+		self.area.first_vnum = self.read_number()
+		self.area.last_vnum = self.read_number()
+
 
 @attributes
 class MudBase(object):
@@ -487,7 +482,27 @@ class MudBase(object):
 	extra_descriptions = attr(default=Factory(list))
 
 @attributes
-class MudObject(MudBase):
+class MercObject(MudBase):
+	short_desc = attr(default="")
+	item_type = attr(default=-1)
+	extra_flags = attr(default=0)
+	wear_flags = attr(default=0)
+	cost = attr(default=0)
+	level = attr(default=0)
+	weight = attr(default=0)
+	affected = attr(default=Factory(list))
+	value = attr(default=Factory(list))
+
+@attributes
+class MercAffectData(object):
+	type = attr(default=--1)
+	duration = attr(default=-1)
+	location = attr(default=-1)
+	modifier = attr(default=-1)
+	bitvector = attr(default=0)
+
+@attributes
+class RomObject(MudBase):
 	short_desc = attr(default="")
 	material = attr(default="")
 	item_type = attr(default=None)
@@ -523,7 +538,7 @@ class RomMobprog(object):
 
 
 @attributes
-class RomCharacter(MudObject):
+class RomCharacter(RomObject):
 	long_desc = attr(default="")
 	race = attr(default="")
 	group = attr(default=0)
@@ -535,7 +550,7 @@ class RomCharacter(MudObject):
 	ac = attr(default=Factory(RomArmorClass))
 
 @attributes
-class RomMob(RomCharacter, MudObject):
+class RomMob(RomCharacter, RomObject):
 	shop = attr(default=None)
 	alignment = attr(default=0)
 	off_flags = attr(default=0)
@@ -552,7 +567,7 @@ class RomMob(RomCharacter, MudObject):
 	mprogs = attr(default=Factory(list))
 
 @attributes
-class AffectData(object):
+class RomAffectData(object):
 	where = attr(default=None)
 	type = attr(default=None)
 	level = attr(default=None)
@@ -560,6 +575,18 @@ class AffectData(object):
 	location = attr(default=None)
 	modifier = attr(default=None)
 	bitvector = attr(default=0)
+
+@attributes
+class MercArea(object):
+	metadata = attr(default="")
+	helps = attr(default=Factory(list))
+	rooms = attr(default=Factory(OrderedDict))
+	mobs = attr(default=Factory(OrderedDict))
+	objects = attr(default=Factory(OrderedDict))
+	resets = attr(default=Factory(list))
+	specials = attr(default=Factory(list))
+	shops = attr(default=Factory(list))
+
 
 
 @attributes
@@ -635,7 +662,7 @@ class Exit(object):
 	destination = attr(default=None)
 
 @attributes
-class RomReset(object):
+class Reset(object):
 	command = attr(default=None)
 	arg1 = attr(default=None)
 	arg2 = attr(default=None)
@@ -643,11 +670,86 @@ class RomReset(object):
 	arg4 = attr(default=None)
 
 @attributes
-class RomHelp(object):
+class Help(object):
 	level = attr(default=0)
 	keyword = attr(default="")
 	text = attr(default="")
 
+
+
+class MercAreaFile(AreaFile):
+	area_type = MercArea
+
+	def load_mob(self, vnum):
+		logger.debug("Reading object %d" % vnum)
+		mob = RomMob(vnum=vnum)
+		mob.name = self.read_string()
+		mob.short_desc = self.read_string()
+		mob.long_desc = self.read_string()
+		mob.description = self.read_string()
+		mob.act = self.read_number()
+		mob.affected_by = self.read_number()
+		mob.alignment = self.read_number()
+		letter = self.read_letter()
+		mob.level = self.read_number()
+		mob.hitroll = self.read_number()
+		mob.ac = self.read_number()
+		mob.hit = self.read_dice()
+		mob.dam = self.read_dice()
+		mob.gold = self.read_number()
+		self.read_number() #xp can't be used!
+		self.read_number() # position
+		self.read_number() # start pos
+		mob.sex = self.read_number()
+		if letter != 'S':
+			self.parse_failed("Vnum %d non S" % vnum)
+		return mob
+
+	def read_room_data(self, room):
+		logger.debug("Reading room data for room %d" % room.vnum)
+		while True:
+			letter = self.read_letter()
+			if letter == 'S':
+				break
+			if letter == 'D':
+				room.exits.append(self.read_exit())
+			elif letter == 'E':
+				room.extra_descriptions.append(self.read_extra_descr())
+			else:
+				self.parse_fail("Room %d has flag %s not DES" % (room.vnum, letter))
+
+	def load_object(self, vnum):
+		logger.debug("Reading object %d" % vnum)
+		obj = MercObject(vnum=vnum)
+		obj.name = self.read_string()
+		obj.short_desc = self.read_string()
+		obj.description = self.read_string()
+		self.read_string() # Action Description, unused
+		obj.item_type = self.read_number()
+		obj.extra_flags = self.read_flag()
+		obj.wear_flags = self.read_flag()
+		obj.value = [self.read_number(), self.read_number(), self.read_number(), self.read_number()]
+		obj.weight = self.read_number()
+		obj.cost = self.read_number()
+		self.read_number() # cost per day
+		while True:
+			letter = self.read_letter()
+			if letter == 'A':
+				aff = MercAffectData()
+				obj.affected.append(aff)
+				aff.type = -1
+				aff.duration = -1
+				aff.location = self.read_number()
+				aff.modifier = self.read_number()
+			elif letter == 'E':
+				obj.extra_descriptions.append(self.read_extra_descr())
+			else:
+				self.index -= 1
+				break
+		return obj
+
+	def read_area_metadata(self):
+		self.area.metadata = self.read_string()
 
 
 class SmaugAreaFile(RomAreaFile):
@@ -693,7 +795,6 @@ def flag_convert(letter):
 	return bitsum
 
 if __name__ == '__main__':
-	area_file = RomAreaFile('midgaard.are')
+	area_file = MercAreaFile('beatles.are')
 	area_file.load_sections()
 	area = area_file.area
-	
