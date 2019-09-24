@@ -702,7 +702,7 @@ class MercAreaFile(AreaFile):
 		self.read_number() # start pos
 		mob.sex = self.read_number()
 		if letter != 'S':
-			self.parse_failed("Vnum %d non S" % vnum)
+			self.parse_faile("Vnum %d non S" % vnum)
 		return mob
 
 	def read_room_data(self, room):
@@ -795,6 +795,10 @@ def flag_convert(letter):
 	return bitsum
 
 if __name__ == '__main__':
-	area_file = MercAreaFile('beatles.are')
+	area_file = MercAreaFile('cloudymt.are')
 	area_file.load_sections()
 	area = area_file.area
+	import pprint
+	from attr import asdict
+	pprint.pprint(asdict(area))
+
