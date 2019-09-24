@@ -702,7 +702,7 @@ class MercAreaFile(AreaFile):
 		self.read_number() # start pos
 		mob.sex = self.read_number()
 		if letter != 'S':
-			self.parse_faile("Vnum %d non S" % vnum)
+			self.parse_fail("Vnum %d non S" % vnum)
 		return mob
 
 	def read_room_data(self, room):
