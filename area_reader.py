@@ -1,5 +1,7 @@
-from logging import getLogger
-logger = getLogger('area_reader')
+import logging
+logger = logging.getLogger('area_reader')
+logging.basicConfig(level=logging.INFO)
+
 from collections import OrderedDict
 import io
 import json
@@ -47,10 +49,12 @@ class AreaFile(object):
 
 	def read_string(self):
 		self.skip_whitespace()
-		return self.read_until('~')
-
+		res = self.read_until('~')
+		self.advance()
+		return res
+		
 	def read_number(self):
-		#self.skip_whitespace()
+		self.skip_whitespace()
 		while self.current_char.isspace():
 			self.advance()
 		number = 0
@@ -79,7 +83,7 @@ class AreaFile(object):
 		ahead = self.data.find(endchar, self.index)
 		result = self.data[self.index:ahead]
 		self.index = ahead
-		self.advance()
+		#self.advance()
 		return result
 
 	@property
@@ -131,6 +135,7 @@ class AreaFile(object):
 			object_loader(vnum)
 
 	def read_vnum(self):
+		self.skip_whitespace()
 		self.read_and_verify_letter('#')
 		vnum = self.read_number()
 		return vnum
@@ -164,6 +169,7 @@ class AreaFile(object):
 		return room
 
 	def read_exit(self):
+		logger.debug("Reading exit")
 		exit = Exit()
 		locks = 0
 		exit.door = self.read_number()
@@ -176,6 +182,7 @@ class AreaFile(object):
 		return exit
 
 	def read_extra_descr(self):
+		logger.debug("Reading extra description")
 		ed = ExtraDescription()
 		ed.keyword = self.read_string()
 		ed.description = self.read_string()
@@ -207,8 +214,9 @@ class AreaFile(object):
 				reset.arg4 = 0
 			else:
 				reset.arg4 = self.read_number()
-			self.read_to_eol()
 			self.area.resets.append(reset)
+			self.index -= 1
+			self.read_to_eol()
 			if reset.command == 'M' or reset.command == 'O':
 				r_vnum = reset.arg3
 			if reset.command == 'P' or reset.command == 'G' or reset.command == 'E':
@@ -225,10 +233,10 @@ class AreaFile(object):
 				self.read_to_eol()
 				continue
 			special = RomSpecial()
-			self.area.specials.append(special)
 			special.command = letter
 			special.arg1 = self.read_number()
 			special.arg2 = self.read_word()
+			self.area.specials.append(special)
 			self.read_to_eol()
 
 	def read_area_metadata(self):
@@ -249,8 +257,17 @@ class AreaFile(object):
 			section_name = self.read_section_name()
 			if section_name == '$':
 				break
-			logger.info("Processing section %s" % section_name)
-			readers[section_name]()
+			reader = readers.get(section_name)
+			if reader is None:
+				self.skip_section(section_name)
+			else:
+				logger.info("Processing section %s" % section_name)
+				readers[section_name]()
+
+	def skip_section(self, section_name):
+		logger.info("Skipping section %s", section_name)
+		self.read_until('#')
+
 
 	def read_section_name(self):
 		self.read_and_verify_letter('#')
@@ -262,6 +279,7 @@ class AreaFile(object):
 			keeper = self.read_number()
 			if keeper == 0:
 				break
+			logger.debug("Reading shop with keeper %d", keeper)
 			shop = RomShop(keeper=keeper)
 			self.area.shops.append(shop)
 			for iTrade in range(self.MAX_TRADES):
@@ -278,6 +296,7 @@ class AreaFile(object):
 			keyword = self.read_string()
 			if keyword[0] == '$':
 				break
+			logger.debug("Reading help with keyword %s", keyword)
 			help = Help(level=level, keyword=keyword)
 			self.area.helps.append(help)
 			help.text = self.read_string()
@@ -681,7 +700,7 @@ class MercAreaFile(AreaFile):
 	area_type = MercArea
 
 	def load_mob(self, vnum):
-		logger.debug("Reading object %d" % vnum)
+		logger.debug("Reading Mob %d" % vnum)
 		mob = RomMob(vnum=vnum)
 		mob.name = self.read_string()
 		mob.short_desc = self.read_string()
@@ -795,7 +814,7 @@ def flag_convert(letter):
 	return bitsum
 
 if __name__ == '__main__':
-	area_file = MercAreaFile('cloudymt.are')
+	area_file = MercAreaFile('beatles.are')
 	area_file.load_sections()
 	area = area_file.area
 	import pprint
