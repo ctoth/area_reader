@@ -160,7 +160,7 @@ class AreaFile(object):
 		return room
 
 	def load_objects(self):
-		loader = lambda vnum: setitem(self.area.objects, vnum, self.load_object(vnum))
+		loader = lambda vnum: setitem(self.area.objects, vnum, RomItem.read(reader=self, vnum=vnum))
 		self.load_section(object_loader=loader)
 
 
@@ -227,7 +227,7 @@ class AreaFile(object):
 		while True:
 			section_name = self.read_section_name()
 			if section_name == '$':
-				break
+				return
 			reader = readers.get(section_name)
 			if reader is None:
 				self.skip_section(section_name)
@@ -333,22 +333,11 @@ class RomAreaFile(AreaFile):
 				word = self.read_word()
 				vect = self.read_flag()
 			elif letter == 'M':
-				mob.mprogs.append(self.read_mprog())
+				mob.mprogs.append(RomMobprog.read(reader=self)())
 			else:
 				self.index -= 1
 				break
 		return mob
-
-	def read_armor_class(self):
-		ac = RomArmorClass()
-
-	def read_mprog(self):
-		mprog = RomMobprog()
-		mprog.trig_type = self.read_word()
-		mprog.vnum = self.read_number()
-		mprog.trig_phrase = self.read_string()
-		return mprog
-
 
 	def read_room_data(self, room):
 		while True:
@@ -371,87 +360,7 @@ class RomAreaFile(AreaFile):
 				self.parse_fail("Don't know how to process room attribute: %s" % letter)
 		return room
 
-
-	def load_object(self, vnum):
-		logger.debug("Reading object %d" % vnum)
-		obj = RomItem(vnum=vnum)
-		obj.name = self.read_string()
-		obj.short_desc = self.read_string()
-		obj.description = self.read_string()
-		obj.material = self.read_string()
-		obj.item_type = self.read_word()
-		obj.extra_flags = self.read_flag()
-		obj.wear_flags = self.read_flag()
-		if obj.item_type == 'weapon':
-			obj.value = [self.read_word(), self.read_number(), self.read_number(), self.read_word(), self.read_flag(), ]
-		elif obj.item_type == 'container':
-			obj.value = [self.read_number(), self.read_flag(), self.read_number(), self.read_number(), self.read_number(), ]
-		elif obj.item_type == 'drink' or obj.item_type == 'fountain':
-			obj.value = [self.read_number(), self.read_number(), self.read_word(), self.read_number(), self.read_number(), ]
-		elif obj.item_type == 'wand' or obj.item_type == 'staff':
-			obj.value = [self.read_number(), self.read_number(), self.read_number(), self.read_word(), self.read_number(), ]
-		elif obj.item_type in ('potion', 'pill', 'scroll'):
-			obj.value = [self.read_number(), self.read_word(), self.read_word(), self.read_word(), self.read_word(), ]
-		else:
-			obj.value = [self.read_flag(), self.read_flag(), self.read_flag(), self.read_flag(), self.read_flag(), ]
-		obj.level = self.read_number()
-		obj.weight = self.read_number()
-		obj.cost = self.read_number()
-		letter = self.read_letter()
-		if letter == 'P':
-			obj.condition = 100
-		elif letter == 'G':
-			obj.condition = 90
-		elif letter == 'A':
-			obj.condition = 75
-		elif letter == 'W':
-			obj.condition = 50
-		elif letter == 'D':
-			obj.condition = 25
-		elif letter == 'B':
-			obj.condition = 10
-		elif letter == 'R':
-			obj.condition = 0
-		else:
-			self.parse_fail("Unknown condition for object: %s" % letter)
-		while True:
-			letter = self.read_letter()
-			if letter == 'A':
-				af = RomAffectData()
-				af.where = 'TO_OBJECT',
-				af.type = -1
-				af.level = obj.level
-				af.duration = -1
-				af.location = self.read_number()
-				af.modifier = self.read_number()
-				obj.affected.append(af)
-			elif letter == 'F':
-				af = RomAffectData()
-				letter = self.read_letter()
-				if letter == 'A':
-					af.where = 'TO_AFFECTS'
-				elif letter == 'I':
-					af.where = 'TO_IMMUNE'
-				elif letter == 'R':
-					af.where = 'TO_RESIST'
-				elif letter == 'V':
-					af.where = 'TO_VULN'
-				else:
-					self.parse_fail("Bad where on flag set")
-				af.type = -1
-				af.level = obj.level
-				af.duration = -1
-				af.location = self.read_number()
-				af.modifier = self.read_number()
-				af.bitvector = self.read_flag()
-			elif letter == 'E':
-				obj.extra_descriptions.append(ExtraDescription.read(reader=self))
-			else:
-				self.index -= 1
-				break
-		return obj
-
-	def read_area_metadata(self):
+def read_area_metadata(self):
 		self.area.original_filename = self.read_string()
 		self.area.name = self.read_string()
 		self.area.metadata = self.read_string()
@@ -500,6 +409,88 @@ class RomItem(MudBase):
 	affected = attr(default=Factory(list))
 	value = attr(default=Factory(list))
 
+	@classmethod
+	def read(cls, reader, vnum=None, **kwargs):
+		logger.debug("Reading object %d", vnum)
+		name = reader.read_string()
+		short_desc = reader.read_string()
+		description = reader.read_string()
+		material = reader.read_string()
+		item_type = reader.read_word()
+		extra_flags = reader.read_flag()
+		wear_flags = reader.read_flag()
+		if item_type == 'weapon':
+			value = [reader.read_word(), reader.read_number(), reader.read_number(), reader.read_word(), reader.read_flag(), ]
+		elif item_type == 'container':
+			value = [reader.read_number(), reader.read_flag(), reader.read_number(), reader.read_number(), reader.read_number(), ]
+		elif item_type == 'drink' or item_type == 'fountain':
+			value = [reader.read_number(), reader.read_number(), reader.read_word(), reader.read_number(), reader.read_number(), ]
+		elif item_type == 'wand' or item_type == 'staff':
+			value = [reader.read_number(), reader.read_number(), reader.read_number(), reader.read_word(), reader.read_number(), ]
+		elif item_type in ('potion', 'pill', 'scroll'):
+			value = [reader.read_number(), reader.read_word(), reader.read_word(), reader.read_word(), reader.read_word(), ]
+		else:
+			value = [reader.read_flag(), reader.read_flag(), reader.read_flag(), reader.read_flag(), reader.read_flag(), ]
+		level = reader.read_number()
+		weight = reader.read_number()
+		cost = reader.read_number()
+		letter = reader.read_letter()
+		if letter == 'P':
+			condition = 100
+		elif letter == 'G':
+			condition = 90
+		elif letter == 'A':
+			condition = 75
+		elif letter == 'W':
+			condition = 50
+		elif letter == 'D':
+			condition = 25
+		elif letter == 'B':
+			condition = 10
+		elif letter == 'R':
+			condition = 0
+		else:
+			self.parse_fail("Unknown condition for object: %s" % letter)
+		affected = []
+		extra_descriptions = []
+		while True:
+			letter = reader.read_letter()
+			if letter == 'A':
+				af = RomAffectData()
+				af.where = 'TO_OBJECT',
+				af.type = -1
+				af.level = level
+				af.duration = -1
+				af.location = reader.read_number()
+				af.modifier = reader.read_number()
+				affected.append(af)
+			elif letter == 'F':
+				af = RomAffectData()
+				letter = reader.read_letter()
+				if letter == 'A':
+					af.where = 'TO_AFFECTS'
+				elif letter == 'I':
+					af.where = 'TO_IMMUNE'
+				elif letter == 'R':
+					af.where = 'TO_RESIST'
+				elif letter == 'V':
+					af.where = 'TO_VULN'
+				else:
+					self.parse_fail("Bad where on flag set")
+				af.type = -1
+				af.level = level
+				af.duration = -1
+				af.location = reader.read_number()
+				af.modifier = reader.read_number()
+				af.bitvector = reader.read_flag()
+				affected.append(af)
+			elif letter == 'E':
+				extra_descriptions.append(ExtraDescription.read(reader=self))
+			else:
+				reader.index -= 1
+				break
+		return cls(vnum=vnum, name=name, short_desc=short_desc, description=description, material=material, item_type=item_type, extra_flags=extra_flags, wear_flags=wear_flags, value=value, level=level, weight=weight, cost=cost, condition=condition, affected=affected, extra_descriptions=extra_descriptions)
+
 
 
 @attributes
@@ -538,6 +529,12 @@ class RomMobprog(object):
 	vnum = attr(default=-1)
 	trig_phrase = attr(default=None)
 
+	@classmethod
+	def read(cls, reader, **kwargs):
+		trig_type = self.read_word()
+		vnum = self.read_number()
+		trig_phrase = self.read_string()
+		return cls(trig_type=trig_type, vnum=vnum, trig_phrase=trig_phrase)
 
 @attributes
 class RomCharacter(RomItem):
@@ -824,5 +821,5 @@ if __name__ == '__main__':
 	area = area_file.area
 	import pprint
 	from attr import asdict
-	pprint.pprint(asdict(area))
+#	pprint.pprint(asdict(area))
 
