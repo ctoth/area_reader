@@ -140,18 +140,9 @@ class AreaFile(object):
 		vnum = self.read_number()
 		return vnum
 
-
 	def load_mobiles(self):
 		loader = lambda vnum: setitem(self.area.mobs, vnum, self.load_mob(vnum))
 		self.load_section(object_loader=loader)
-
-	def read_dice(self):
-		dice = Dice()
-		dice.number = self.read_number()
-		self.read_letter()
-		dice.type = self.read_number()
-		dice.bonus = self.read_number()
-		return dice
 
 	def load_rooms(self):
 		loader = lambda vnum: setitem(self.area.rooms, vnum, self.load_room(vnum))
@@ -167,26 +158,6 @@ class AreaFile(object):
 		room.sector_type = self.read_number()
 		self.read_room_data(room)
 		return room
-
-	def read_exit(self):
-		logger.debug("Reading exit")
-		exit = Exit()
-		locks = 0
-		exit.door = self.read_number()
-		exit.description = self.read_string()
-		exit.keyword = self.read_string()
-		exit.exit_info = 0
-		locks = self.read_number()
-		exit.key = self.read_number()
-		exit.destination = self.read_number()
-		return exit
-
-	def read_extra_descr(self):
-		logger.debug("Reading extra description")
-		ed = ExtraDescription()
-		ed.keyword = self.read_string()
-		ed.description = self.read_string()
-		return ed
 
 	def load_objects(self):
 		loader = lambda vnum: setitem(self.area.objects, vnum, self.load_object(vnum))
@@ -216,7 +187,7 @@ class AreaFile(object):
 				reset.arg4 = self.read_number()
 			self.area.resets.append(reset)
 			self.index -= 1
-			self.read_to_eol()
+			reset.comment = self.read_to_eol()
 			if reset.command == 'M' or reset.command == 'O':
 				r_vnum = reset.arg3
 			if reset.command == 'P' or reset.command == 'G' or reset.command == 'E':
@@ -281,13 +252,13 @@ class AreaFile(object):
 				break
 			logger.debug("Reading shop with keeper %d", keeper)
 			shop = RomShop(keeper=keeper)
-			self.area.shops.append(shop)
 			for iTrade in range(self.MAX_TRADES):
 				shop.buy_type.append(self.read_number())
 			shop.profit_buy = self.read_number()
 			shop.profit_sell = self.read_number()
 			shop.h=open_hour = self.read_number()
 			shop.close_hour = self.read_number()
+			self.area.shops.append(shop)
 			self.read_to_eol()
 
 	def load_helps(self):
@@ -308,7 +279,7 @@ class AreaFile(object):
 		backwards = self.data[:self.index]
 		lineno = backwards.count('\n') + 1
 		col = backwards[::-1].find('\n')
-		message = self.filename + " line " + str(lineno) + " col " + str(col) + ": " + message
+		message = str(self.filename) + " line " + str(lineno) + " col " + str(col) + ": " + message
 		raise ParseError(message)
 
 	def surrounding_text(self, window=50):
@@ -339,11 +310,11 @@ class RomAreaFile(AreaFile):
 		mob.group = self.read_number()
 		mob.level = self.read_number()
 		mob.hitroll = self.read_number()
-		mob.hit = self.read_dice()
-		mob.mana = self.read_dice()
-		mob.damage = self.read_dice()
+		mob.hit = Dice.read(reader=self)
+		mob.mana = Dice.read(reader=self)
+		mob.damage = Dice.read(reader=self)
 		mob.damtype = self.read_word()
-		mob.ac = self.read_armor_class()
+		mob.ac = RomArmorClass.read(reader=self)
 		mob.off_flags = self.read_flag()
 		mob.imm_flags = self.read_flag()
 		mob.res_flags = self.read_flag()
@@ -370,11 +341,6 @@ class RomAreaFile(AreaFile):
 
 	def read_armor_class(self):
 		ac = RomArmorClass()
-		ac.pierce = self.read_number()
-		ac.bash = self.read_number()
-		ac.slash = self.read_number()
-		ac.exotic = self.read_number()
-		return ac
 
 	def read_mprog(self):
 		mprog = RomMobprog()
@@ -396,9 +362,9 @@ class RomAreaFile(AreaFile):
 			elif letter == 'C':
 				room.clan = self.read_string()
 			elif letter == 'D':
-				room.exits.append(self.read_exit())
+				room.exits.append(Exit.read(reader=self))
 			elif letter == 'E':
-				room.extra_descriptions.append(self.read_extra_descr())
+				room.extra_descriptions.append(ExtraDescription.read(reader=self))
 			elif letter == 'O':
 				room.owner = self.read_string()
 			else:
@@ -408,7 +374,7 @@ class RomAreaFile(AreaFile):
 
 	def load_object(self, vnum):
 		logger.debug("Reading object %d" % vnum)
-		obj = RomObject(vnum=vnum)
+		obj = RomItem(vnum=vnum)
 		obj.name = self.read_string()
 		obj.short_desc = self.read_string()
 		obj.description = self.read_string()
@@ -479,7 +445,7 @@ class RomAreaFile(AreaFile):
 				af.modifier = self.read_number()
 				af.bitvector = self.read_flag()
 			elif letter == 'E':
-				obj.extra_descriptions.append(self.read_extra_descr())
+				obj.extra_descriptions.append(ExtraDescription.read(reader=self))
 			else:
 				self.index -= 1
 				break
@@ -521,7 +487,7 @@ class MercAffectData(object):
 	bitvector = attr(default=0)
 
 @attributes
-class RomObject(MudBase):
+class RomItem(MudBase):
 	short_desc = attr(default="")
 	material = attr(default="")
 	item_type = attr(default=None)
@@ -543,11 +509,28 @@ class RomArmorClass(object):
 	slash = attr(default=0)
 	exotic = attr(default=0)
 
+	@classmethod
+	def read(cls, reader, **kw):
+		pierce = reader.read_number()
+		bash = reader.read_number()
+		slash = reader.read_number()
+		exotic = reader.read_number()
+		return cls(pierce=pierce, bash=bash, slash=slash, exotic=exotic, **kw)
+
 @attributes
 class Dice(object):
 	number = attr(default=0)
 	type = attr(default=0)
 	bonus = attr(default=0)
+
+	@classmethod
+	def read(cls, reader, **kwargs):
+		number = reader.read_number()
+		reader.read_letter() #D
+		type = reader.read_number()
+		bonus = reader.read_number()
+		return cls(number=number, type=type, bonus=bonus, **kwargs)
+
 
 @attributes
 class RomMobprog(object):
@@ -557,7 +540,7 @@ class RomMobprog(object):
 
 
 @attributes
-class RomCharacter(RomObject):
+class RomCharacter(RomItem):
 	long_desc = attr(default="")
 	race = attr(default="")
 	group = attr(default=0)
@@ -569,7 +552,7 @@ class RomCharacter(RomObject):
 	ac = attr(default=Factory(RomArmorClass))
 
 @attributes
-class RomMob(RomCharacter, RomObject):
+class RomMob(RomCharacter, RomItem):
 	shop = attr(default=None)
 	alignment = attr(default=0)
 	off_flags = attr(default=0)
@@ -594,6 +577,7 @@ class RomAffectData(object):
 	location = attr(default=None)
 	modifier = attr(default=None)
 	bitvector = attr(default=0)
+
 
 @attributes
 class MercArea(object):
@@ -639,6 +623,13 @@ class ExtraDescription(object):
 	keyword = attr(default="")
 	description = attr(default="")
 
+	@classmethod
+	def read(cls, reader, **kwargs):
+		logger.debug("Reading extra description")
+		keyword = reader.read_string()
+		description = reader.read_string()
+		return cls(keyword=keyword, description=description, **kwargs)
+
 @attributes
 class RomShop(object):
 	keeper = attr(default=0)
@@ -680,6 +671,20 @@ class Exit(object):
 	key = attr(default=0)
 	destination = attr(default=None)
 
+
+	@classmethod
+	def read(cls, reader, **kwargs):
+		logger.debug("Reading exit")
+		locks = 0
+		door = reader.read_number()
+		description = reader.read_string()
+		keyword = reader.read_string()
+		exit_info = 0
+		locks = reader.read_number()
+		key = reader.read_number()
+		destination = reader.read_number()
+		return cls(door=door, description=description, keyword=keyword, key=key, destination=destination)
+
 @attributes
 class Reset(object):
 	command = attr(default=None)
@@ -687,6 +692,7 @@ class Reset(object):
 	arg2 = attr(default=None)
 	arg3 = attr(default=None)
 	arg4 = attr(default=None)
+	comment = attr(default=None)
 
 @attributes
 class Help(object):
@@ -731,9 +737,9 @@ class MercAreaFile(AreaFile):
 			if letter == 'S':
 				break
 			if letter == 'D':
-				room.exits.append(self.read_exit())
+				room.exits.append(Exit.read(reader=self))
 			elif letter == 'E':
-				room.extra_descriptions.append(self.read_extra_descr())
+				room.extra_descriptions.append(ExtraDescription.read(reader=self))
 			else:
 				self.parse_fail("Room %d has flag %s not DES" % (room.vnum, letter))
 
@@ -761,7 +767,7 @@ class MercAreaFile(AreaFile):
 				aff.location = self.read_number()
 				aff.modifier = self.read_number()
 			elif letter == 'E':
-				obj.extra_descriptions.append(self.read_extra_descr())
+				obj.extra_descriptions.append(ExtraDescription.read(reader=self))
 			else:
 				self.index -= 1
 				break
@@ -797,7 +803,6 @@ class SmaugAreaFile(RomAreaFile):
 		return self.read_to_eol()
 
 
-
 def flag_convert(letter):
 	bitsum = 0
 	start = None
@@ -814,7 +819,7 @@ def flag_convert(letter):
 	return bitsum
 
 if __name__ == '__main__':
-	area_file = MercAreaFile('beatles.are')
+	area_file = SmaugAreaFile('under2.are')
 	area_file.load_sections()
 	area = area_file.area
 	import pprint
