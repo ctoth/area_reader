@@ -16,6 +16,7 @@ class AreaFile(object):
 	area_type = None
 	MAX_TRADES = 5
 
+
 	def __init__(self, filename):
 		super(AreaFile, self).__init__()
 		self.file = open(filename)
@@ -141,7 +142,7 @@ class AreaFile(object):
 		return vnum
 
 	def load_mobiles(self):
-		loader = lambda vnum: setitem(self.area.mobs, vnum, self.load_mob(vnum))
+		loader = lambda vnum: setitem(self.area.mobs, vnum, self.load_mob(vnum=vnum))
 		self.load_section(object_loader=loader)
 
 	def load_rooms(self):
@@ -269,8 +270,8 @@ class AreaFile(object):
 				break
 			logger.debug("Reading help with keyword %s", keyword)
 			help = Help(level=level, keyword=keyword)
-			self.area.helps.append(help)
 			help.text = self.read_string()
+			self.area.helps.append(help)
 
 	def jump_to_section(self, section_name):
 		self.index = self.data.find('#'+section_name.upper()) + len(section_name) + 1
@@ -360,7 +361,7 @@ class RomAreaFile(AreaFile):
 				self.parse_fail("Don't know how to process room attribute: %s" % letter)
 		return room
 
-def read_area_metadata(self):
+	def read_area_metadata(self):
 		self.area.original_filename = self.read_string()
 		self.area.name = self.read_string()
 		self.area.metadata = self.read_string()
@@ -376,7 +377,7 @@ class MudBase(object):
 	extra_descriptions = attr(default=Factory(list))
 
 @attributes
-class MercObject(MudBase):
+class Item(MudBase):
 	short_desc = attr(default="")
 	item_type = attr(default=-1)
 	extra_flags = attr(default=0)
@@ -396,18 +397,9 @@ class MercAffectData(object):
 	bitvector = attr(default=0)
 
 @attributes
-class RomItem(MudBase):
-	short_desc = attr(default="")
+class RomItem(Item):
 	material = attr(default="")
-	item_type = attr(default=None)
-	level = attr(default=0)
-	weight = attr(default=0)
 	condition = attr(default=100)
-	cost = attr(default=0)
-	extra_flags = attr(default=0)
-	wear_flags = attr(default=0)
-	affected = attr(default=Factory(list))
-	value = attr(default=Factory(list))
 
 	@classmethod
 	def read(cls, reader, vnum=None, **kwargs):
@@ -485,7 +477,7 @@ class RomItem(MudBase):
 				af.bitvector = reader.read_flag()
 				affected.append(af)
 			elif letter == 'E':
-				extra_descriptions.append(ExtraDescription.read(reader=self))
+				extra_descriptions.append(ExtraDescription.read(reader=reader))
 			else:
 				reader.index -= 1
 				break
@@ -574,7 +566,6 @@ class RomAffectData(object):
 	location = attr(default=None)
 	modifier = attr(default=None)
 	bitvector = attr(default=0)
-
 
 @attributes
 class MercArea(object):
@@ -742,7 +733,7 @@ class MercAreaFile(AreaFile):
 
 	def load_object(self, vnum):
 		logger.debug("Reading object %d" % vnum)
-		obj = MercObject(vnum=vnum)
+		obj = Item(vnum=vnum)
 		obj.name = self.read_string()
 		obj.short_desc = self.read_string()
 		obj.description = self.read_string()
@@ -816,7 +807,7 @@ def flag_convert(letter):
 	return bitsum
 
 if __name__ == '__main__':
-	area_file = SmaugAreaFile('under2.are')
+	area_file = RomAreaFile('moria.are')
 	area_file.load_sections()
 	area = area_file.area
 	import pprint
