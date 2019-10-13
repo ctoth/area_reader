@@ -1,11 +1,12 @@
 import logging
 logger = logging.getLogger('area_reader')
-logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(level=logging.INFO)
 
 from collections import OrderedDict
 import enum
 import io
 import json
+import random
 import os
 from attr import asdict, attr, attributes, Factory
 from operator import setitem
@@ -410,18 +411,25 @@ class RomArmorClass(object):
 
 @attributes
 class Dice(object):
-	number = attr(default=0)
-	type = attr(default=0)
-	bonus = attr(default=0)
+	number = attr(default=0, type=int)
+	sides = attr(default=0, type=int)
+	bonus = attr(default=0, type=int)
 
 	@classmethod
 	def read(cls, reader, **kwargs):
 		number = reader.read_number()
 		reader.read_letter() #D
-		type = reader.read_number()
+		sides = reader.read_number()
 		bonus = reader.read_number()
-		return cls(number=number, type=type, bonus=bonus, **kwargs)
+		return cls(number=number, sides=sides, bonus=bonus, **kwargs)
 
+	def roll(self):
+		score = 0
+		for roll in range(self.number):
+			score += random.randrange(1, self.sides)
+		score += self.bonus
+		return score
+		
 @attributes
 class RomMobprog(object):
 	trig_type = attr(default=None)
