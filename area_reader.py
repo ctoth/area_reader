@@ -8,17 +8,27 @@ import io
 import json
 import random
 import os
-from attr import asdict, attr, attributes, Factory
+from attr import asdict, attr, attributes, Factory, fields
 from operator import setitem
 
 from constants import *
 
+def field(type=None, read=True, on_read=None, original_type=None, *args, **kwargs):
+	metadata = dict(read=read, on_read=on_read, original_type=original_type)
+	return attr(type=type, metadata=metadata, *args, **kwargs)
+
+
 class ParseError(Exception): pass
+
+class Letter(str):
+	pass
+
+class Word(str):
+	pass
 
 class AreaFile(object):
 	area_type = None
 	MAX_TRADES = 5
-
 
 	def __init__(self, filename):
 		super(AreaFile, self).__init__()
@@ -30,6 +40,13 @@ class AreaFile(object):
 		area_type = self.area_type or RomArea
 		self.area = area_type()
 		self.current_section_name = "N/A"
+		self.readers = {
+			Word: self.read_word,
+			str: self.read_string,
+			int: self.read_number,
+			enum.Flag: self.read_flag,
+			RomArmorClass: lambda: self.read_object_from_fields(RomArmorClass),
+		}
 
 	def read_letter(self):
 		self.skip_whitespace()
@@ -88,7 +105,6 @@ class AreaFile(object):
 		ahead = self.data.find(endchar, self.index)
 		result = self.data[self.index:ahead]
 		self.index = ahead
-		#self.advance()
 		return result
 
 	@property
@@ -140,7 +156,22 @@ class AreaFile(object):
 			yield self.read_object(section_object_type, vnum=vnum)
 
 	def read_object(self, object_type, **kwargs):
-		return object_type.read(reader=self, **kwargs)
+		if hasattr(object_type, 'read'):
+			return object_type.read(reader=self, **kwargs)
+		return self.read_object_by_fields(object_type, **kwargs)
+
+	def read_object_by_fields(self, object_type, **kwargs):
+		f = fields(object_type)
+		read = {}
+		context = {}
+		for field in f:
+			reader = self.readers.get(field.metadata.get('original_type'), self.readers.get(field.type))
+			if reader is None:
+				self.parse_fail("Could not find a reader for field type %r" % field.type)
+			on_read = field.metadata.get('on_read', lambda value: value)
+			read[field.name] = on_read(reader())
+		read.update(kwargs)
+		return object_type(**read)
 
 	def read_vnum(self):
 		self.skip_whitespace()
@@ -154,7 +185,8 @@ class AreaFile(object):
 			if letter == 'S':
 				break
 			if letter == '*': # Comment
-				self.read_to_eol()
+				comment = self.read_to_eol()
+				yield object_type(comment=comment)
 				continue
 			yield object_type.read(reader=self, letter=letter)
 
@@ -281,22 +313,22 @@ class RomAreaFile(AreaFile):
 
 @attributes
 class MudBase(object):
-	name = attr(default="")
-	vnum = attr(default=0)
-	description = attr(default="")
-	extra_descriptions = attr(default=Factory(list))
+	vnum = field(default=0, type=int, read=False)
+	name = field(default="", type=str)
+	description = field(default='', type=str)
+	extra_descriptions = attr(default=Factory(list), type=list)
 
 @attributes
 class Item(MudBase):
-	short_desc = attr(default="")
-	item_type = attr(default=-1)
-	extra_flags = attr(default=0)
-	wear_flags = attr(default=0)
-	cost = attr(default=0)
-	level = attr(default=0)
-	weight = attr(default=0)
+	short_desc = field(default='', type=str)
+	item_type = field(default=-1, type=int)
+	extra_flags = field(default=0, type=int)
+	wear_flags = field(default=0, type=WEAR_LOCATIONS)
+	cost = field(default=0, type=int)
+	level = field(default=0, type=int)
+	weight = field(default=0, type=int)
 	affected = attr(default=Factory(list))
-	value = attr(default=Factory(list))
+	value = attr(default=Factory(list), type=list)
 
 @attributes
 class MercAffectData(object):
@@ -308,8 +340,24 @@ class MercAffectData(object):
 
 @attributes
 class RomItem(Item):
-	material = attr(default="")
-	condition = attr(default=100)
+
+	@staticmethod
+	def convert_condition(letter):
+		condition = -1
+		conditions = {
+			'P': 100,
+			'G': 90,
+			'A': 75,
+			'W': 50,
+			'D': 25,
+			'B': 10,
+			'R': 0,
+		}
+		condition = conditions[letter]
+		return condition
+
+	material = field(default='', type=str)
+	condition = field(default=100, type=int, original_type=Letter, on_read=convert_condition)
 
 	@classmethod
 	def read(cls, reader, vnum=None, **kwargs):
@@ -336,23 +384,7 @@ class RomItem(Item):
 		level = reader.read_number()
 		weight = reader.read_number()
 		cost = reader.read_number()
-		letter = reader.read_letter()
-		if letter == 'P':
-			condition = 100
-		elif letter == 'G':
-			condition = 90
-		elif letter == 'A':
-			condition = 75
-		elif letter == 'W':
-			condition = 50
-		elif letter == 'D':
-			condition = 25
-		elif letter == 'B':
-			condition = 10
-		elif letter == 'R':
-			condition = 0
-		else:
-			reader.parse_fail("Unknown condition for object: %s" % letter)
+		condition = cls.convert_condition(reader.read_letter())
 		affected = []
 		extra_descriptions = []
 		while True:
@@ -394,20 +426,14 @@ class RomItem(Item):
 		return cls(vnum=vnum, name=name, short_desc=short_desc, description=description, material=material, item_type=item_type, extra_flags=extra_flags, wear_flags=wear_flags, value=value, level=level, weight=weight, cost=cost, condition=condition, affected=affected, extra_descriptions=extra_descriptions)
 
 
+multiply_10 = lambda n: n * 10
+
 @attributes
 class RomArmorClass(object):
-	pierce = attr(default=0)
-	bash = attr(default=0)
-	slash = attr(default=0)
-	exotic = attr(default=0)
-
-	@classmethod
-	def read(cls, reader, **kw):
-		pierce = reader.read_number()
-		bash = reader.read_number()
-		slash = reader.read_number()
-		exotic = reader.read_number()
-		return cls(pierce=pierce, bash=bash, slash=slash, exotic=exotic, **kw)
+	pierce = field(default=0, type=int, on_read = multiply_10)
+	bash = field(default=0, type=int, on_read=multiply_10)
+	slash = field(default=0, type=int, on_read=multiply_10)
+	exotic = field(default=0, type=int, on_read=multiply_10)
 
 @attributes
 class Dice(object):
@@ -429,53 +455,46 @@ class Dice(object):
 			score += random.randrange(1, self.sides)
 		score += self.bonus
 		return score
-		
+
 @attributes
 class RomMobprog(object):
-	trig_type = attr(default=None)
-	vnum = attr(default=-1)
-	trig_phrase = attr(default=None)
-
-	@classmethod
-	def read(cls, reader, **kwargs):
-		trig_type = self.read_word()
-		vnum = self.read_number()
-		trig_phrase = self.read_string()
-		return cls(trig_type=trig_type, vnum=vnum, trig_phrase=trig_phrase)
-
+	trig_type = attr(default=None, type=Word)
+	vnum = attr(default=-1, type=int)
+	trig_phrase = attr(default=None, type=str)
 
 @attributes
 class RomCharacter(RomItem):
 	long_desc = attr(default="", type=str)
 	race = attr(default="", type=str)
 	group = attr(default=0)
-	hitrol = attr(default=0)
+	hitroll = attr(default=0, type=int)
 	hit = attr(default=Factory(Dice), type=Dice)
 	mana = attr(default=Factory(Dice), type=Dice)
 	damage = attr(default=Factory(Dice), type=Dice)
-	damtype = attr(default="")
+	damtype = attr(default='', type=str)
 	ac = attr(default=Factory(RomArmorClass), type=RomArmorClass)
 	act = attr(default=0, type=ROM_ACT_TYPES, converter=ROM_ACT_TYPES)
 	affected_by = attr(default=0, type=AFFECTED_BY, converter=AFFECTED_BY)
-	hitroll = attr(default=0)
 
+mark_as_npc = lambda act_flags: ROM_ACT_TYPES(act_flags) | ROM_ACT_TYPES.IS_NPC
 
 @attributes
 class RomMob(RomCharacter, RomItem):
-	shop = attr(default=None)
-	alignment = attr(default=0)
+	shop = field(default=None, read=False)
+	act = field(default=0, type=ROM_ACT_TYPES, converter=ROM_ACT_TYPES)
+	alignment = attr(default=0, type=int)
 	off_flags = attr(default=0, type=AFFECTS, converter=AFFECTS)
 	imm_flags = attr(default=0, type=AFFECTS, converter=AFFECTS)
 	res_flags = attr(default=0, type=AFFECTS, converter=AFFECTS)
 	vuln_flags = attr(default=0, type=AFFECTS, converter=AFFECTS)
-	start_pos = attr(default=None)
-	default_pos = attr(default=None)
-	sex = attr(default=0)
-	wealth = attr(default=0)
+	start_pos = attr(default=None, type=Word)
+	default_pos = attr(default=None, type=Word)
+	sex = attr(default='', type=Word)
+	wealth = attr(default=0, type=int)
 	form = attr(default=0, type=FORMS, converter=FORMS)
 	parts = attr(default=0, type=PARTS, converter=PARTS)
-	size = attr(default=None)
-	mprogs = attr(default=Factory(list))
+	size = attr(default=None, type=Word)
+	mprogs = field(default=Factory(list), type=list, read=False)
 
 	@classmethod
 	def read(cls, reader, vnum, **kwargs):
@@ -485,7 +504,7 @@ class RomMob(RomCharacter, RomItem):
 		long_desc = reader.read_string()
 		description = reader.read_string()
 		race = reader.read_string()
-		act = reader.read_flag()
+		act = ROM_ACT_TYPES(reader.read_flag()) | ROM_ACT_TYPES.IS_NPC
 		affected_by = reader.read_flag()
 		alignment = reader.read_number()
 		group = reader.read_number()
@@ -495,7 +514,7 @@ class RomMob(RomCharacter, RomItem):
 		mana = Dice.read(reader=reader)
 		damage = Dice.read(reader=reader)
 		damtype = reader.read_word()
-		ac = RomArmorClass.read(reader=reader)
+		ac = reader.read_object(RomArmorClass)
 		off_flags = reader.read_flag()
 		imm_flags = reader.read_flag()
 		res_flags = reader.read_flag()
@@ -503,7 +522,7 @@ class RomMob(RomCharacter, RomItem):
 		start_pos = reader.read_word()
 		default_pos = reader.read_word()
 		sex = reader.read_word()
-		wealth = reader.read_number()
+		wealth = int(reader.read_number() / 20)
 		form = reader.read_flag()
 		parts = reader.read_flag()
 		size = reader.read_word()
@@ -515,11 +534,11 @@ class RomMob(RomCharacter, RomItem):
 				word = reader.read_word()
 				vect = reader.read_flag()
 			elif letter == 'M':
-				mprogs.append(RomMobprog.read(reader=reader)())
+				mprogs.append(reader.read_object_by_fields(RomMobprog))
 			else:
 				reader.index -= 1
 				break
-		return cls(vnum=vnum, name=name, short_desc=short_desc, long_desc=long_desc, description=description, race=race, affected_by=affected_by, alignment=alignment, group=group, level=level, hitroll=hitroll, hit=hit, mana=mana, damage=damage, damtype=damtype, ac=ac, off_flags=off_flags, imm_flags=imm_flags, res_flags=res_flags, start_pos=start_pos, default_pos=default_pos, sex=sex, wealth=wealth, form=form, parts=parts, size=size, material=material, mprogs=mprogs)
+		return cls(vnum=vnum, name=name, short_desc=short_desc, long_desc=long_desc, description=description, race=race, act=act, affected_by=affected_by, alignment=alignment, group=group, level=level, hitroll=hitroll, hit=hit, mana=mana, damage=damage, damtype=damtype, ac=ac, off_flags=off_flags, imm_flags=imm_flags, res_flags=res_flags, vuln_flags=vuln_flags, start_pos=start_pos, default_pos=default_pos, sex=sex, wealth=wealth, form=form, parts=parts, size=size, material=material, mprogs=mprogs)
 
 @attributes
 class RomAffectData(object):
@@ -543,7 +562,6 @@ class MercArea(object):
 	specials = attr(default=Factory(list))
 	shops = attr(default=Factory(list))
 
-
 @attributes
 class RomArea(object):
 	name = attr(default="")
@@ -561,14 +579,14 @@ class RomArea(object):
 
 @attributes
 class Room(MudBase):
-	owner = attr(default=None)
+	owner = attr(default=None, type=str)
 	area = attr(default=None)
 	area_number = attr(default=0, repr=False)
-	room_flags = attr(default=0)
+	room_flags = attr(default=0, type=ROOM_FLAGS, converter=ROOM_FLAGS)
 	sector_type = attr(default=0, type=SECTOR_TYPES) #FIXME
 	heal_rate = attr(default=100, type=int)
 	mana_rate = attr(default=100, type=int)
-	exits = attr(default=Factory(list))
+	exits = attr(default=Factory(list), type=list)
 
 	@classmethod
 	def read(cls, reader, vnum):
@@ -621,8 +639,8 @@ class MercRoom(Room):
 
 @attributes
 class ExtraDescription(object):
-	keyword = attr(default="")
-	description = attr(default="")
+	keyword = attr(default='', type=Word)
+	description = attr(default='', type=str)
 
 	@classmethod
 	def read(cls, reader, **kwargs):
@@ -633,19 +651,19 @@ class ExtraDescription(object):
 
 @attributes
 class RomShop(object):
-	keeper = attr(default=0)
-	buy_type = attr(default=Factory(list))
-	profit_buy = attr(default=0)
-	profit_sell = attr(default=0)
-	open_hour = attr(default=0)
-	close_hour = attr(default=0)
+	keeper = attr(default=0, type=int)
+	buy_type = attr(default=Factory(list), type=list)
+	profit_buy = attr(default=0, type=int)
+	profit_sell = attr(default=0, type=int)
+	open_hour = attr(default=0, type=int)
+	close_hour = attr(default=0, type=int)
 
 @attributes
 class Special(object):
 	command = attr(default=None)
 	arg1 = attr(default=None)
 	arg2 = attr(default=None)
-	comment = attr(default=None)
+	comment = attr(default=None, type=str)
 
 	@classmethod
 	def read(cls, reader, letter, **kwargs):
@@ -653,11 +671,15 @@ class Special(object):
 		arg1 = reader.read_number()
 		arg2 = reader.read_word()
 		comment = reader.read_to_eol()
-		return cls(command=command,arg1=arg1, arg2=arg2)
+		return cls(command=command,arg1=arg1, arg2=arg2, comment=comment)
+
+@attributes
+class SmaugMob(RomMob):
+	affected_by = attr(default=0, type=SMAUG_AFFECTED_BY, converter=SMAUG_AFFECTED_BY)
 
 @attributes
 class SmaugArea(RomArea):
-	resetmsg = attr(default="")
+	resetmsg = attr(default='', type=str)
 	high_economy = attr(default=0)
 	low_economy = attr(default=0)
 
@@ -673,26 +695,34 @@ class SmaugRoom(Room):
 
 @attributes
 class Exit(object):
-	keyword = attr(default="")
-	description = attr(default="")
+	keyword = attr(default='', type=Word)
+	description = attr(default="", type=str)
 	door = attr(default=None, type=EXIT_DIRECTIONS)
-	exit_info = attr(default=0)
-	rs_flags = attr(default=0)
-	key = attr(default=0)
-	destination = attr(default=None)
+	exit_info = attr(default=0, type=EXIT_FLAGS, converter=EXIT_FLAGS)
+	rs_flags = attr(default=0, type=int)
+	key = attr(default=0, type=int)
+	destination = attr(default=None, type=int)
 
 	@classmethod
 	def read(cls, reader, **kwargs):
 		logger.debug("Reading exit")
 		locks = 0
-		door = EXIT_DIRECTIONS(reader.read_number())
+		door = reader.read_number()
 		description = reader.read_string()
 		keyword = reader.read_string()
 		exit_info = 0
 		locks = reader.read_number()
 		key = reader.read_number()
 		destination = reader.read_number()
-		return cls(door=door, description=description, keyword=keyword, key=key, destination=destination)
+		if locks == 1:
+			exit_info = EXIT_FLAGS.ISDOOR
+		elif locks == 2:
+			exit_info = EXIT_FLAGS.ISDOOR | EXIT_FLAGS.PICKPROOF
+		elif locks == 3:
+			exit_info = EXIT_FLAGS.ISDOOR | EXIT_FLAGS.NOPASS
+		elif locks == 4:
+			exit_info = EXIT_FLAGS.ISDOOR | EXIT_FLAGS.NOPASS | EXIT_FLAGS.PICKPROOF
+		return cls(door=door, description=description, keyword=keyword, exit_info=exit_info, key=key, destination=destination)
 
 @attributes
 class Reset(object):
@@ -753,9 +783,9 @@ class MercReset(object):
 
 @attributes
 class Help(object):
-	level = attr(default=0)
-	keyword = attr(default="")
-	text = attr(default="")
+	level = attr(default=0, type=int)
+	keyword = attr(default='', type=Word)
+	text = attr(default='', type=str)
 
 @attributes
 class MercMob(RomMob):
@@ -763,7 +793,7 @@ class MercMob(RomMob):
 
 	@classmethod
 	def read(cls, reader, vnum):
-		logger.debug("Reading Mob %d" % vnum)
+		logger.debug("Reading Mob %d", vnum)
 		name = reader.read_string()
 		short_desc = reader.read_string()
 		long_desc = reader.read_string()
@@ -841,6 +871,10 @@ class MercAreaFile(AreaFile):
 
 class SmaugAreaFile(RomAreaFile):
 	area_type = SmaugArea
+
+	def load_mobiles(self):
+		for mob in self.load_vnum_section(SmaugMob):
+			setitem(self.area.mobs, mob.vnum, mob)
 
 	def load_resetmsg(self):
 		self.area.resetmsg = self.read_string()

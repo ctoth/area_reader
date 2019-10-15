@@ -206,7 +206,6 @@ class PARTS(enum.Flag):
 	HORNS = flag_convert('W')
 	SCALES = flag_convert('X')
 	TUSKS = flag_convert('Y')
-	
 
 class WEAR_LOCATIONS(enum.Enum):
 	NONE = -1
@@ -231,6 +230,21 @@ class WEAR_LOCATIONS(enum.Enum):
 	FLOAT = 18
 	MAX = 19
 
+class ROOM_FLAGS(enum.Flag):
+	DARK= flag_convert('A')
+	NO_MOB= flag_convert('C')
+	INDOORS= flag_convert('D')
+	PRIVATE= flag_convert('J')
+	SAFE= flag_convert('K')
+	SOLITARY= flag_convert('L')
+	PET_SHOP= flag_convert('M')
+	RECALL= flag_convert('N')
+	IMP_ONLY= flag_convert('O')
+	GODS_ONLY= flag_convert('P')
+	HEROES_ONLY= flag_convert('Q')
+	NEWBIES_ONLY= flag_convert('R')
+	LAW= flag_convert('S')
+	NOWHERE= flag_convert('T')
 class EXIT_DIRECTIONS(enum.Enum):
 	NORTH = 0
 	EAST = 1
@@ -238,6 +252,18 @@ class EXIT_DIRECTIONS(enum.Enum):
 	WEST = 3
 	UP = 4
 	DOWN = 5
+
+class EXIT_FLAGS(enum.Flag):
+	ISDOOR = flag_convert('A')
+	CLOSED = flag_convert('B')
+	LOCKED = flag_convert('C')
+	PICKPROOF = flag_convert('F')
+	NOPASS = flag_convert('G')
+	EASY = flag_convert('H')
+	HARD = flag_convert('I')
+	INFURIATING = flag_convert('J')
+	NOCLOSE = flag_convert('K')
+	NOLOCK = flag_convert('L')
 
 class SECTOR_TYPES(enum.Enum):
 	INSIDE = 0
@@ -247,9 +273,94 @@ class SECTOR_TYPES(enum.Enum):
 	HILLS = 4
 	MOUNTAIN = 5
 	WATER_SWIM = 6
-	NOSWIM = 7
+	WATER_NOSWIM = 7
 	UNUSED = 8
 	AIR = 9
 	DESERT = 10
 	MAX = 11
 
+class SMAUG_AFFECTED_BY(enum.Flag):
+	BLIND = 1
+	INVISIBLE = 2
+	DETECT_EVIL = 3
+	DETECT_INVIS = 4
+	DETECT_MAGIC = 5
+	DETECT_HIDDEN = 6
+	HOLD = 7
+	SANCTUARY = 8
+	FAERIE_FIRE = 9
+	INFRARED = 10
+	CURSE = 11
+	FLAMING = 12
+	POISON = 13
+	PROTECT = 14
+	PARALYSIS = 15
+	SNEAK = 16
+	HIDE = 17
+	SLEEP = 18
+	CHARM = 19
+	FLYING = 20
+	PASS_DOOR = 21
+	FLOATING = 22
+	TRUESIGHT = 23
+	DETECTTRAPS = 24
+	SCRYING = 25
+	FIRESHIELD = 26
+	SHOCKSHIELD = 27
+	HAUS1 = 28
+	ICESHIELD = 29
+	POSSESS = 30
+	BERSERK = 31
+	AQUA_BREATH = 32
+	RECURRINGSPELL = 33
+	CONTAGIOUS = 34
+	ACIDMIST = 35
+	VENOMSHIELD = 36
+	ITEM_AURAS = 37
+	PEOPLE_AURAS = 38
+	SENSE_DEAD = 39
+	HEAR_DEAD = 40
+	SEE_DEAD = 41
+	FADE = 42
+	CHAIN_AGONY = 43
+	INFEST = 44
+	GRAPPLE = 45
+	MAX = 46
+
+class WEAPON_TYPES(enum.Flag):
+	FLAMING = flag_convert('A')
+	FROST = flag_convert('B')
+	VAMPIRIC = flag_convert('C')
+	SHARP = flag_convert('D')
+	VORPAL = flag_convert('E')
+	HANDS = flag_convert('F')
+	SHOCKING = flag_convert('G')
+
+class APPLY_TYPES(enum.Enum):
+	NONE = 0
+	STR = 1
+	DEX = 2
+	INT = 3
+	WIS = 4
+	CON = 5
+	SEX = 6
+	CLASS = 7
+	LEVEL = 8
+	AGE = 9
+	HEIGHT = 10
+	WEIGHT = 11
+	MANA = 12
+	HIT = 13
+	MOVE = 14
+	GOLD = 15
+	EXP = 16
+	AC = 17
+	HITROLL = 18
+	DAMROLL = 19
+	SAVES = 20
+	SAVING_PARA = 20
+	SAVING_ROD = 21
+	SAVING_PETRI = 22
+	SAVING_BREATH = 23
+	SAVING_SPELL = 24
+	AFFECT = 25
