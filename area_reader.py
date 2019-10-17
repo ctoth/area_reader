@@ -8,6 +8,7 @@ import io
 import json
 import random
 import os
+import typing
 from attr import asdict, attr, attributes, Factory, fields
 from operator import setitem
 
@@ -24,6 +25,9 @@ class Letter(str):
 	pass
 
 class Word(str):
+	pass
+
+class VNum(int):
 	pass
 
 class AreaFile(object):
@@ -311,12 +315,25 @@ class RomAreaFile(AreaFile):
 		self.area.first_vnum = self.read_number()
 		self.area.last_vnum = self.read_number()
 
+
+@attributes
+class ExtraDescription(object):
+	keyword = attr(default='', type=Word)
+	description = attr(default='', type=str)
+
+	@classmethod
+	def read(cls, reader, **kwargs):
+		logger.debug("Reading extra description")
+		keyword = reader.read_string()
+		description = reader.read_string()
+		return cls(keyword=keyword, description=description, **kwargs)
+
 @attributes
 class MudBase(object):
-	vnum = field(default=0, type=int, read=False)
+	vnum = field(default=0, type=VNum, read=False)
 	name = field(default="", type=str)
 	description = field(default='', type=str)
-	extra_descriptions = attr(default=Factory(list), type=list)
+	extra_descriptions = attr(default=Factory(list), type=typing.List[ExtraDescription])
 
 @attributes
 class Item(MudBase):
@@ -328,7 +345,7 @@ class Item(MudBase):
 	level = field(default=0, type=int)
 	weight = field(default=0, type=int)
 	affected = attr(default=Factory(list))
-	value = attr(default=Factory(list), type=list)
+	value = attr(default=Factory(list), type=typing.List)
 
 @attributes
 class MercAffectData(object):
@@ -459,7 +476,7 @@ class Dice(object):
 @attributes
 class RomMobprog(object):
 	trig_type = attr(default=None, type=Word)
-	vnum = attr(default=-1, type=int)
+	vnum = attr(default=-1, type=VNum)
 	trig_phrase = attr(default=None, type=str)
 
 @attributes
@@ -494,7 +511,7 @@ class RomMob(RomCharacter, RomItem):
 	form = attr(default=0, type=FORMS, converter=FORMS)
 	parts = attr(default=0, type=PARTS, converter=PARTS)
 	size = attr(default=None, type=Word)
-	mprogs = field(default=Factory(list), type=list, read=False)
+	mprogs = field(default=Factory(list), type=typing.List, read=False)
 
 	@classmethod
 	def read(cls, reader, vnum, **kwargs):
@@ -562,135 +579,12 @@ class MercArea(object):
 	specials = attr(default=Factory(list))
 	shops = attr(default=Factory(list))
 
-@attributes
-class RomArea(object):
-	name = attr(default="")
-	metadata = attr(default="")
-	original_filename = attr(default="")
-	first_vnum = attr(default=-1)
-	last_vnum = attr(default=-1)
-	helps = attr(default=Factory(list))
-	rooms = attr(default=Factory(OrderedDict))
-	mobs = attr(default=Factory(OrderedDict))
-	objects = attr(default=Factory(OrderedDict))
-	resets = attr(default=Factory(list))
-	specials = attr(default=Factory(list))
-	shops = attr(default=Factory(list))
 
 @attributes
-class Room(MudBase):
-	owner = attr(default=None, type=str)
-	area = attr(default=None)
-	area_number = attr(default=0, repr=False)
-	room_flags = attr(default=0, type=ROOM_FLAGS, converter=ROOM_FLAGS)
-	sector_type = attr(default=0, type=SECTOR_TYPES) #FIXME
-	heal_rate = attr(default=100, type=int)
-	mana_rate = attr(default=100, type=int)
-	exits = attr(default=Factory(list), type=list)
-
-	@classmethod
-	def read(cls, reader, vnum):
-		logger.debug("Reading room with vnum %d", vnum)
-		name = reader.read_string()
-		description = reader.read_string()
-		area_number = reader.read_number()
-		room_flags = reader.read_flag()
-		sector_type = reader.read_number()
-		room = cls(vnum=vnum, name=name, description=description, area_number=area_number, room_flags=room_flags, sector_type=sector_type)
-		room.read_metadata(reader)
-		return room
-
-	def read_metadata(self, reader):
-		while True:
-			letter = reader.read_letter()
-			if letter == 'S':
-				break
-			if letter == 'H':
-				self.heal_rate = reader.read_number()
-			elif letter == 'M':
-				self.mana_rate = reader.read_number()
-			elif letter == 'C':
-				self.clan = reader.read_string()
-			elif letter == 'D':
-				self.exits.append(Exit.read(reader=reader))
-			elif letter == 'E':
-				self.extra_descriptions.append(ExtraDescription.read(reader=reader))
-			elif letter == 'O':
-				self.owner = reader.read_string()
-			else:
-				reader.parse_fail("Don't know how to process room attribute: %s" % letter)
-
-@attributes
-class MercRoom(Room):
-
-	@classmethod
-	def read_metadata(cls, reader):
-		logger.debug("Reading room data for %d" % cls.vnum)
-		while True:
-			letter = reader.read_letter()
-			if letter == 'S':
-				break
-			if letter == 'D':
-				cls.exits.append(Exit.read(reader=reader))
-			elif letter == 'E':
-				cls.extra_descriptions.append(ExtraDescription.read(reader=reader))
-			else:
-				reader.parse_fail("cls %d has flag %s not DES" % (cls.vnum, letter))
-
-@attributes
-class ExtraDescription(object):
+class Help(object):
+	level = attr(default=0, type=int)
 	keyword = attr(default='', type=Word)
-	description = attr(default='', type=str)
-
-	@classmethod
-	def read(cls, reader, **kwargs):
-		logger.debug("Reading extra description")
-		keyword = reader.read_string()
-		description = reader.read_string()
-		return cls(keyword=keyword, description=description, **kwargs)
-
-@attributes
-class RomShop(object):
-	keeper = attr(default=0, type=int)
-	buy_type = attr(default=Factory(list), type=list)
-	profit_buy = attr(default=0, type=int)
-	profit_sell = attr(default=0, type=int)
-	open_hour = attr(default=0, type=int)
-	close_hour = attr(default=0, type=int)
-
-@attributes
-class Special(object):
-	command = attr(default=None)
-	arg1 = attr(default=None)
-	arg2 = attr(default=None)
-	comment = attr(default=None, type=str)
-
-	@classmethod
-	def read(cls, reader, letter, **kwargs):
-		command = letter
-		arg1 = reader.read_number()
-		arg2 = reader.read_word()
-		comment = reader.read_to_eol()
-		return cls(command=command,arg1=arg1, arg2=arg2, comment=comment)
-
-@attributes
-class SmaugMob(RomMob):
-	affected_by = attr(default=0, type=SMAUG_AFFECTED_BY, converter=SMAUG_AFFECTED_BY)
-
-@attributes
-class SmaugArea(RomArea):
-	resetmsg = attr(default='', type=str)
-	high_economy = attr(default=0)
-	low_economy = attr(default=0)
-
-
-@attributes
-class SmaugRoom(Room):
-	tele_delay = attr(default=0)
-	tele_vnum = attr(default=0)
-	tunnel = attr(default=None)
-	max_weight = attr(default=None)
-	light = attr(default=0)
+	text = attr(default='', type=str)
 
 
 @attributes
@@ -725,13 +619,57 @@ class Exit(object):
 		return cls(door=door, description=description, keyword=keyword, exit_info=exit_info, key=key, destination=destination)
 
 @attributes
+class Room(MudBase):
+	owner = attr(default=None, type=str)
+	area = attr(default=None)
+	area_number = attr(default=0, repr=False)
+	room_flags = attr(default=0, type=ROOM_FLAGS, converter=ROOM_FLAGS)
+	sector_type = attr(default=0, type=SECTOR_TYPES) #FIXME
+	heal_rate = attr(default=100, type=int)
+	mana_rate = attr(default=100, type=int)
+	exits = attr(default=Factory(list), type=typing.List[Exit])
+
+	@classmethod
+	def read(cls, reader, vnum):
+		logger.debug("Reading room with vnum %d", vnum)
+		name = reader.read_string()
+		description = reader.read_string()
+		area_number = reader.read_number()
+		room_flags = reader.read_flag()
+		sector_type = reader.read_number()
+		room = cls(vnum=vnum, name=name, description=description, area_number=area_number, room_flags=room_flags, sector_type=sector_type)
+		room.read_metadata(reader)
+		return room
+
+	def read_metadata(self, reader):
+		while True:
+			letter = reader.read_letter()
+			if letter == 'S':
+				break
+			if letter == 'H':
+				self.heal_rate = reader.read_number()
+			elif letter == 'M':
+				self.mana_rate = reader.read_number()
+			elif letter == 'C':
+				self.clan = reader.read_string()
+			elif letter == 'D':
+				self.exits.append(Exit.read(reader=reader))
+			elif letter == 'E':
+				self.extra_descriptions.append(ExtraDescription.read(reader=reader))
+			elif letter == 'O':
+				self.owner = reader.read_string()
+			else:
+				reader.parse_fail("Don't know how to process room attribute: %s" % letter)
+
+
+@attributes
 class Reset(object):
 	command = attr(default=None)
-	arg1 = attr(default=None)
+	arg1 = attr(default=None, type=Letter)
 	arg2 = attr(default=None)
 	arg3 = attr(default=None)
 	arg4 = attr(default=None)
-	comment = attr(default=None)
+	comment = attr(default=None, type=str)
 
 	@classmethod
 	def read(cls, reader, letter):
@@ -750,6 +688,82 @@ class Reset(object):
 		reader.index -= 1
 		comment = reader.read_to_eol()
 		return cls(command=command, arg1=arg1, arg2=arg2, arg3=arg3, arg4=arg4, comment=comment)
+
+@attributes
+class Special(object):
+	command = attr(default=None)
+	arg1 = attr(default=None)
+	arg2 = attr(default=None)
+	comment = attr(default=None, type=str)
+
+	@classmethod
+	def read(cls, reader, letter, **kwargs):
+		command = letter
+		arg1 = reader.read_number()
+		arg2 = reader.read_word()
+		comment = reader.read_to_eol()
+		return cls(command=command,arg1=arg1, arg2=arg2, comment=comment)
+
+@attributes
+class RomArea(object):
+	name = attr(default="")
+	metadata = attr(default="")
+	original_filename = attr(default="")
+	first_vnum = attr(default=-1)
+	last_vnum = attr(default=-1)
+	helps = attr(default=Factory(list), type=typing.List[Help])
+	rooms = attr(default=Factory(OrderedDict), type=typing.Dict[int, Room])
+	mobs = attr(default=Factory(OrderedDict))
+	objects = attr(default=Factory(OrderedDict))
+	resets = attr(default=Factory(list), type=typing.List[Reset])
+	specials = attr(default=Factory(list), type=typing.List[Special])
+	shops = attr(default=Factory(list))
+
+@attributes
+class MercRoom(Room):
+
+	@classmethod
+	def read_metadata(cls, reader):
+		logger.debug("Reading room data for %d" % cls.vnum)
+		while True:
+			letter = reader.read_letter()
+			if letter == 'S':
+				break
+			if letter == 'D':
+				cls.exits.append(Exit.read(reader=reader))
+			elif letter == 'E':
+				cls.extra_descriptions.append(ExtraDescription.read(reader=reader))
+			else:
+				reader.parse_fail("cls %d has flag %s not DES" % (cls.vnum, letter))
+
+@attributes
+class RomShop(object):
+	keeper = attr(default=0, type=int)
+	buy_type = attr(default=Factory(list), type=list)
+	profit_buy = attr(default=0, type=int)
+	profit_sell = attr(default=0, type=int)
+	open_hour = attr(default=0, type=int)
+	close_hour = attr(default=0, type=int)
+
+@attributes
+class SmaugMob(RomMob):
+	affected_by = attr(default=0, type=SMAUG_AFFECTED_BY, converter=SMAUG_AFFECTED_BY)
+
+@attributes
+class SmaugArea(RomArea):
+	resetmsg = attr(default='', type=str)
+	high_economy = attr(default=0)
+	low_economy = attr(default=0)
+
+
+@attributes
+class SmaugRoom(Room):
+	tele_delay = attr(default=0)
+	tele_vnum = attr(default=0)
+	tunnel = attr(default=None)
+	max_weight = attr(default=None)
+	light = attr(default=0)
+
 
 @attributes
 class MercReset(object):
@@ -779,13 +793,6 @@ class MercReset(object):
 		reader.index -= 1
 		comment = reader.read_to_eol()
 		return cls(command=command, arg1=arg1, arg2=arg2, arg3=arg3, arg4=arg4, arg5=arg5, comment=comment)
-
-
-@attributes
-class Help(object):
-	level = attr(default=0, type=int)
-	keyword = attr(default='', type=Word)
-	text = attr(default='', type=str)
 
 @attributes
 class MercMob(RomMob):
