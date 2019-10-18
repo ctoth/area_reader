@@ -8,7 +8,7 @@ import io
 import json
 import random
 import os
-import typing
+from typing import List, Dict, Optional
 from attr import asdict, attr, attributes, Factory, fields
 from operator import setitem
 
@@ -333,7 +333,7 @@ class MudBase(object):
 	vnum = field(default=0, type=VNum, read=False)
 	name = field(default="", type=str)
 	description = field(default='', type=str)
-	extra_descriptions = attr(default=Factory(list), type=typing.List[ExtraDescription])
+	extra_descriptions = attr(default=Factory(list), type=List[ExtraDescription])
 
 @attributes
 class Item(MudBase):
@@ -345,7 +345,7 @@ class Item(MudBase):
 	level = field(default=0, type=int)
 	weight = field(default=0, type=int)
 	affected = attr(default=Factory(list))
-	value = attr(default=Factory(list), type=typing.List)
+	value = attr(default=Factory(list), type=List)
 
 @attributes
 class MercAffectData(object):
@@ -483,12 +483,12 @@ class RomMobprog(object):
 class RomCharacter(RomItem):
 	long_desc = attr(default="", type=str)
 	race = attr(default="", type=str)
-	group = attr(default=0)
+	group = attr(default=0, type=int)
 	hitroll = attr(default=0, type=int)
 	hit = attr(default=Factory(Dice), type=Dice)
 	mana = attr(default=Factory(Dice), type=Dice)
 	damage = attr(default=Factory(Dice), type=Dice)
-	damtype = attr(default='', type=str)
+	damtype = attr(default='', type=Word)
 	ac = attr(default=Factory(RomArmorClass), type=RomArmorClass)
 	act = attr(default=0, type=ROM_ACT_TYPES, converter=ROM_ACT_TYPES)
 	affected_by = attr(default=0, type=AFFECTED_BY, converter=AFFECTED_BY)
@@ -499,7 +499,7 @@ mark_as_npc = lambda act_flags: ROM_ACT_TYPES(act_flags) | ROM_ACT_TYPES.IS_NPC
 class RomMob(RomCharacter, RomItem):
 	shop = field(default=None, read=False)
 	act = field(default=0, type=ROM_ACT_TYPES, converter=ROM_ACT_TYPES)
-	alignment = attr(default=0, type=int)
+	alignment = field(default=0, type=int)
 	off_flags = attr(default=0, type=AFFECTS, converter=AFFECTS)
 	imm_flags = attr(default=0, type=AFFECTS, converter=AFFECTS)
 	res_flags = attr(default=0, type=AFFECTS, converter=AFFECTS)
@@ -511,7 +511,7 @@ class RomMob(RomCharacter, RomItem):
 	form = attr(default=0, type=FORMS, converter=FORMS)
 	parts = attr(default=0, type=PARTS, converter=PARTS)
 	size = attr(default=None, type=Word)
-	mprogs = field(default=Factory(list), type=typing.List, read=False)
+	mprogs = field(default=Factory(list), type=Optional[List[RomMobprog]])
 
 	@classmethod
 	def read(cls, reader, vnum, **kwargs):
@@ -586,7 +586,6 @@ class Help(object):
 	keyword = attr(default='', type=Word)
 	text = attr(default='', type=str)
 
-
 @attributes
 class Exit(object):
 	keyword = attr(default='', type=Word)
@@ -622,12 +621,12 @@ class Exit(object):
 class Room(MudBase):
 	owner = attr(default=None, type=str)
 	area = attr(default=None)
-	area_number = attr(default=0, repr=False)
+	area_number = attr(default=0, type=int)
 	room_flags = attr(default=0, type=ROOM_FLAGS, converter=ROOM_FLAGS)
 	sector_type = attr(default=0, type=SECTOR_TYPES) #FIXME
 	heal_rate = attr(default=100, type=int)
 	mana_rate = attr(default=100, type=int)
-	exits = attr(default=Factory(list), type=typing.List[Exit])
+	exits = attr(default=Factory(list), type=List[Exit])
 
 	@classmethod
 	def read(cls, reader, vnum):
@@ -711,12 +710,12 @@ class RomArea(object):
 	original_filename = attr(default="")
 	first_vnum = attr(default=-1)
 	last_vnum = attr(default=-1)
-	helps = attr(default=Factory(list), type=typing.List[Help])
-	rooms = attr(default=Factory(OrderedDict), type=typing.Dict[int, Room])
+	helps = attr(default=Factory(list), type=List[Help])
+	rooms = attr(default=Factory(OrderedDict), type=Dict[int, Room])
 	mobs = attr(default=Factory(OrderedDict))
 	objects = attr(default=Factory(OrderedDict))
-	resets = attr(default=Factory(list), type=typing.List[Reset])
-	specials = attr(default=Factory(list), type=typing.List[Special])
+	resets = attr(default=Factory(list), type=List[Reset])
+	specials = attr(default=Factory(list), type=List[Special])
 	shops = attr(default=Factory(list))
 
 @attributes
