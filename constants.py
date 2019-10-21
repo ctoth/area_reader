@@ -1,5 +1,5 @@
 import enum
-
+from attr import attr, attributes
 
 def flag_convert(letter):
 	if len(letter) > 1:
@@ -84,7 +84,6 @@ class AFFECTED_BY(enum.Flag):
 	SWIM = flag_convert('BB')
 	REGENERATION = flag_convert('CC')
 	SLOW = flag_convert('DD')
-
 
 class WEAR_FLAGS(enum.Flag):
 	FINGER = flag_convert('B')
@@ -178,9 +177,9 @@ class FORMS(enum.Flag):
 	REPTILE = flag_convert('X')
 	SNAKE = flag_convert('Y')
 	DRAGON = flag_convert('Z')
-	AMPHIBIAN = flag_convert('aa')
-	FISH = flag_convert('bb')
-	COLD_BLOOD = flag_convert('cc')
+	AMPHIBIAN = flag_convert('AA')
+	FISH = flag_convert('BB')
+	COLD_BLOOD = flag_convert('CC')
 
 class PARTS(enum.Flag):
 	HEAD = flag_convert('A')
@@ -230,21 +229,32 @@ class WEAR_LOCATIONS(enum.Enum):
 	FLOAT = 18
 	MAX = 19
 
-class ROOM_FLAGS(enum.Flag):
-	DARK= flag_convert('A')
-	NO_MOB= flag_convert('C')
-	INDOORS= flag_convert('D')
-	PRIVATE= flag_convert('J')
-	SAFE= flag_convert('K')
-	SOLITARY= flag_convert('L')
-	PET_SHOP= flag_convert('M')
-	RECALL= flag_convert('N')
-	IMP_ONLY= flag_convert('O')
-	GODS_ONLY= flag_convert('P')
-	HEROES_ONLY= flag_convert('Q')
-	NEWBIES_ONLY= flag_convert('R')
-	LAW= flag_convert('S')
-	NOWHERE= flag_convert('T')
+class ROM_ROOM_FLAGS(enum.Flag):
+	DARK = flag_convert('A')
+	NO_MOB = flag_convert('C')
+	INDOORS = flag_convert('D')
+	PRIVATE = flag_convert('J')
+	SAFE = flag_convert('K')
+	SOLITARY = flag_convert('L')
+	PET_SHOP = flag_convert('M')
+	NO_RECALL = flag_convert('N')
+	IMP_ONLY = flag_convert('O')
+	GODS_ONLY = flag_convert('P')
+	HEROES_ONLY = flag_convert('Q')
+	NEWBIES_ONLY = flag_convert('R')
+	LAW = flag_convert('S')
+	NOWHERE = flag_convert('T')
+
+class MERC_ROOM_FLAGS(enum.Enum):
+	DARK = 1
+	NO_MOB = 4
+	INDOORS = 8
+	PRIVATE = 512
+	SAFE = 1024
+	SOLITARY = 2048
+	PETSHOP = 4096
+	NO_RECALL = 8192
+	
 class EXIT_DIRECTIONS(enum.Enum):
 	NORTH = 0
 	EAST = 1
@@ -364,3 +374,51 @@ class APPLY_TYPES(enum.Enum):
 	SAVING_BREATH = 23
 	SAVING_SPELL = 24
 	AFFECT = 25
+
+@attributes
+class Liquid(object):
+	color = attr(default='', type=str)
+	proof = attr(default=0, type=int)
+	full = attr(default=0, type=int)
+	thurst = attr(default=0, type=int)
+	food = attr(default=0, type=int)
+	size = attr(default=0, type=int)
+
+ROM_LIQUIDS = {
+	'water': Liquid('clear', 0, 1, 10, 0, 16),
+	'beer': Liquid('amber', 12, 1, 8, 1, 12),
+	"red wine": Liquid("burgundy", 30, 1, 8, 1, 5),
+	'ale': Liquid("brown", 15, 1, 8, 1, 12),
+	'dark ale': Liquid("dark", 16, 1, 8, 1, 12),
+	'whisky': Liquid("golden", 120, 1, 5, 0, 2),
+	'lemonade': Liquid("pink", 0, 1, 9, 2, 12),
+	'firebreather': Liquid("boiling", 190, 0, 4, 0, 2),
+	'local specialty': Liquid("clear", 151, 1, 3, 0, 2),
+	'slime mold juice': Liquid("green", 0, 2, -8, 1, 2),
+	'milk': Liquid("white", 0, 2, 9, 3, 12),
+	'tea': Liquid("tan", 0, 1, 8, 0, 6),
+	'coffee': Liquid("black", 0, 1, 8, 0, 6),
+	'blood': Liquid("red", 0, 2, -1, 2, 6),
+	'salt water': Liquid("clear", 0, 1, -2, 0, 1),
+	'coke': Liquid("brown", 0, 2, 9, 2, 12),
+	'root beer': Liquid("brown", 0, 2, 9, 2, 12),
+	'elvish wine': Liquid("green", 35, 2, 8, 1, 5),
+	'white wine': Liquid("golden", 28, 1, 8, 1, 5),
+	'champagne': Liquid("golden", 32, 1, 8, 1, 5),
+	'mead': Liquid("honey-colored", 34, 2, 8, 2, 12),
+	'rose wine': Liquid("pink", 26, 1, 8, 1, 5),
+	'benedictine wine': Liquid("burgundy", 40, 1, 8, 1, 5),
+	'vodka': Liquid("clear", 130, 1, 5, 0, 2),
+	'cranberry juice': Liquid("red", 0, 1, 9, 2, 12),
+	'orange juice': Liquid("orange", 0, 2, 9, 3, 12),
+	'absinthe': Liquid("green", 200, 1, 4, 0, 2),
+	'brandy': Liquid("golden", 80, 1, 5, 0, 4),
+	'aquavit': Liquid("clear", 140, 1, 5, 0, 2),
+	'schnapps': Liquid("clear", 90, 1, 5, 0, 2),
+	'icewine': Liquid("purple", 50, 2, 6, 1, 5),
+	'amontillado': Liquid("burgundy", 35, 2, 8, 1, 5),
+	'sherry': Liquid("red", 38, 2, 7, 1, 5),
+	'framboise': Liquid("red", 50, 1, 7, 1, 5),
+	'rum': Liquid("amber", 151, 1, 4, 0, 2),
+	'cordial': Liquid("clear", 100, 1, 5, 0, 2),
+}
