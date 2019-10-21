@@ -48,10 +48,10 @@ class ROM_ACT_TYPES(enum.Flag):
 	_NOPURGE= flag_convert('V') #    
 	OUTDOORS_= flag_convert('W') #    
 	INDOORS_= flag_convert('Y') #    
-	IS_HEALER= flag_convert('aa') #    
-	GAIN_= flag_convert('bb') #    
-	UPDATE_ALWAYS= flag_convert('cc') #    
-	IS_CHANGER= flag_convert('dd') #    
+	IS_HEALER= flag_convert('AA') #    
+	GAIN_= flag_convert('BB') #    
+	UPDATE_ALWAYS= flag_convert('CC') #    
+	IS_CHANGER= flag_convert('DD') #    
 
 class AFFECTED_BY(enum.Flag):
 	BLIND = flag_convert('A')
@@ -80,10 +80,10 @@ class AFFECTED_BY(enum.Flag):
 	PLAGUE = flag_convert('X')
 	WEAKEN = flag_convert('Y')
 	DARK_VISION = flag_convert('Z')
-	BERSERK = flag_convert('aa')
-	SWIM = flag_convert('bb')
-	REGENERATION = flag_convert('cc')
-	SLOW = flag_convert('dd')
+	BERSERK = flag_convert('AA')
+	SWIM = flag_convert('BB')
+	REGENERATION = flag_convert('CC')
+	SLOW = flag_convert('DD')
 
 
 class WEAR_FLAGS(enum.Flag):
@@ -127,7 +127,7 @@ class OFFENSE(enum.Flag):
 	ASSIST_GUARD = flag_convert('T')
 	ASSIST_VNUM = flag_convert('U')
 
-class AFFECTS(enum.Flag):
+class IMM_FLAGS(enum.Flag):
 	SUMMON = flag_convert('A')
 	CHARM = flag_convert('B')
 	MAGIC = flag_convert('C')
