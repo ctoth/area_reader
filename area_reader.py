@@ -35,7 +35,7 @@ class AreaFile(object):
 
 	def __init__(self, filename):
 		super(AreaFile, self).__init__()
-		self.file = open(filename)
+		self.file = io.open(filename, mode='rt', encoding='ascii')
 		self.index = 0
 		self.data = self.file.read()
 		self.filename = filename
