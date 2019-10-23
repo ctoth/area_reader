@@ -493,7 +493,7 @@ class RomCharacter(RomItem):
 	damage = attr(default=Factory(Dice), type=Dice)
 	damtype = attr(default='', type=Word)
 	ac = attr(default=Factory(RomArmorClass), type=RomArmorClass)
-	act = attr(default=0, type=ROM_ACT_TYPES, converter=ROM_ACT_TYPES)
+	act = attr(default=ROM_ACT_TYPES.IS_NPC.value, type=ROM_ACT_TYPES, converter=ROM_ACT_TYPES)
 	affected_by = attr(default=0, type=AFFECTED_BY, converter=AFFECTED_BY)
 
 mark_as_npc = lambda act_flags: ROM_ACT_TYPES(act_flags) | ROM_ACT_TYPES.IS_NPC
@@ -817,7 +817,7 @@ class MercReset(object):
 
 @attributes
 class MercMob(RomMob):
-	act = attr(default=0, type=MERC_ACT_TYPES)
+	act = field(default=MERC_ACT_TYPES.IS_NPC.value, type=MERC_ACT_TYPES)
 
 	@classmethod
 	def read(cls, reader, vnum):
