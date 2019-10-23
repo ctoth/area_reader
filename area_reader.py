@@ -18,7 +18,6 @@ def field(type=None, read=True, on_read=None, original_type=None, *args, **kwarg
 	metadata = dict(read=read, on_read=on_read, original_type=original_type)
 	return attr(type=type, metadata=metadata, *args, **kwargs)
 
-
 class ParseError(Exception): pass
 
 class Letter(str):
@@ -152,6 +151,7 @@ class AreaFile(object):
 			self.parse_fail("Expected %s got %s" % (verification, letter))
 		return letter
 
+
 	def load_vnum_section(self, section_object_type):
 		while True:
 			vnum = self.read_vnum()
@@ -222,7 +222,10 @@ class AreaFile(object):
 				self.skip_section(section_name)
 			else:
 				logger.info("Processing section %s" % section_name)
-				readers[section_name]()
+				try:
+					readers[section_name]()
+				except Exception:
+					self.parse_fail("Error reading section %r" % section_name)
 
 	def skip_section(self, section_name):
 		logger.debug("Skipping section %s", section_name)
@@ -549,7 +552,25 @@ class RomMob(RomCharacter, RomItem):
 			letter = reader.read_letter()
 			if letter == 'F':
 				word = reader.read_word()
-				vect = reader.read_flag()
+				vector = reader.read_flag()
+				if word.startswith('act'):
+					act = remove_bit(act, vector)
+				elif word.startswith('aff'):
+					affected_by = remove_bit(affected_by, vector)
+				elif word.startswith('off'):
+					off_flags = remove_bit(off_flags, vector)
+				elif word.startswith('imm'):
+					imm_flags = remove_bit(imm_flags, vector)
+				elif word.startswith('res'):
+					res_flags = remove_bit(res_flags, vector)
+				elif word.startswith('vul'):
+					vuln_flags = remove_bit(vuln_flags, vector)
+				elif word.startswith('for'):
+					form = remove_bit(form, vector)
+				elif word.startswith('par'):
+					parts = remove_bit(parts, vector)
+				else:
+					reader.parse_fail("Flag remove: flag not found: %s" % word)
 			elif letter == 'M':
 				mprogs.append(reader.read_object_by_fields(RomMobprog))
 			else:
@@ -622,7 +643,7 @@ class Room(MudBase):
 	owner = attr(default=None, type=str)
 	area = attr(default=None)
 	area_number = attr(default=0, type=int)
-	room_flags = attr(default=0, type=ROOM_FLAGS, converter=ROOM_FLAGS)
+	room_flags = attr(default=0, type=ROM_ROOM_FLAGS, converter=ROM_ROOM_FLAGS)
 	sector_type = attr(default=0, type=SECTOR_TYPES) #FIXME
 	heal_rate = attr(default=100, type=int)
 	mana_rate = attr(default=100, type=int)
@@ -720,6 +741,7 @@ class RomArea(object):
 
 @attributes
 class MercRoom(Room):
+	room_flags = attr(default=0, type=MERC_ROOM_FLAGS, converter=MERC_ROOM_FLAGS)
 
 	@classmethod
 	def read_metadata(cls, reader):

@@ -18,6 +18,9 @@ def flag_convert(letter):
 		l2 -= 1
 	return bitsum
 
+def remove_bit(var, bit):
+	return var & ~bit
+	
 class MERC_ACT_TYPES(enum.Flag):
 	IS_NPC= flag_convert('A') # Auto set for mobs
 	SENTINEL_= flag_convert('B') # Stays in one room
