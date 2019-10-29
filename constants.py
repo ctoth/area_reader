@@ -3,7 +3,7 @@ from attr import attr, attributes
 
 def flag_convert(letter):
 	if len(letter) > 1:
-		return flag_convert(letter[0]) + flag_convert(letter[1:])
+		raise ValueError("Unable to convert flag " + letter)
 	bitsum = 0
 	start = None
 	if letter >= 'A' and letter <= 'Z':
@@ -20,194 +20,243 @@ def flag_convert(letter):
 
 def remove_bit(var, bit):
 	return var & ~bit
-	
+
+
+BITFLAGS = dict(
+	A = 1,
+	B = 2,
+	C = 4,
+	D = 8,
+	E = 16,
+	F = 32,
+	G = 64,
+	H = 128,
+	I = 256,
+	J = 512,
+	K = 1024,
+	L = 2048,
+	M = 4096,
+	N = 8192,
+	O = 16384,
+	P = 32768,
+	Q = 65536,
+	R = 131072,
+	S = 262144,
+	T = 524288,
+	U = 1048576,
+	V = 2097152,
+	W = 4194304,
+	X = 8388608,
+	Y = 16777216,
+	Z = 33554432,
+	AA = 67108864,
+	BB = 134217728,
+	CC = 268435456,
+	DD = 536870912,
+	EE = 1073741824,
+)
+
 class MERC_ACT_TYPES(enum.Flag):
-	IS_NPC= flag_convert('A') # Auto set for mobs
-	SENTINEL_= flag_convert('B') # Stays in one room
-	SCAVENGER_= flag_convert('C') # Picks  up objects
-	AGGRESSIVE_= flag_convert('F') # Attacks  PC s
-	STAY_AREA= flag_convert('G') # Won't leave area
-	WIMPY_= flag_convert('H') 
-	PET_= flag_convert('I') # Auto set for pets
-	TRAIN_= flag_convert('J') # Can train PC s
-	_PRACTICE= flag_convert('K') # Can practice PC s
+	IS_NPC= BITFLAGS['A'] # Auto set for mobs
+	SENTINEL_= BITFLAGS['B'] # Stays in one room
+	SCAVENGER_= BITFLAGS['C'] # Picks  up objects
+	AGGRESSIVE_= BITFLAGS['F'] # Attacks  PC s
+	STAY_AREA= BITFLAGS['G'] # Won't leave area
+	WIMPY = BITFLAGS['H'] 
+	PET = BITFLAGS['I'] # Auto set for pets
+	TRAIN = BITFLAGS['J'] # Can train PC s
+	_PRACTICE = BITFLAGS['K'] # Can practice PC s
+
 
 class ROM_ACT_TYPES(enum.Flag):
-	IS_NPC= flag_convert('A') # Auto set for mobs
-	SENTINEL_= flag_convert('B') # Stays in one room
-	SCAVENGER_= flag_convert('C') # Picks  up objects
-	AGGRESSIVE_= flag_convert('F') # Attacks  PC s
-	STAY_AREA= flag_convert('G') # Won't leave area
-	WIMPY_= flag_convert('H') #    
-	PET_= flag_convert('I') # Auto set for pets
-	TRAIN_= flag_convert('J') # Can train PC s
-	_PRACTICE= flag_convert('K') # Can practice PC s
-	_UNDEAD= flag_convert('O') #    
-	_CLERIC= flag_convert('Q') #    
-	MAGE_= flag_convert('R') #    
-	THIEF_= flag_convert('S') #    
-	WARRIOR_= flag_convert('T') #    
-	_NOALIGN= flag_convert('U') #    
-	_NOPURGE= flag_convert('V') #    
-	OUTDOORS_= flag_convert('W') #    
-	INDOORS_= flag_convert('Y') #    
-	IS_HEALER= flag_convert('AA') #    
-	GAIN_= flag_convert('BB') #    
-	UPDATE_ALWAYS= flag_convert('CC') #    
-	IS_CHANGER= flag_convert('DD') #    
+	IS_NPC = BITFLAGS['A'] # Auto set for mobs
+	SENTINEL = BITFLAGS['B'] # Stays in one room
+	SCAVENGER = BITFLAGS['C'] # Picks  up objects
+	UNUSED1 = BITFLAGS['D']
+	UNUSED2 = BITFLAGS['E']
+	AGGRESSIVE = BITFLAGS['F'] # Attacks  PC s
+	STAY_AREA = BITFLAGS['G'] # Won't leave area
+	WIMPY = BITFLAGS['H'] #    
+	PET = BITFLAGS['I'] # Auto set for pets
+	TRAIN = BITFLAGS['J'] # Can train PC s
+	_PRACTICE = BITFLAGS['K'] # Can practice PC s
+	UNUSED3 = BITFLAGS['L'] 
+	UNUSED4 = BITFLAGS['M']
+	UNUSED5 = BITFLAGS['N']
+	_UNDEAD = BITFLAGS['O'] #    
+	UNUSED6 = BITFLAGS['P']
+	_CLERIC = BITFLAGS['Q'] #    
+	MAGE = BITFLAGS['R'] #    
+	THIEF = BITFLAGS['S'] #    
+	WARRIOR = BITFLAGS['T'] #    
+	NOALIGN = BITFLAGS['U'] #    
+	NOPURGE = BITFLAGS['V'] #    
+	OUTDOORS = BITFLAGS['W'] #    
+	UNUSED7 = BITFLAGS['X']
+	INDOORS = BITFLAGS['Y'] #    
+	UNUSED8 = BITFLAGS['Z']
+	IS_HEALER = BITFLAGS['AA'] #    
+	GAIN = BITFLAGS['BB'] #    
+	UPDATE_ALWAYS = BITFLAGS['CC'] #    
+	IS_CHANGER = BITFLAGS['DD'] #    
+	UNUSED9 = BITFLAGS['EE']
 
 class AFFECTED_BY(enum.Flag):
-	BLIND = flag_convert('A')
-	INVISIBLE = flag_convert('B')
-	EVIL = flag_convert('C')
-	INVIS = flag_convert('D')
-	MAGIC = flag_convert('E')
-	HIDDEN = flag_convert('F')
-	GOOD = flag_convert('G')
-	SANCTUARY = flag_convert('H')
-	FIRE = flag_convert('I')
-	INFRARED = flag_convert('J')
-	CURSE = flag_convert('K')
-	UNUSED_FLAG = flag_convert('L') # Unused
-	POISON = flag_convert('M')
-	PROTECT_EVIL = flag_convert('N')
-	PROTECT_GOOD = flag_convert('O')
-	SNEAK = flag_convert('P')
-	HIDE = flag_convert('Q')
-	SLEEP = flag_convert('R')
-	CHARM = flag_convert('S')
-	FLYING = flag_convert('T')
-	PASS_DOOR = flag_convert('U')
-	HASTE = flag_convert('V')
-	CALM = flag_convert('W')
-	PLAGUE = flag_convert('X')
-	WEAKEN = flag_convert('Y')
-	DARK_VISION = flag_convert('Z')
-	BERSERK = flag_convert('AA')
-	SWIM = flag_convert('BB')
-	REGENERATION = flag_convert('CC')
-	SLOW = flag_convert('DD')
+	BLIND = BITFLAGS['A']
+	INVISIBLE = BITFLAGS['B']
+	EVIL = BITFLAGS['C']
+	INVIS = BITFLAGS['D']
+	MAGIC = BITFLAGS['E']
+	HIDDEN = BITFLAGS['F']
+	GOOD = BITFLAGS['G']
+	SANCTUARY = BITFLAGS['H']
+	FIRE = BITFLAGS['I']
+	INFRARED = BITFLAGS['J']
+	CURSE = BITFLAGS['K']
+	UNUSED_FLAG = BITFLAGS['L'] # Unused
+	POISON = BITFLAGS['M']
+	PROTECT_EVIL = BITFLAGS['N']
+	PROTECT_GOOD = BITFLAGS['O']
+	SNEAK = BITFLAGS['P']
+	HIDE = BITFLAGS['Q']
+	SLEEP = BITFLAGS['R']
+	CHARM = BITFLAGS['S']
+	FLYING = BITFLAGS['T']
+	PASS_DOOR = BITFLAGS['U']
+	HASTE = BITFLAGS['V']
+	CALM = BITFLAGS['W']
+	PLAGUE = BITFLAGS['X']
+	WEAKEN = BITFLAGS['Y']
+	DARK_VISION = BITFLAGS['Z']
+	BERSERK = BITFLAGS['AA']
+	SWIM = BITFLAGS['BB']
+	REGENERATION = BITFLAGS['CC']
+	SLOW = BITFLAGS['DD']
 
 class WEAR_FLAGS(enum.Flag):
-	FINGER = flag_convert('B')
-	NECK = flag_convert('C')
-	BODY = flag_convert('D')
-	HEAD = flag_convert('E')
-	LEGS = flag_convert('F')
-	FEET = flag_convert('G')
-	HANDS = flag_convert('H')
-	ARMS = flag_convert('I')
-	SHIELD = flag_convert('J')
-	ABOUT = flag_convert('K')
-	WAIST = flag_convert('L')
-	WRIST = flag_convert('M')
-	WIELD = flag_convert('N')
-	HOLD = flag_convert('O')
-	SAC = flag_convert('P')
-	FLOAT = flag_convert('Q')
+	FINGER = BITFLAGS['B']
+	NECK = BITFLAGS['C']
+	BODY = BITFLAGS['D']
+	HEAD = BITFLAGS['E']
+	LEGS = BITFLAGS['F']
+	FEET = BITFLAGS['G']
+	HANDS = BITFLAGS['H']
+	ARMS = BITFLAGS['I']
+	SHIELD = BITFLAGS['J']
+	ABOUT = BITFLAGS['K']
+	WAIST = BITFLAGS['L']
+	WRIST = BITFLAGS['M']
+	WIELD = BITFLAGS['N']
+	HOLD = BITFLAGS['O']
+	SAC = BITFLAGS['P']
+	FLOAT = BITFLAGS['Q']
 
 class OFFENSE(enum.Flag):
-	AREA_ATTACK = flag_convert('A')
-	BACKSTAB = flag_convert('B')
-	BASH_ = flag_convert('C')
-	BERSERK = flag_convert('D')
-	DISARM_ = flag_convert('E')
-	DODGE_ = flag_convert('F')
-	FADE_ = flag_convert('G')
-	FAST = flag_convert('H')
-	KICK = flag_convert('I')
-	KICK_DIRT = flag_convert('J')
-	PARRY_ = flag_convert('K')
-	RESCUE_ = flag_convert('L')
-	TAIL_ = flag_convert('M')
-	TRIP_ = flag_convert('N')
-	CRUSH_ = flag_convert('O')
-	ASSIST_ALL = flag_convert('P')
-	ASSIST_ALIGN = flag_convert('Q')
-	ASSIST_RACE = flag_convert('R')
-	ASSIST_PLAYERS = flag_convert('S')
-	ASSIST_GUARD = flag_convert('T')
-	ASSIST_VNUM = flag_convert('U')
+	AREA_ATTACK = BITFLAGS['A']
+	BACKSTAB = BITFLAGS['B']
+	BASH = BITFLAGS['C']
+	BERSERK = BITFLAGS['D']
+	DISARM = BITFLAGS['E']
+	DODGE = BITFLAGS['F']
+	FADE = BITFLAGS['G']
+	FAST = BITFLAGS['H']
+	KICK = BITFLAGS['I']
+	KICK_DIRT = BITFLAGS['J']
+	PARRY = BITFLAGS['K']
+	RESCUE = BITFLAGS['L']
+	TAIL_ = BITFLAGS['M']
+	TRIP_ = BITFLAGS['N']
+	CRUSH_ = BITFLAGS['O']
+	ASSIST_ALL = BITFLAGS['P']
+	ASSIST_ALIGN = BITFLAGS['Q']
+	ASSIST_RACE = BITFLAGS['R']
+	ASSIST_PLAYERS = BITFLAGS['S']
+	ASSIST_GUARD = BITFLAGS['T']
+	ASSIST_VNUM = BITFLAGS['U']
 
 class IMM_FLAGS(enum.Flag):
-	SUMMON = flag_convert('A')
-	CHARM = flag_convert('B')
-	MAGIC = flag_convert('C')
-	WEAPON = flag_convert('D')
-	BASH = flag_convert('E')
-	PIERCE = flag_convert('F')
-	SLASH = flag_convert('G')
-	FIRE = flag_convert('H')
-	COLD = flag_convert('I')
-	LIGHTNING = flag_convert('J')
-	ACID = flag_convert('K')
-	POISON = flag_convert('L')
-	NEGATIVE = flag_convert('M')
-	HOLY = flag_convert('N')
-	ENERGY = flag_convert('O')
-	MENTAL = flag_convert('P')
-	DISEASE = flag_convert('Q')
-	DROWNING = flag_convert('R')
-	LIGHT = flag_convert('S')
-	SOUND = flag_convert('T')
-	WOOD = flag_convert('X')
-	SILVER = flag_convert('Y')
-	IRON = flag_convert('Z')
+	SUMMON = BITFLAGS['A']
+	CHARM = BITFLAGS['B']
+	MAGIC = BITFLAGS['C']
+	WEAPON = BITFLAGS['D']
+	BASH = BITFLAGS['E']
+	PIERCE = BITFLAGS['F']
+	SLASH = BITFLAGS['G']
+	FIRE = BITFLAGS['H']
+	COLD = BITFLAGS['I']
+	LIGHTNING = BITFLAGS['J']
+	ACID = BITFLAGS['K']
+	POISON = BITFLAGS['L']
+	NEGATIVE = BITFLAGS['M']
+	HOLY = BITFLAGS['N']
+	ENERGY = BITFLAGS['O']
+	MENTAL = BITFLAGS['P']
+	DISEASE = BITFLAGS['Q']
+	DROWNING = BITFLAGS['R']
+	LIGHT = BITFLAGS['S']
+	SOUND = BITFLAGS['T']
+	WOOD = BITFLAGS['X']
+	SILVER = BITFLAGS['Y']
+	IRON = BITFLAGS['Z']
 
 class FORMS(enum.Flag):
-	EDIBLE = flag_convert('A')
-	POISON = flag_convert('B')
-	MAGICAL = flag_convert('C')
-	OTHER = flag_convert('E') # defined by material bit
+	EDIBLE = BITFLAGS['A']
+	POISON = BITFLAGS['B']
+	MAGICAL = BITFLAGS['C']
+	OTHER = BITFLAGS['E'] # defined by material bit
+	UNUSED1 = enum.auto()
 	# actual form
-	ANIMAL = flag_convert('G')
-	SENTIENT = flag_convert('H')
-	UNDEAD = flag_convert('I')
-	CONSTRUCT = flag_convert('J')
-	MIST = flag_convert('K')
-	INTANGIBLE = flag_convert('L')
+	ANIMAL = BITFLAGS['G']
+	SENTIENT = BITFLAGS['H']
+	UNDEAD = BITFLAGS['I']
+	CONSTRUCT = BITFLAGS['J']
+	MIST = BITFLAGS['K']
+	INTANGIBLE = BITFLAGS['L']
 
-	BIPED = flag_convert('M')
-	CENTAUR = flag_convert('N')
-	INSECT = flag_convert('O')
-	SPIDER = flag_convert('P')
-	CRUSTACEAN = flag_convert('Q')
-	WORM = flag_convert('R')
-	BLOB = flag_convert('S')
-
-	MAMMAL = flag_convert('V')
-	BIRD = flag_convert('W')
-	REPTILE = flag_convert('X')
-	SNAKE = flag_convert('Y')
-	DRAGON = flag_convert('Z')
-	AMPHIBIAN = flag_convert('AA')
-	FISH = flag_convert('BB')
-	COLD_BLOOD = flag_convert('CC')
+	BIPED = BITFLAGS['M']
+	CENTAUR = BITFLAGS['N']
+	INSECT = BITFLAGS['O']
+	SPIDER = BITFLAGS['P']
+	CRUSTACEAN = BITFLAGS['Q']
+	WORM = BITFLAGS['R']
+	BLOB = BITFLAGS['S']
+	UNUSED2 = enum.auto()
+	UNUSED3 = enum.auto()
+	MAMMAL = BITFLAGS['V']
+	BIRD = BITFLAGS['W']
+	REPTILE = BITFLAGS['X']
+	SNAKE = BITFLAGS['Y']
+	DRAGON = BITFLAGS['Z']
+	AMPHIBIAN = BITFLAGS['AA']
+	FISH = BITFLAGS['BB']
+	COLD_BLOOD = BITFLAGS['CC']
+	UNUSED4 = BITFLAGS['DD']
+	UNUSED5 = BITFLAGS['EE']
 
 class PARTS(enum.Flag):
-	HEAD = flag_convert('A')
-	ARMS = flag_convert('B')
-	LEGS = flag_convert('C')
-	HEART = flag_convert('D')
-	BRAINS = flag_convert('E')
-	GUTS = flag_convert('F')
-	HANDS = flag_convert('G')
-	FEET = flag_convert('H')
-	FINGERS = flag_convert('I')
-	EAR = flag_convert('J')
-	EYE = flag_convert('K')
-	LONG_TONGUE = flag_convert('L')
-	EYESTALKS = flag_convert('M')
-	TENTACLES = flag_convert('N')
-	FINS = flag_convert('O')
-	WINGS = flag_convert('P')
-	TAIL = flag_convert('Q')
+	HEAD = BITFLAGS['A']
+	ARMS = BITFLAGS['B']
+	LEGS = BITFLAGS['C']
+	HEART = BITFLAGS['D']
+	BRAINS = BITFLAGS['E']
+	GUTS = BITFLAGS['F']
+	HANDS = BITFLAGS['G']
+	FEET = BITFLAGS['H']
+	FINGERS = BITFLAGS['I']
+	EAR = BITFLAGS['J']
+	EYE = BITFLAGS['K']
+	LONG_TONGUE = BITFLAGS['L']
+	EYESTALKS = BITFLAGS['M']
+	TENTACLES = BITFLAGS['N']
+	FINS = BITFLAGS['O']
+	WINGS = BITFLAGS['P']
+	TAIL = BITFLAGS['Q']
 	# for combat
-	CLAWS = flag_convert('U')
-	FANGS = flag_convert('V')
-	HORNS = flag_convert('W')
-	SCALES = flag_convert('X')
-	TUSKS = flag_convert('Y')
+	CLAWS = BITFLAGS['U']
+	FANGS = BITFLAGS['V']
+	HORNS = BITFLAGS['W']
+	SCALES = BITFLAGS['X']
+	TUSKS = BITFLAGS['Y']
 
 class WEAR_LOCATIONS(enum.Enum):
 	NONE = -1
@@ -233,20 +282,26 @@ class WEAR_LOCATIONS(enum.Enum):
 	MAX = 19
 
 class ROM_ROOM_FLAGS(enum.Flag):
-	DARK = flag_convert('A')
-	NO_MOB = flag_convert('C')
-	INDOORS = flag_convert('D')
-	PRIVATE = flag_convert('J')
-	SAFE = flag_convert('K')
-	SOLITARY = flag_convert('L')
-	PET_SHOP = flag_convert('M')
-	NO_RECALL = flag_convert('N')
-	IMP_ONLY = flag_convert('O')
-	GODS_ONLY = flag_convert('P')
-	HEROES_ONLY = flag_convert('Q')
-	NEWBIES_ONLY = flag_convert('R')
-	LAW = flag_convert('S')
-	NOWHERE = flag_convert('T')
+	DARK = BITFLAGS['A']
+	unused1 = enum.auto()
+	NO_MOB = BITFLAGS['C']
+	INDOORS = BITFLAGS['D']
+	unused2 = enum.auto()
+	UNUSED3 = enum.auto()
+	unused4 = enum.auto()
+	unused5 = enum.auto()
+	unused6 = enum.auto()
+	PRIVATE = BITFLAGS['J']
+	SAFE = BITFLAGS['K']
+	SOLITARY = BITFLAGS['L']
+	PET_SHOP = BITFLAGS['M']
+	NO_RECALL = BITFLAGS['N']
+	IMP_ONLY = BITFLAGS['O']
+	GODS_ONLY = BITFLAGS['P']
+	HEROES_ONLY = BITFLAGS['Q']
+	NEWBIES_ONLY = BITFLAGS['R']
+	LAW = BITFLAGS['S']
+	NOWHERE = BITFLAGS['T']
 
 class MERC_ROOM_FLAGS(enum.Enum):
 	DARK = 1
@@ -267,16 +322,16 @@ class EXIT_DIRECTIONS(enum.Enum):
 	DOWN = 5
 
 class EXIT_FLAGS(enum.Flag):
-	ISDOOR = flag_convert('A')
-	CLOSED = flag_convert('B')
-	LOCKED = flag_convert('C')
-	PICKPROOF = flag_convert('F')
-	NOPASS = flag_convert('G')
-	EASY = flag_convert('H')
-	HARD = flag_convert('I')
-	INFURIATING = flag_convert('J')
-	NOCLOSE = flag_convert('K')
-	NOLOCK = flag_convert('L')
+	ISDOOR = BITFLAGS['A']
+	CLOSED = BITFLAGS['B']
+	LOCKED = BITFLAGS['C']
+	PICKPROOF = BITFLAGS['F']
+	NOPASS = BITFLAGS['G']
+	EASY = BITFLAGS['H']
+	HARD = BITFLAGS['I']
+	INFURIATING = BITFLAGS['J']
+	NOCLOSE = BITFLAGS['K']
+	NOLOCK = BITFLAGS['L']
 
 class SECTOR_TYPES(enum.Enum):
 	INSIDE = 0
@@ -341,13 +396,13 @@ class SMAUG_AFFECTED_BY(enum.Flag):
 	MAX = 46
 
 class WEAPON_TYPES(enum.Flag):
-	FLAMING = flag_convert('A')
-	FROST = flag_convert('B')
-	VAMPIRIC = flag_convert('C')
-	SHARP = flag_convert('D')
-	VORPAL = flag_convert('E')
-	HANDS = flag_convert('F')
-	SHOCKING = flag_convert('G')
+	FLAMING = BITFLAGS['A']
+	FROST = BITFLAGS['B']
+	VAMPIRIC = BITFLAGS['C']
+	SHARP = BITFLAGS['D']
+	VORPAL = BITFLAGS['E']
+	HANDS = BITFLAGS['F']
+	SHOCKING = BITFLAGS['G']
 
 class APPLY_TYPES(enum.Enum):
 	NONE = 0
