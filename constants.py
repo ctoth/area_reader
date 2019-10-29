@@ -56,7 +56,7 @@ BITFLAGS = dict(
 	EE = 1073741824,
 )
 
-class MERC_ACT_TYPES(enum.Flag):
+class MERC_ACT_TYPES(enum.IntFlag):
 	IS_NPC= BITFLAGS['A'] # Auto set for mobs
 	SENTINEL_= BITFLAGS['B'] # Stays in one room
 	SCAVENGER_= BITFLAGS['C'] # Picks  up objects
@@ -72,7 +72,7 @@ class MERC_ACT_TYPES(enum.Flag):
 	UNUSED4 = BITFLAGS['M']
 
 
-class ROM_ACT_TYPES(enum.Flag):
+class ROM_ACT_TYPES(enum.IntFlag):
 	IS_NPC = BITFLAGS['A'] # Auto set for mobs
 	SENTINEL = BITFLAGS['B'] # Stays in one room
 	SCAVENGER = BITFLAGS['C'] # Picks  up objects
@@ -105,7 +105,7 @@ class ROM_ACT_TYPES(enum.Flag):
 	IS_CHANGER = BITFLAGS['DD'] #    
 	UNUSED9 = BITFLAGS['EE']
 
-class AFFECTED_BY(enum.Flag):
+class AFFECTED_BY(enum.IntFlag):
 	BLIND = BITFLAGS['A']
 	INVISIBLE = BITFLAGS['B']
 	EVIL = BITFLAGS['C']
@@ -137,7 +137,7 @@ class AFFECTED_BY(enum.Flag):
 	REGENERATION = BITFLAGS['CC']
 	SLOW = BITFLAGS['DD']
 
-class WEAR_FLAGS(enum.Flag):
+class WEAR_FLAGS(enum.IntFlag):
 	FINGER = BITFLAGS['B']
 	NECK = BITFLAGS['C']
 	BODY = BITFLAGS['D']
@@ -155,7 +155,7 @@ class WEAR_FLAGS(enum.Flag):
 	SAC = BITFLAGS['P']
 	FLOAT = BITFLAGS['Q']
 
-class OFFENSE(enum.Flag):
+class OFFENSE(enum.IntFlag):
 	AREA_ATTACK = BITFLAGS['A']
 	BACKSTAB = BITFLAGS['B']
 	BASH = BITFLAGS['C']
@@ -178,7 +178,7 @@ class OFFENSE(enum.Flag):
 	ASSIST_GUARD = BITFLAGS['T']
 	ASSIST_VNUM = BITFLAGS['U']
 
-class IMM_FLAGS(enum.Flag):
+class IMM_FLAGS(enum.IntFlag):
 	SUMMON = BITFLAGS['A']
 	CHARM = BITFLAGS['B']
 	MAGIC = BITFLAGS['C']
@@ -203,7 +203,7 @@ class IMM_FLAGS(enum.Flag):
 	SILVER = BITFLAGS['Y']
 	IRON = BITFLAGS['Z']
 
-class FORMS(enum.Flag):
+class FORMS(enum.IntFlag):
 	EDIBLE = BITFLAGS['A']
 	POISON = BITFLAGS['B']
 	MAGICAL = BITFLAGS['C']
@@ -237,7 +237,7 @@ class FORMS(enum.Flag):
 	UNUSED4 = BITFLAGS['DD']
 	UNUSED5 = BITFLAGS['EE']
 
-class PARTS(enum.Flag):
+class PARTS(enum.IntFlag):
 	HEAD = BITFLAGS['A']
 	ARMS = BITFLAGS['B']
 	LEGS = BITFLAGS['C']
@@ -285,7 +285,7 @@ class WEAR_LOCATIONS(enum.Enum):
 	FLOAT = 18
 	MAX = 19
 
-class ROM_ROOM_FLAGS(enum.Flag):
+class ROM_ROOM_FLAGS(enum.IntFlag):
 	DARK = BITFLAGS['A']
 	unused1 = enum.auto()
 	NO_MOB = BITFLAGS['C']
@@ -325,7 +325,7 @@ class EXIT_DIRECTIONS(enum.Enum):
 	UP = 4
 	DOWN = 5
 
-class EXIT_FLAGS(enum.Flag):
+class EXIT_FLAGS(enum.IntFlag):
 	ISDOOR = BITFLAGS['A']
 	CLOSED = BITFLAGS['B']
 	LOCKED = BITFLAGS['C']
@@ -351,7 +351,7 @@ class SECTOR_TYPES(enum.Enum):
 	DESERT = 10
 	MAX = 11
 
-class SMAUG_AFFECTED_BY(enum.Flag):
+class SMAUG_AFFECTED_BY(enum.IntFlag):
 	BLIND = 1
 	INVISIBLE = 2
 	DETECT_EVIL = 3
@@ -399,7 +399,10 @@ class SMAUG_AFFECTED_BY(enum.Flag):
 	GRAPPLE = 45
 	MAX = 46
 
-class WEAPON_TYPES(enum.Flag):
+
+SMAUG_TRAP_TYPES = enum.Enum('SMAUG_TRAP_TYPES', 'POISON_DART POISON_NEEDLE POISON_DAGGER POISON_ARROW BLINDNESS_GAS SLEEPING_GAS FLAME EXPLOSION ACID_SPRAY ELECTRIC_SHOCK BLADE SEX_CHANGE')
+
+class WEAPON_TYPES(enum.IntFlag):
 	FLAMING = BITFLAGS['A']
 	FROST = BITFLAGS['B']
 	VAMPIRIC = BITFLAGS['C']
