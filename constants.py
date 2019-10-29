@@ -60,12 +60,16 @@ class MERC_ACT_TYPES(enum.Flag):
 	IS_NPC= BITFLAGS['A'] # Auto set for mobs
 	SENTINEL_= BITFLAGS['B'] # Stays in one room
 	SCAVENGER_= BITFLAGS['C'] # Picks  up objects
+	UNUSED1 = BITFLAGS['D']
+	UNUSED2 = BITFLAGS['E']
 	AGGRESSIVE_= BITFLAGS['F'] # Attacks  PC s
 	STAY_AREA= BITFLAGS['G'] # Won't leave area
 	WIMPY = BITFLAGS['H'] 
 	PET = BITFLAGS['I'] # Auto set for pets
 	TRAIN = BITFLAGS['J'] # Can train PC s
 	_PRACTICE = BITFLAGS['K'] # Can practice PC s
+	UNUSED3 = BITFLAGS['L']
+	UNUSED4 = BITFLAGS['M']
 
 
 class ROM_ACT_TYPES(enum.Flag):
