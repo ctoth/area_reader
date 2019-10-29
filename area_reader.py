@@ -14,8 +14,14 @@ from operator import setitem
 
 from constants import *
 
-def field(type=None, read=True, on_read=None, original_type=None, *args, **kwargs):
-	metadata = dict(read=read, on_read=on_read, original_type=original_type)
+def field(type=None, read=True, on_read=None, original_type=None, only_if=None, *args, **kwargs):
+	metadata = dict(read=read)
+	if on_read:
+		metadata['on_read'] = on_read
+	if original_type:
+		metadata['original_type'] = original_type
+	if only_if:
+		metadata['only_if'] = only_if
 	return attr(type=type, metadata=metadata, *args, **kwargs)
 
 class ParseError(Exception): pass
@@ -45,9 +51,10 @@ class AreaFile(object):
 		self.current_section_name = "N/A"
 		self.readers = {
 			Word: self.read_word,
+			Letter: self.read_letter,
 			str: self.read_string,
 			int: self.read_number,
-			enum.Flag: self.read_flag,
+			enum.IntFlag: self.read_flag,
 			RomArmorClass: lambda: self.read_object_from_fields(RomArmorClass),
 		}
 
@@ -167,11 +174,20 @@ class AreaFile(object):
 	def read_object_by_fields(self, object_type, **kwargs):
 		f = fields(object_type)
 		read = {}
-		context = {}
 		for field in f:
-			reader = self.readers.get(field.metadata.get('original_type'), self.readers.get(field.type))
+			field_type = field.metadata.get('original_type', field.type)
+			if field.metadata.get('read') == False:
+				continue
+			if issubclass(field_type, enum.IntFlag):
+				field_type = enum.IntFlag
+			reader = self.readers.get(field_type)
 			if reader is None:
-				self.parse_fail("Could not find a reader for field type %r" % field.type)
+				self.parse_fail("Could not find a reader for field type %r" % field_type)
+			always_read = lambda context: True
+			only_if = field.metadata.get('only_if', always_read)
+			should_read = only_if(context=read)
+			if not should_read:
+				continue
 			on_read = field.metadata.get('on_read', lambda value: value)
 			read[field.name] = on_read(reader())
 		read.update(kwargs)
@@ -817,7 +833,7 @@ class MercReset(object):
 
 @attributes
 class MercMob(RomMob):
-	act = field(default=MERC_ACT_TYPES.IS_NPC.value, type=MERC_ACT_TYPES)
+	act = field(default=MERC_ACT_TYPES.IS_NPC.value, type=MERC_ACT_TYPES, converter=MERC_ACT_TYPES)
 
 	@classmethod
 	def read(cls, reader, vnum):
