@@ -174,6 +174,8 @@ class AreaFile(object):
 	def read_object_by_fields(self, object_type, **kwargs):
 		f = fields(object_type)
 		read = {}
+		always_read = lambda context: True
+		unchanged = lambda value: value
 		for field in f:
 			field_type = field.metadata.get('original_type', field.type)
 			if field.metadata.get('read') == False:
@@ -183,12 +185,11 @@ class AreaFile(object):
 			reader = self.readers.get(field_type)
 			if reader is None:
 				self.parse_fail("Could not find a reader for field type %r" % field_type)
-			always_read = lambda context: True
 			only_if = field.metadata.get('only_if', always_read)
 			should_read = only_if(context=read)
 			if not should_read:
 				continue
-			on_read = field.metadata.get('on_read', lambda value: value)
+			on_read = field.metadata.get('on_read', unchanged)
 			read[field.name] = on_read(reader())
 		read.update(kwargs)
 		return object_type(**read)
