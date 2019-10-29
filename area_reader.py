@@ -264,7 +264,7 @@ class AreaFile(object):
 	def load_resets(self):
 		for reset in self.read_flat_section(Reset):
 			self.area.resets.append(reset)
-			
+
 	def load_specials(self):
 		for special in self.read_flat_section(Special):
 			self.area.specials.append(special)
@@ -338,15 +338,8 @@ class RomAreaFile(AreaFile):
 
 @attributes
 class ExtraDescription(object):
-	keyword = attr(default='', type=Word)
-	description = attr(default='', type=str)
-
-	@classmethod
-	def read(cls, reader, **kwargs):
-		logger.debug("Reading extra description")
-		keyword = reader.read_string()
-		description = reader.read_string()
-		return cls(keyword=keyword, description=description, **kwargs)
+	keyword = field(default='', type=str)
+	description = field(default='', type=str)
 
 @attributes
 class MudBase(object):
@@ -456,7 +449,7 @@ class RomItem(Item):
 				af.bitvector = reader.read_flag()
 				affected.append(af)
 			elif letter == 'E':
-				extra_descriptions.append(ExtraDescription.read(reader=reader))
+				extra_descriptions.append(reader.read_object(ExtraDescription))
 			else:
 				reader.index -= 1
 				break
@@ -692,7 +685,7 @@ class Room(MudBase):
 			elif letter == 'D':
 				self.exits.append(Exit.read(reader=reader))
 			elif letter == 'E':
-				self.extra_descriptions.append(ExtraDescription.read(reader=reader))
+				self.extra_descriptions.append(reader.read_object(ExtraDescription))
 			elif letter == 'O':
 				self.owner = reader.read_string()
 			else:
@@ -770,7 +763,7 @@ class MercRoom(Room):
 			if letter == 'D':
 				cls.exits.append(Exit.read(reader=reader))
 			elif letter == 'E':
-				cls.extra_descriptions.append(ExtraDescription.read(reader=reader))
+				cls.extra_descriptions.append(reader.read_object(ExtraDescription))
 			else:
 				reader.parse_fail("cls %d has flag %s not DES" % (cls.vnum, letter))
 
@@ -890,7 +883,7 @@ class MercItem(Item):
 				aff.location = reader.read_number()
 				aff.modifier = reader.read_number()
 			elif letter == 'E':
-				extra_descriptions.append(ExtraDescription.read(reader=reader))
+				extra_descriptions.append(reader.read_object(ExtraDescription))
 			else:
 				reader.index -= 1
 				break
