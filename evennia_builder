@@ -1,0 +1,317 @@
+"""
+This file is intended to build viable batchcode files from the JSON output of
+area_reader.
+
+Use in cmd:
+    python area_builder.py <JSON file>.json
+
+NOTES:
+    Should be able to provide room, npc and object typeclasses to use instead
+    of the defaults.
+    Should be able to specify which values to draw and attach to different
+    typeclasses.
+    Should be able to set values for exit alias
+    -Make file name lower case.
+"""
+
+from sys import argv
+import json
+import os
+
+# Load JSON file.
+script, filename = argv
+with open(filename) as data_file:
+    data = json.load(data_file)
+
+# Prep Batchcode file.
+print "Creating Batchcode from " + filename
+filepath = os.getcwd()
+path = filepath + data["name"]
+batch = open(data["name"]+".py", 'w')
+
+########################
+# Generate documentation.
+########################
+batch.write("""\
+
+\"\"\"
+This is a Batchcode file to recreate the area of {0} based on the JSON file
+located at {1}.
+
+{0} has {2} rooms, {3} mobs and {4} objects.
+
+Batchcode is used through the superuser only command @batchcode. The command
+will look in batchcode folders (definable in settings.py) for the named file.
+
+Usage:
+    # If the bathcode is in your mygame/world folder:
+    @batchcode {5}
+
+\"\"\"
+
+""".format(data["name"],
+           filepath, len(data["rooms"]),
+           len(data["mobs"]),
+           len(data["objects"]),
+           data["name"],
+           path))
+
+########################
+# Generate imports.
+########################
+batch.write("""\
+from evennia import create_object
+from typeclasses import characters, exits, objects, rooms
+""")
+
+########################
+# Generate rooms. ref: "r<vnum>"
+########################
+batch.write("""\
+
+# Create rooms and store in ref_dict for obj to reference later.
+ref_dict = {}
+
+""")
+
+for key in sorted(data["rooms"]):
+    # Room creation and set description.
+    batch.write("""\
+# Create {0}
+ref_dict["{1}"] = create_object(rooms.Room,
+                                  key="{0}")
+ref_dict["{1}"].db.desc = \"\"\"\\
+{2}
+\"\"\"
+ref_dict["{1}"].db.details = {{}}
+""".format(data["rooms"][key]["name"],
+           "r"+key,
+           data["rooms"][key]["description"]))
+
+    # Set extra_descriptions.
+    for detail in data["rooms"][key]["extra_descriptions"]:
+        batch.write("""\
+ref_dict["{0}"].db.details["{1}"] = \"\"\"\\
+{2}
+\"\"\"
+""".format("r"+key,
+           detail["keyword"],
+           detail["description"]))
+
+    # Remove specifically handled entries and save rest as attributes.
+    room = data["rooms"][key].copy()
+    room.pop("vnum", None)
+    room.pop("name", None)
+    room.pop("description", None)
+    room.pop("extra_descriptions", None)
+    room.pop("exits", None)
+    for entry in sorted(room):
+        batch.write("""\
+ref_dict["{0}"].db.{1} = {2}
+""".format("r"+key,
+           entry,
+           room[entry]))
+    batch.write("\n")
+
+########################
+# Generate room exits.
+########################
+batch.write("""\
+
+# Create room exits. Done after room creation so rooms available for reference.
+
+""")
+
+exits = ["North", "East", "South", "West", "Up", "Down"]
+aliases = {
+    "North": ["n"],
+    "East": ["e"],
+    "South": ["s"],
+    "West": ["w"],
+    "Up": ["u"],
+    "Down": ["d"],
+}
+for key in sorted(data["rooms"]):
+    batch.write("# Create exits in {0}\n".format(data["rooms"][key]["name"]))
+
+    for exitobj in data["rooms"][key]["exits"]:
+        batch.write("""\
+temp = create_object(exits.Exit,
+                     key="{0}",
+                     aliases={1},
+                     location=ref_dict["{2}"] if "{2}" in ref_dict else None,
+                     destination=ref_dict["{3}"] if "{3}" in ref_dict else None)
+temp.db.desc = \"\"\"\\
+{4}
+\"\"\"
+""".format(exits[exitobj["door"]],
+           aliases[exits[exitobj["door"]]],
+           "r"+key,
+           "r"+str(exitobj["destination"]),
+           exitobj["description"]))
+    batch.write("\n")
+
+########################
+# Generate Mobs. ref: "m<vnum>"
+########################
+batch.write("""\
+
+# Create mobs and store in ref_dict for obj to reference later.
+
+""")
+
+for key in sorted(data["mobs"]):
+    # Mob creation and set description.
+    batch.write("""\
+# Create {0}
+ref_dict["{1}"] = create_object(objects.Object,
+                                  key="{0}")
+ref_dict["{1}"].db.desc = \"\"\"\\
+{2}
+\"\"\"
+ref_dict["{1}"].db.details = {{}}
+""".format(data["mobs"][key]["short_desc"].split(' ', 1)[1] if
+           data["mobs"][key]["short_desc"].split()[0] in ["the", "an"] else
+           data["mobs"][key]["short_desc"],
+           "m" + key,
+           data["mobs"][key]["description"]))
+
+    # Set extra_descriptions.
+    for detail in data["mobs"][key]["extra_descriptions"]:
+        batch.write("""\
+ref_dict["{0}"].db.details["{1}"] = \"\"\"\\
+{2}
+\"\"\"
+""".format("m"+key,
+           detail["keyword"],
+           detail["description"]))
+
+    # Remove specifically handled entries and save rest as attributes.
+    mob = data["mobs"][key].copy()
+    mob.pop("vnum", None)
+    mob.pop("name", None)
+    mob.pop("description", None)
+    mob.pop("extra_descriptions", None)
+    for entry in sorted(mob):
+        batch.write("""\
+ref_dict["{0}"].db.{1} = {2}
+""".format("m"+key,
+           entry,
+           json.dumps(mob[entry]) if mob[entry] else mob[entry]))
+    batch.write("\n")
+
+########################
+# Generate Objects. ref: "o<vnum>"
+########################
+batch.write("""\
+
+# Create objects and store in ref_dict for obj to reference later.
+
+""")
+
+for key in sorted(data["objects"]):
+    # Object creation and set description.
+    batch.write("""\
+# Create {0}
+ref_dict["{1}"] = create_object(objects.Object,
+                                  key="{0}")
+ref_dict["{1}"].db.desc = \"\"\"\\
+{2}
+\"\"\"
+ref_dict["{1}"].db.details = {{}}
+""".format(data["objects"][key]["short_desc"].split(' ', 1)[1] if
+           data["objects"][key]["short_desc"].split()[0] in ["a", "an"] else
+           data["objects"][key]["short_desc"],
+           "o" + key,
+           data["objects"][key]["description"]))
+
+    # Set extra_descriptions.
+    for detail in data["objects"][key]["extra_descriptions"]:
+        batch.write("""\
+ref_dict["{0}"].db.details["{1}"] = \"\"\"\\
+{2}
+\"\"\"
+""".format("o"+key,
+           detail["keyword"],
+           detail["description"]))
+
+    # Remove specifically handled entries and save rest as attributes.
+    obj = data["objects"][key].copy()
+    obj.pop("vnum", None)
+    obj.pop("name", None)
+    obj.pop("description", None)
+    obj.pop("extra_descriptions", None)
+    for entry in sorted(obj):
+        batch.write("""\
+ref_dict["{0}"].db.{1} = {2}
+""".format("o"+key,
+           entry,
+           json.dumps(obj[entry])))
+    batch.write("\n")
+########################
+# Execute reset.
+########################
+batch.write("""\
+
+# Execute reset information.
+
+""")
+
+for key in sorted(data["resets"]):
+
+    # Place mob in room.
+    if key["command"] == "M":
+        batch.write("""\
+if "{0}" in ref_dict:
+    ref_dict["{0}"].location = ref_dict["{1}"] if "{1}" in ref_dict else None
+
+""".format("m"+str(key["arg1"]),
+           "r" + str(key["arg3"])))
+
+    # Place object in room
+    if key["command"] == "O":
+        batch.write("""\
+if "{0}" in ref_dict:
+    ref_dict["{0}"].location = ref_dict["{1}"] if "{1}" in ref_dict else None
+
+""".format("o" + str(key["arg1"]),
+           "r" + str(key["arg3"])))
+
+    # Place object in object.
+    if key["command"] == "P":
+        batch.write("""\
+if "{0}" in ref_dict:
+    ref_dict["{0}"].location = ref_dict["{1}"] if "{1}" in ref_dict else None
+
+""".format("o" + str(key["arg1"]),
+           "o" + str(key["arg3"])))
+
+#     # Give object to mob
+#     if key["command"] == "G":
+#         batch.write("""\
+# ref_dict["{0}"].db.location = ref_dict["{1}"]
+#
+# """.format("o" + str(key["arg1"]),
+#            "m" + str(key["arg3"])))
+
+#     # Equip mob
+#     if key["command"] == "E":
+#         batch.write("""\
+# ref_dict["{0}"].db.location = ref_dict["{1}"]
+#
+# """.format("o" + str(key["arg1"]),
+#            "m" + str(key["arg3"])))
+
+    # # Lock doors.
+    # if key["command"] == "D":
+    #     batch.write("D")
+    #
+    # # Mix up exit locations.
+    # if key["command"] == "R":
+    #     batch.write("R")
+    #
+    # if key["command"] == "S":
+    #     batch.write("S")
+
+print "Batchcode " + data["name"] + ".py Completed!"
+batch.close()
