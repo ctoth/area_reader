@@ -493,13 +493,16 @@ class RomMobprog(object):
 	trig_phrase = attr(default=None, type=str)
 
 @attributes
-class RomCharacter(RomItem):
+class RomCharacter(MudBase):
+	short_desc = field(default='', type=str)
 	long_desc = attr(default="", type=str)
+	level = field(default=0, type=int)
 	race = attr(default="", type=str)
 	group = attr(default=0, type=int)
 	hitroll = attr(default=0, type=int)
 	hit = attr(default=Factory(Dice), type=Dice)
 	mana = attr(default=Factory(Dice), type=Dice)
+	material = field(default='', type=str)
 	damage = attr(default=Factory(Dice), type=Dice)
 	damtype = attr(default='', type=Word)
 	ac = attr(default=Factory(RomArmorClass), type=RomArmorClass)
@@ -509,7 +512,7 @@ class RomCharacter(RomItem):
 mark_as_npc = lambda act_flags: ROM_ACT_TYPES(act_flags) | ROM_ACT_TYPES.IS_NPC
 
 @attributes
-class RomMob(RomCharacter, RomItem):
+class RomMob(RomCharacter):
 	shop = field(default=None, read=False)
 	act = field(default=0, type=ROM_ACT_TYPES, converter=ROM_ACT_TYPES)
 	alignment = field(default=0, type=int)
@@ -938,11 +941,8 @@ class SmaugAreaFile(RomAreaFile):
 	def read_line(self):
 		return self.read_to_eol()
 
+
 if __name__ == '__main__':
 	area_file = RomAreaFile('test/rom/sewer.are')
 	area_file.load_sections()
 	area = area_file.area
-	import pprint
-	import cattrs
-	res = cattrs.unstructure(area)
-

@@ -203,6 +203,7 @@ class IMM_FLAGS(enum.IntFlag):
 	WOOD = BITFLAGS['X']
 	SILVER = BITFLAGS['Y']
 	IRON = BITFLAGS['Z']
+	NONE = 0
 
 class FORMS(enum.IntFlag):
 	EDIBLE = BITFLAGS['A']
@@ -217,7 +218,6 @@ class FORMS(enum.IntFlag):
 	CONSTRUCT = BITFLAGS['J']
 	MIST = BITFLAGS['K']
 	INTANGIBLE = BITFLAGS['L']
-
 	BIPED = BITFLAGS['M']
 	CENTAUR = BITFLAGS['N']
 	INSECT = BITFLAGS['O']
@@ -237,6 +237,7 @@ class FORMS(enum.IntFlag):
 	COLD_BLOOD = BITFLAGS['CC']
 	UNUSED4 = BITFLAGS['DD']
 	UNUSED5 = BITFLAGS['EE']
+	NONE = 0
 
 class PARTS(enum.IntFlag):
 	HEAD = BITFLAGS['A']
@@ -262,6 +263,7 @@ class PARTS(enum.IntFlag):
 	HORNS = BITFLAGS['W']
 	SCALES = BITFLAGS['X']
 	TUSKS = BITFLAGS['Y']
+	NONE = 0
 
 class WEAR_LOCATIONS(enum.Enum):
 	NONE = -1
@@ -327,6 +329,7 @@ class EXIT_DIRECTIONS(enum.Enum):
 	DOWN = 5
 
 class EXIT_FLAGS(enum.IntFlag):
+	NONE = 0
 	ISDOOR = BITFLAGS['A']
 	CLOSED = BITFLAGS['B']
 	LOCKED = BITFLAGS['C']
