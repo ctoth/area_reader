@@ -8,8 +8,10 @@ import io
 import json
 import random
 import os
+import sys
 from typing import List, Dict, Optional
-from attr import asdict, attr, attributes, Factory, fields
+from attr import attr, attributes, Factory, fields
+import cattrs
 from operator import setitem
 
 from constants import *
@@ -310,13 +312,15 @@ class AreaFile(object):
 		return self.data[self.index-window:self.index+window]
 
 	def as_dict(self):
-		return asdict(self.area, dict_factory=OrderedDict)
+		return EnumNameConverter().unstructure(self.area)
+
+	def as_json(self, indent=None):
+		return json.dumps(self.as_dict(), indent=indent)
 
 	def save_as_json(self):
 		fname = os.path.splitext(self.filename)[0] + '.json'
 		with open(fname, 'w') as f:
 			json.dump(self.as_dict(), f, indent=2)
-
 
 class RomAreaFile(AreaFile):
 
@@ -941,8 +945,18 @@ class SmaugAreaFile(RomAreaFile):
 	def read_line(self):
 		return self.read_to_eol()
 
+class EnumNameConverter(cattrs.Converter):
+	def _unstructure_enum(self, obj):
+		return obj.__class__.__name__ + "." + obj.name
+
+
+def print_area(area_file_path, area_type=RomAreaFile):
+	area_file = area_type(area_file_path)
+	area_file.load_sections()
+	print(area_file.as_json())
 
 if __name__ == '__main__':
-	area_file = RomAreaFile('test/rom/sewer.are')
-	area_file.load_sections()
-	area = area_file.area
+	if len(sys.argv) < 2:
+		print("Must supply an area")
+		sys.exit(1)
+	print_area(sys.argv[1])
