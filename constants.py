@@ -138,6 +138,7 @@ class AFFECTED_BY(enum.IntFlag):
 	SLOW = BITFLAGS['DD']
 
 class WEAR_FLAGS(enum.IntFlag):
+	TAKE = BITFLAGS['A']
 	FINGER = BITFLAGS['B']
 	NECK = BITFLAGS['C']
 	BODY = BITFLAGS['D']
@@ -307,7 +308,7 @@ class ROM_ROOM_FLAGS(enum.IntFlag):
 	LAW = BITFLAGS['S']
 	NOWHERE = BITFLAGS['T']
 
-class MERC_ROOM_FLAGS(enum.Enum):
+class MERC_ROOM_FLAGS(enum.IntFlag):
 	DARK = 1
 	NO_MOB = 4
 	INDOORS = 8
@@ -316,7 +317,7 @@ class MERC_ROOM_FLAGS(enum.Enum):
 	SOLITARY = 2048
 	PETSHOP = 4096
 	NO_RECALL = 8192
-	
+
 class EXIT_DIRECTIONS(enum.Enum):
 	NORTH = 0
 	EAST = 1

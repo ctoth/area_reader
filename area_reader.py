@@ -353,7 +353,7 @@ class Item(MudBase):
 	short_desc = field(default='', type=str)
 	item_type = field(default=-1, type=int)
 	extra_flags = field(default=0, type=int)
-	wear_flags = field(default=0, type=WEAR_LOCATIONS)
+	wear_flags = field(default=0, type=WEAR_FLAGS, converter=WEAR_FLAGS)
 	cost = field(default=0, type=int)
 	level = field(default=0, type=int)
 	weight = field(default=0, type=int)
@@ -621,7 +621,7 @@ class Help(object):
 class Exit(object):
 	keyword = attr(default='', type=Word)
 	description = attr(default="", type=str)
-	door = attr(default=None, type=EXIT_DIRECTIONS)
+	door = attr(default=None, type=EXIT_DIRECTIONS, converter=EXIT_DIRECTIONS)
 	exit_info = attr(default=0, type=EXIT_FLAGS, converter=EXIT_FLAGS)
 	rs_flags = attr(default=0, type=int)
 	key = attr(default=0, type=int)
@@ -654,7 +654,7 @@ class Room(MudBase):
 	area = attr(default=None)
 	area_number = attr(default=0, type=int)
 	room_flags = attr(default=0, type=ROM_ROOM_FLAGS, converter=ROM_ROOM_FLAGS)
-	sector_type = attr(default=0, type=SECTOR_TYPES) #FIXME
+	sector_type = attr(default=0, type=SECTOR_TYPES, converter=SECTOR_TYPES) #FIXME
 	heal_rate = attr(default=100, type=int)
 	mana_rate = attr(default=100, type=int)
 	exits = attr(default=Factory(list), type=List[Exit])
@@ -937,10 +937,10 @@ class SmaugAreaFile(RomAreaFile):
 		return self.read_to_eol()
 
 if __name__ == '__main__':
-	area_file = RomAreaFile('under2.are')
+	area_file = RomAreaFile('midgaard.are')
 	area_file.load_sections()
 	area = area_file.area
 	import pprint
-	from attr import asdict
-#	pprint.pprint(asdict(area))
+	import cattrs
+	res = cattrs.unstructure(area)
 
