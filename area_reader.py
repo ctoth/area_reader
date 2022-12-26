@@ -667,6 +667,8 @@ class Room(MudBase):
 		area_number = reader.read_number()
 		room_flags = reader.read_flag()
 		sector_type = reader.read_number()
+		if sector_type == -1:
+			sector_type = 0
 		room = cls(vnum=vnum, name=name, description=description, area_number=area_number, room_flags=room_flags, sector_type=sector_type)
 		room.read_metadata(reader)
 		return room
@@ -937,7 +939,7 @@ class SmaugAreaFile(RomAreaFile):
 		return self.read_to_eol()
 
 if __name__ == '__main__':
-	area_file = RomAreaFile('midgaard.are')
+	area_file = RomAreaFile('test/rom/sewer.are')
 	area_file.load_sections()
 	area = area_file.area
 	import pprint
