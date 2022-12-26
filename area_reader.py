@@ -1,3 +1,4 @@
+#! /usr/bin/env python3
 import logging
 logger = logging.getLogger('area_reader')
 logging.basicConfig(level=logging.INFO)
