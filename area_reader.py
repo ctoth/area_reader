@@ -12,7 +12,7 @@ import os
 import sys
 from typing import List, Dict, Optional
 from attr import attr, attributes, Factory, fields
-import cattrs
+from cattr import converters
 from operator import setitem
 
 from constants import *
@@ -946,7 +946,7 @@ class SmaugAreaFile(RomAreaFile):
 	def read_line(self):
 		return self.read_to_eol()
 
-class EnumNameConverter(cattrs.Converter):
+class EnumNameConverter(converters.Converter):
 	def _unstructure_enum(self, obj):
 		return obj.__class__.__name__ + "." + obj.name
 
