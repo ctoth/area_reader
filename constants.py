@@ -106,6 +106,7 @@ class ROM_ACT_TYPES(enum.IntFlag):
 	UNUSED9 = BITFLAGS['EE']
 
 class AFFECTED_BY(enum.IntFlag):
+	NONE = 0
 	BLIND = BITFLAGS['A']
 	INVISIBLE = BITFLAGS['B']
 	EVIL = BITFLAGS['C']
@@ -138,6 +139,7 @@ class AFFECTED_BY(enum.IntFlag):
 	SLOW = BITFLAGS['DD']
 
 class WEAR_FLAGS(enum.IntFlag):
+	NONE = 0
 	TAKE = BITFLAGS['A']
 	FINGER = BITFLAGS['B']
 	NECK = BITFLAGS['C']
@@ -157,6 +159,7 @@ class WEAR_FLAGS(enum.IntFlag):
 	FLOAT = BITFLAGS['Q']
 
 class OFFENSE(enum.IntFlag):
+	NONE = 0
 	AREA_ATTACK = BITFLAGS['A']
 	BACKSTAB = BITFLAGS['B']
 	BASH = BITFLAGS['C']
@@ -180,6 +183,7 @@ class OFFENSE(enum.IntFlag):
 	ASSIST_VNUM = BITFLAGS['U']
 
 class IMM_FLAGS(enum.IntFlag):
+	NONE = 0
 	SUMMON = BITFLAGS['A']
 	CHARM = BITFLAGS['B']
 	MAGIC = BITFLAGS['C']
@@ -203,9 +207,9 @@ class IMM_FLAGS(enum.IntFlag):
 	WOOD = BITFLAGS['X']
 	SILVER = BITFLAGS['Y']
 	IRON = BITFLAGS['Z']
-	NONE = 0
 
 class FORMS(enum.IntFlag):
+	NONE = 0
 	EDIBLE = BITFLAGS['A']
 	POISON = BITFLAGS['B']
 	MAGICAL = BITFLAGS['C']
@@ -237,9 +241,9 @@ class FORMS(enum.IntFlag):
 	COLD_BLOOD = BITFLAGS['CC']
 	UNUSED4 = BITFLAGS['DD']
 	UNUSED5 = BITFLAGS['EE']
-	NONE = 0
 
 class PARTS(enum.IntFlag):
+	NONE = 0
 	HEAD = BITFLAGS['A']
 	ARMS = BITFLAGS['B']
 	LEGS = BITFLAGS['C']
@@ -263,7 +267,6 @@ class PARTS(enum.IntFlag):
 	HORNS = BITFLAGS['W']
 	SCALES = BITFLAGS['X']
 	TUSKS = BITFLAGS['Y']
-	NONE = 0
 
 class WEAR_LOCATIONS(enum.Enum):
 	NONE = -1
@@ -289,6 +292,7 @@ class WEAR_LOCATIONS(enum.Enum):
 	MAX = 19
 
 class ROM_ROOM_FLAGS(enum.IntFlag):
+	NONE = 0
 	DARK = BITFLAGS['A']
 	unused1 = enum.auto()
 	NO_MOB = BITFLAGS['C']

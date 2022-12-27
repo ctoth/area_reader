@@ -12,7 +12,7 @@ import os
 import sys
 from typing import List, Dict, Optional
 from attr import attr, attributes, Factory, fields
-from cattr import converters
+from cattrs import converters
 from operator import setitem
 
 from constants import *
