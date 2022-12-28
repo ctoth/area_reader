@@ -316,7 +316,7 @@ class AreaFile(object):
 	def as_dict(self):
 		return EnumNameConverter().unstructure(self.area)
 
-	def as_json(self, indent=2):
+	def as_json(self, indent=None):
 		return json.dumps(self.as_dict(), indent=indent)
 
 	def save_as_json(self):
