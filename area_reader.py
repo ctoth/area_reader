@@ -1,4 +1,5 @@
-#! /usr/bin/env python3
+#! /usr/bin/env python3.10
+
 import logging
 logger = logging.getLogger('area_reader')
 logging.basicConfig(level=logging.INFO)
@@ -315,7 +316,7 @@ class AreaFile(object):
 	def as_dict(self):
 		return EnumNameConverter().unstructure(self.area)
 
-	def as_json(self, indent=None):
+	def as_json(self, indent=2):
 		return json.dumps(self.as_dict(), indent=indent)
 
 	def save_as_json(self):
