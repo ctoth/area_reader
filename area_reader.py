@@ -97,8 +97,13 @@ class AreaFile(object):
 		sign = False
 		while self.current_char.isspace():
 			self.advance()
+		# Handle +, -, or +- (plus followed by minus)
 		if self.current_char == '+':
 			self.advance()
+			# Check for +- pattern (negative number after plus)
+			if self.current_char == '-':
+				sign = True
+				self.advance()
 		elif self.current_char == '-':
 			sign = True
 			self.advance()
@@ -186,6 +191,9 @@ class AreaFile(object):
 				continue
 			if issubclass(field_type, enum.IntFlag):
 				field_type = enum.IntFlag
+			elif issubclass(field_type, int) and field_type is not int:
+				# Handle int subclasses like VNum
+				field_type = int
 			reader = self.readers.get(field_type)
 			if reader is None:
 				self.parse_fail("Could not find a reader for field type %r" % field_type)
@@ -224,6 +232,7 @@ class AreaFile(object):
 	def load_sections(self):
 		readers = {
 			'area': self.read_area_metadata,
+			'areadata': self.load_areadata,
 			'mobiles': self.load_mobiles,
 			'rooms': self.load_rooms,
 			'objects': self.load_objects,
@@ -232,6 +241,10 @@ class AreaFile(object):
 			'shops': self.load_shops,
 			'specials': self.load_specials,
 			'economy': self.load_economy,
+			'resetmsg': self.load_resetmsg,
+			'author': self.load_author,
+			'ranges': self.load_ranges,
+			'flags': self.load_flags,
 		}
 		while True:
 			section_name = self.read_section_name()
@@ -247,6 +260,33 @@ class AreaFile(object):
 					readers[section_name]()
 				except Exception:
 					self.parse_fail("Error reading section %r" % section_name)
+
+	def load_areadata(self):
+		"""Default: skip areadata if not implemented."""
+		self.skip_section('areadata')
+
+	def load_resetmsg(self):
+		"""Default: skip resetmsg if not implemented."""
+		self.read_string()
+
+	def load_author(self):
+		"""Default: skip author if not implemented."""
+		self.read_string()
+
+	def load_ranges(self):
+		"""Default: skip ranges if not implemented."""
+		while True:
+			self.skip_whitespace()
+			if self.current_char == '$':
+				self.advance()
+				break
+			elif self.current_char == '#':
+				break
+			self.read_to_eol()
+
+	def load_flags(self):
+		"""Default: skip flags if not implemented."""
+		self.read_number()
 
 	def skip_section(self, section_name):
 		logger.debug("Skipping section %s", section_name)
@@ -720,12 +760,14 @@ class Reset(object):
 		arg2 = reader.read_number()
 		if letter == 'G' or letter == 'R':
 			arg3 = 0
-		else:
-			arg3 = reader.read_number()
-		if letter == 'P' or letter == 'M':
 			arg4 = 0
 		else:
-			arg4 = reader.read_number()
+			arg3 = reader.read_number()
+			# M and P resets have a 4th argument (room_limit for M, container_limit for P)
+			if letter == 'M' or letter == 'P':
+				arg4 = reader.read_number()
+			else:
+				arg4 = 0
 		reader.index -= 1
 		comment = reader.read_to_eol()
 		return cls(command=command, arg1=arg1, arg2=arg2, arg3=arg3, arg4=arg4, comment=comment)
@@ -791,6 +833,81 @@ class RomShop(object):
 class SmaugMob(RomMob):
 	affected_by = attr(default=0, type=SMAUG_AFFECTED_BY, converter=SMAUG_AFFECTED_BY)
 
+
+@attributes
+class RotMob(RomMob):
+	"""ROT (Realms of Thera) mob format - has 5 values after race instead of 4."""
+	extra_flag = attr(default=0, type=int)
+
+	@classmethod
+	def read(cls, reader, vnum, **kwargs):
+		logger.debug("Reading ROT mob %d" % vnum)
+		name = reader.read_string()
+		short_desc = reader.read_string()
+		long_desc = reader.read_string()
+		description = reader.read_string()
+		race = reader.read_string()
+		# ROT format: act affected extra_flag alignment group (5 values)
+		act = ROM_ACT_TYPES(reader.read_flag()) | ROM_ACT_TYPES.IS_NPC
+		affected_by = reader.read_flag()
+		extra_flag = reader.read_flag()  # Extra flag field in ROT
+		alignment = reader.read_number()
+		group = reader.read_number()
+		level = reader.read_number()
+		hitroll = reader.read_number()
+		hit = Dice.read(reader=reader)
+		mana = Dice.read(reader=reader)
+		damage = Dice.read(reader=reader)
+		damtype = reader.read_word()
+		ac = reader.read_object(RomArmorClass)
+		# ROT uses letter flags for off/imm/res/vuln
+		off_flags = reader.read_flag()
+		imm_flags = reader.read_flag()
+		res_flags = reader.read_flag()
+		vuln_flags = reader.read_flag()
+		start_pos = reader.read_word()
+		default_pos = reader.read_word()
+		sex = reader.read_word()
+		wealth = int(reader.read_number() / 20)
+		form = reader.read_flag()
+		parts = reader.read_flag()
+		size = reader.read_word()
+		material = reader.read_word()
+		mprogs = []
+		while True:
+			letter = reader.read_letter()
+			if letter == 'F':
+				word = reader.read_word()
+				vector = reader.read_flag()
+				if word.startswith('act'):
+					act = remove_bit(act, vector)
+				elif word.startswith('aff'):
+					affected_by = remove_bit(affected_by, vector)
+				elif word.startswith('off'):
+					off_flags = remove_bit(off_flags, vector)
+				elif word.startswith('imm'):
+					imm_flags = remove_bit(imm_flags, vector)
+				elif word.startswith('res'):
+					res_flags = remove_bit(res_flags, vector)
+				elif word.startswith('vul'):
+					vuln_flags = remove_bit(vuln_flags, vector)
+				elif word.startswith('for'):
+					form = remove_bit(form, vector)
+				elif word.startswith('par'):
+					parts = remove_bit(parts, vector)
+			elif letter == 'M':
+				mprogs.append(reader.read_object_by_fields(RomMobprog))
+			else:
+				reader.index -= 1
+				break
+		return cls(vnum=vnum, name=name, short_desc=short_desc, long_desc=long_desc, description=description,
+				  race=race, act=act, affected_by=affected_by, extra_flag=extra_flag, alignment=alignment,
+				  group=group, level=level, hitroll=hitroll, hit=hit, mana=mana, damage=damage, damtype=damtype,
+				  ac=ac, off_flags=off_flags, imm_flags=imm_flags, res_flags=res_flags, vuln_flags=vuln_flags,
+				  start_pos=start_pos, default_pos=default_pos, sex=sex, wealth=wealth, form=form, parts=parts,
+				  size=size, material=material, mprogs=mprogs)
+
+
 @attributes
 class SmaugArea(RomArea):
 	resetmsg = attr(default='', type=str)
@@ -825,13 +942,16 @@ class MercReset(object):
 		arg2 = reader.read_number()
 		if letter == 'G' or letter == 'R':
 			arg3 = 0
+			arg4 = 0
+			arg5 = 0
 		else:
 			arg3 = reader.read_number()
-		if letter == 'P' or letter == 'M':
-			arg4 = 0
-		else:
-			arg4 = reader.read_number()
-		arg5 = reader.read_number()
+			# M and P resets have a 4th argument
+			if letter == 'M' or letter == 'P':
+				arg4 = reader.read_number()
+			else:
+				arg4 = 0
+			arg5 = 0
 		reader.index -= 1
 		comment = reader.read_to_eol()
 		return cls(command=command, arg1=arg1, arg2=arg2, arg3=arg3, arg4=arg4, arg5=arg5, comment=comment)
@@ -839,6 +959,7 @@ class MercReset(object):
 @attributes
 class MercMob(RomMob):
 	act = field(default=MERC_ACT_TYPES.IS_NPC.value, type=MERC_ACT_TYPES, converter=MERC_ACT_TYPES)
+	ac = attr(default=0, type=int)  # Merc uses single int AC, not 4-value RomArmorClass
 
 	@classmethod
 	def read(cls, reader, vnum):
@@ -918,6 +1039,15 @@ class MercAreaFile(AreaFile):
 	def read_area_metadata(self):
 		self.area.metadata = self.read_string()
 
+
+class RotAreaFile(RomAreaFile):
+	"""ROT (Realms of Thera) format - uses 5-value mob header."""
+
+	def load_mobiles(self):
+		for mob in self.load_vnum_section(RotMob):
+			setitem(self.area.mobs, mob.vnum, mob)
+
+
 class SmaugAreaFile(RomAreaFile):
 	area_type = SmaugArea
 
@@ -931,6 +1061,107 @@ class SmaugAreaFile(RomAreaFile):
 	def load_economy(self):
 		self.area.high_economy = self.read_number()
 		self.area.low_economy = self.read_number()
+
+	def read_area_metadata(self):
+		"""Read #AREA section - detect ROM style vs SMAUG-WD style."""
+		# Read first string
+		first_str = self.read_string()
+
+		# Check if next char is a letter (SMAUG-WD key-value format)
+		# or another string/number (ROM format)
+		self.skip_whitespace()
+		next_char = self.current_char
+
+		if next_char.isupper() and self.data[self.index+1].isspace():
+			# SMAUG-WD format: name~ followed by key-value pairs
+			self.area.name = first_str
+			self._read_smaug_wd_area_keys()
+		else:
+			# ROM format: filename~ name~ metadata~ first_vnum last_vnum
+			self.area.original_filename = first_str
+			self.area.name = self.read_string()
+			self.area.metadata = self.read_string()
+			self.area.first_vnum = self.read_number()
+			self.area.last_vnum = self.read_number()
+
+	def _read_smaug_wd_area_keys(self):
+		"""Read SMAUG-WD style key-value pairs after area name."""
+		while True:
+			self.skip_whitespace()
+			if self.current_char == '#':
+				break  # Next section
+			if self.current_char == '$':
+				break  # End of file
+
+			key = self.read_letter()
+			if key == '\n' or key == '\r':
+				continue
+
+			# Read value based on key
+			if key in ('K', 'L', 'U', 'O', 'R', 'W'):
+				# String value
+				self.read_string()
+			elif key in ('N', 'X', 'F', 'S'):
+				# Number value
+				self.read_number()
+			elif key == 'I' or key == 'V':
+				# Two numbers (level range or vnum range)
+				n1 = self.read_number()
+				n2 = self.read_number()
+				if key == 'V':
+					self.area.first_vnum = n1
+					self.area.last_vnum = n2
+			else:
+				# Unknown key, skip to end of line
+				self.read_to_eol()
+
+	def load_areadata(self):
+		"""Parse SMAUG #AREADATA key-value format."""
+		while True:
+			self.skip_whitespace()
+			word = self.read_word()
+			word_lower = word.lower()
+			if word_lower == 'end':
+				break
+			elif word_lower == 'name':
+				self.area.name = self.read_string()
+			elif word_lower == 'builders' or word_lower == 'author':
+				self.area.metadata = self.read_string()
+			elif word_lower == 'vnums':
+				self.area.first_vnum = self.read_number()
+				self.area.last_vnum = self.read_number()
+			elif word_lower == 'credits':
+				credits = self.read_string()
+				if credits and credits != '(null)':
+					self.area.metadata = credits
+			elif word_lower == 'security':
+				self.read_number()  # Discard
+			elif word_lower == 'flags':
+				self.read_number()  # Discard
+			elif word_lower == 'resetmsg':
+				self.area.resetmsg = self.read_string()
+			elif word_lower == 'resetfreq':
+				self.read_number()  # Discard
+			else:
+				# Skip unknown key-value pairs
+				self.read_to_eol()
+
+	def load_author(self):
+		self.area.metadata = self.read_string()
+
+	def load_ranges(self):
+		# Skip ranges section - read until $ or next section
+		while True:
+			self.skip_whitespace()
+			if self.current_char == '$':
+				self.advance()
+				break
+			elif self.current_char == '#':
+				break
+			self.read_to_eol()
+
+	def load_flags(self):
+		self.read_number()  # Discard area flags
 
 	def load_room(self, vnum):
 		logger.debug("Reading room %d" % vnum)
@@ -947,9 +1178,398 @@ class SmaugAreaFile(RomAreaFile):
 	def read_line(self):
 		return self.read_to_eol()
 
+@attributes
+class SmaugWdMob(object):
+	"""SMAUG-WD format mob - simpler than ROM."""
+	vnum = attr(default=0)
+	name = attr(default='')
+	short_desc = attr(default='')
+	long_desc = attr(default='')
+	description = attr(default='')
+	act = attr(default=0, type=int)
+	affected_by = attr(default=0, type=int)
+	alignment = attr(default=0, type=int)
+	mob_type = attr(default='S')
+	level = attr(default=1, type=int)
+	hitroll = attr(default=0, type=int)
+	ac = attr(default=Factory(list), type=list)  # 3 AC values
+	# Extended data from ! line
+	extended = attr(default=Factory(list), type=list)
+
+	@classmethod
+	def read(cls, reader, vnum, **kwargs):
+		logger.debug("Reading SMAUG-WD mob %d" % vnum)
+		name = reader.read_string()
+		short_desc = reader.read_string()
+		long_desc = reader.read_string()
+		description = reader.read_string()
+		# act affected alignment mob_type
+		act = reader.read_number()
+		affected_by = reader.read_number()
+		alignment = reader.read_number()
+		mob_type = reader.read_letter()
+		# level hitroll
+		level = reader.read_number()
+		hitroll = reader.read_number()
+		# 3 AC values
+		ac = [reader.read_number(), reader.read_number(), reader.read_number()]
+		# Extended data line starting with !
+		extended = []
+		reader.skip_whitespace()
+		if reader.current_char == '!':
+			reader.advance()
+			# Read extended values until newline or next section
+			while True:
+				reader.skip_whitespace()
+				if reader.current_char in ('\n', '\r', '#'):
+					break
+				try:
+					extended.append(reader.read_number())
+				except:
+					break
+		return cls(vnum=vnum, name=name, short_desc=short_desc, long_desc=long_desc,
+				  description=description, act=act, affected_by=affected_by,
+				  alignment=alignment, mob_type=mob_type, level=level, hitroll=hitroll,
+				  ac=ac, extended=extended)
+
+
+@attributes
+class SmaugWdItem(object):
+	"""SMAUG-WD format item."""
+	vnum = attr(default=0)
+	name = attr(default='')
+	short_desc = attr(default='')
+	description = attr(default='')
+	item_type = attr(default=0, type=int)
+	extra_flags = attr(default=0, type=int)
+	wear_flags = attr(default=0, type=int)
+	level = attr(default=0, type=int)
+	value = attr(default=Factory(list), type=list)
+	weight = attr(default=0, type=int)
+	affected = attr(default=Factory(list), type=list)
+	extra_descriptions = attr(default=Factory(list), type=list)
+
+	@classmethod
+	def read(cls, reader, vnum=None, **kwargs):
+		logger.debug("Reading SMAUG-WD object %d" % vnum)
+		name = reader.read_string()
+		short_desc = reader.read_string()
+		description = reader.read_string()
+		# item_type extra_flags wear_flags level (4 numbers)
+		item_type = reader.read_number()
+		extra_flags = reader.read_number()
+		wear_flags = reader.read_number()
+		level_or_unknown = reader.read_number()
+		# 4 values
+		value = [reader.read_number(), reader.read_number(), reader.read_number(), reader.read_number()]
+		# weight
+		weight = reader.read_number()
+		# Parse affects, level, and extra descriptions
+		affected = []
+		extra_descriptions = []
+		obj_level = level_or_unknown  # May be overwritten by L line
+		while True:
+			reader.skip_whitespace()
+			letter = reader.read_letter()
+			if letter == 'A':
+				# Affect: location modifier
+				loc = reader.read_number()
+				mod = reader.read_number()
+				affected.append({'location': loc, 'modifier': mod})
+			elif letter == 'L':
+				# Level restriction
+				obj_level = reader.read_number()
+			elif letter == 'E':
+				# Extra description
+				keyword = reader.read_string()
+				desc = reader.read_string()
+				extra_descriptions.append(ExtraDescription(keyword=keyword, description=desc))
+			elif letter == '#' or letter == '$':
+				# Next object or end of section
+				reader.index -= 1
+				break
+			else:
+				# Unknown, probably end of object
+				reader.index -= 1
+				break
+		return cls(vnum=vnum, name=name, short_desc=short_desc, description=description,
+				  item_type=item_type, extra_flags=extra_flags, wear_flags=wear_flags,
+				  level=obj_level, value=value, weight=weight, affected=affected,
+				  extra_descriptions=extra_descriptions)
+
+
+@attributes
+class SmaugWdExit(object):
+	"""SMAUG-WD format exit."""
+	direction = attr(default=0, type=int)
+	description = attr(default='')
+	keyword = attr(default='')
+	exit_flags = attr(default=0, type=int)
+	key = attr(default=-1, type=int)
+	destination = attr(default=0, type=int)
+
+	@classmethod
+	def read(cls, reader, direction):
+		description = reader.read_string()
+		keyword = reader.read_string()
+		exit_flags = reader.read_number()
+		key = reader.read_number()
+		destination = reader.read_number()
+		return cls(direction=direction, description=description, keyword=keyword,
+				  exit_flags=exit_flags, key=key, destination=destination)
+
+
+@attributes
+class SmaugWdRoom(object):
+	"""SMAUG-WD format room."""
+	vnum = attr(default=0)
+	name = attr(default='')
+	description = attr(default='')
+	room_flags = attr(default=0, type=int)
+	sector_type = attr(default=0, type=int)
+	exits = attr(default=Factory(list), type=list)
+	extra_descriptions = attr(default=Factory(list), type=list)
+
+	@classmethod
+	def read(cls, reader, vnum):
+		logger.debug("Reading SMAUG-WD room %d" % vnum)
+		name = reader.read_string()
+		description = reader.read_string()
+		# room_flags sector_type (2 numbers, no area_number)
+		room_flags = reader.read_number()
+		sector_type = reader.read_number()
+		exits = []
+		extra_descriptions = []
+		while True:
+			reader.skip_whitespace()
+			letter = reader.read_letter()
+			if letter == 'S':
+				break
+			elif letter == 'D':
+				# Direction is appended to D (e.g., D0, D1, D2...)
+				direction = reader.read_number()
+				exits.append(SmaugWdExit.read(reader, direction))
+			elif letter == 'E':
+				keyword = reader.read_string()
+				desc = reader.read_string()
+				extra_descriptions.append(ExtraDescription(keyword=keyword, description=desc))
+			elif letter == 'M':
+				# Mana rate - skip
+				reader.read_number()
+			elif letter == 'H':
+				# Heal rate - skip
+				reader.read_number()
+			else:
+				# Unknown, skip to next line or back up
+				reader.index -= 1
+				reader.read_to_eol()
+		return cls(vnum=vnum, name=name, description=description, room_flags=room_flags,
+				  sector_type=sector_type, exits=exits, extra_descriptions=extra_descriptions)
+
+
+@attributes
+class SmaugWdReset(object):
+	"""SMAUG-WD format reset."""
+	command = attr(default=None)
+	arg1 = attr(default=0)
+	arg2 = attr(default=0)
+	arg3 = attr(default=0)
+	arg4 = attr(default=0)
+	comment = attr(default='')
+
+	@classmethod
+	def read(cls, reader, letter):
+		command = letter
+		reader.read_number()  # if_flag (always 0)
+		arg1 = reader.read_number()
+		arg2 = reader.read_number()
+		if letter in ('M', 'O', 'P', 'E', 'D'):
+			arg3 = reader.read_number()
+			if letter == 'M':
+				arg4 = reader.read_number()
+			else:
+				arg4 = 0
+		else:
+			arg3 = 0
+			arg4 = 0
+		# Read comment (usually "(null)" or mob/obj name)
+		comment = reader.read_to_eol().strip()
+		return cls(command=command, arg1=arg1, arg2=arg2, arg3=arg3, arg4=arg4, comment=comment)
+
+
+@attributes
+class SmaugWdArea(object):
+	"""SMAUG-WD area data container."""
+	name = attr(default="")
+	metadata = attr(default="")
+	original_filename = attr(default="")
+	first_vnum = attr(default=-1)
+	last_vnum = attr(default=-1)
+	helps = attr(default=Factory(list))
+	rooms = attr(default=Factory(OrderedDict))
+	mobs = attr(default=Factory(OrderedDict))
+	objects = attr(default=Factory(OrderedDict))
+	resets = attr(default=Factory(list))
+	specials = attr(default=Factory(list))
+	shops = attr(default=Factory(list))
+
+
+class SmaugWdAreaFile(AreaFile):
+	"""Parser for SMAUG-WD format area files."""
+	area_type = SmaugWdArea
+
+	def read_section_name(self):
+		"""Read section name - handle AREA without # prefix."""
+		self.skip_whitespace()
+		if self.current_char == '#':
+			self.advance()
+			name = self.read_word()
+			return name.lower()
+		elif self.current_char == '$':
+			self.advance()
+			return '$'
+		else:
+			# Check for bare "AREA" section name (no # prefix)
+			name = self.read_word()
+			return name.lower()
+
+	def load_mobiles(self):
+		while True:
+			self.skip_whitespace()
+			if self.current_char != '#':
+				break
+			self.advance()  # Skip #
+			vnum = self.read_number()
+			if vnum == 0:
+				break
+			mob = SmaugWdMob.read(self, vnum)
+			setitem(self.area.mobs, mob.vnum, mob)
+
+	def load_objects(self):
+		while True:
+			self.skip_whitespace()
+			if self.current_char != '#':
+				break
+			self.advance()  # Skip #
+			vnum = self.read_number()
+			if vnum == 0:
+				break
+			obj = SmaugWdItem.read(self, vnum)
+			setitem(self.area.objects, obj.vnum, obj)
+
+	def load_rooms(self):
+		while True:
+			self.skip_whitespace()
+			if self.current_char != '#':
+				break
+			self.advance()  # Skip #
+			vnum = self.read_number()
+			if vnum == 0:
+				break
+			room = SmaugWdRoom.read(self, vnum)
+			setitem(self.area.rooms, room.vnum, room)
+
+	def load_resets(self):
+		while True:
+			self.skip_whitespace()
+			letter = self.read_letter()
+			if letter == 'S' or letter == '$':
+				break
+			if letter == '*':
+				self.read_to_eol()
+				continue
+			if letter in ('M', 'O', 'P', 'G', 'E', 'D', 'R', 'T'):
+				reset = SmaugWdReset.read(self, letter)
+				self.area.resets.append(reset)
+			else:
+				self.read_to_eol()
+
+	def load_shops(self):
+		while True:
+			self.skip_whitespace()
+			keeper = self.read_number()
+			if keeper == 0:
+				break
+			# SMAUG-WD shop format: keeper buy_types[5] profit_buy profit_sell open close
+			buy_types = [self.read_number() for _ in range(5)]
+			profit_buy = self.read_number()
+			profit_sell = self.read_number()
+			open_hour = self.read_number()
+			close_hour = self.read_number()
+			self.area.shops.append({
+				'keeper': keeper,
+				'buy_type': buy_types,
+				'profit_buy': profit_buy,
+				'profit_sell': profit_sell,
+				'open_hour': open_hour,
+				'close_hour': close_hour
+			})
+
+	def load_specials(self):
+		while True:
+			self.skip_whitespace()
+			letter = self.read_letter()
+			if letter == 'S' or letter == '$':
+				break
+			if letter == '*':
+				self.read_to_eol()
+				continue
+			if letter == 'M':
+				mob_vnum = self.read_number()
+				spec_name = self.read_word()
+				comment = self.read_to_eol()
+				self.area.specials.append({
+					'command': 'M',
+					'arg1': mob_vnum,
+					'arg2': spec_name,
+					'comment': comment
+				})
+			else:
+				self.read_to_eol()
+
+	def read_area_metadata(self):
+		"""Read #AREA section - SMAUG-WD format with key-value pairs."""
+		# First line is area name
+		self.area.name = self.read_string()
+		# Read key-value pairs
+		while True:
+			self.skip_whitespace()
+			if self.current_char == '#':
+				break
+			if self.current_char == '$':
+				break
+			key = self.read_letter()
+			if key in ('\n', '\r'):
+				continue
+			# Read value based on key
+			if key in ('K', 'L', 'U', 'O', 'R', 'W'):
+				# String value
+				val = self.read_string()
+				if key == 'O':
+					self.area.metadata = val
+			elif key in ('N', 'X', 'F', 'S'):
+				# Number value
+				self.read_number()
+			elif key == 'I' or key == 'V':
+				# Two numbers
+				n1 = self.read_number()
+				n2 = self.read_number()
+				if key == 'V':
+					self.area.first_vnum = n1
+					self.area.last_vnum = n2
+			else:
+				# Unknown key, skip to end of line
+				self.read_to_eol()
+
+
 class EnumNameConverter(converters.Converter):
 	def _unstructure_enum(self, obj):
-		return obj.__class__.__name__ + "." + obj.name
+		# Handle IntFlags that may have undefined bits set
+		name = obj.name
+		if name is None:
+			# Fall back to string representation for undefined values
+			return str(obj)
+		return obj.__class__.__name__ + "." + name
 
 
 def print_area(area_file_path, area_type=RomAreaFile):
