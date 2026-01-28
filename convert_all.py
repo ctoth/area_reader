@@ -16,7 +16,7 @@ from pathlib import Path
 # Add area_reader to path
 sys.path.insert(0, str(Path(__file__).parent))
 
-from area_reader import RomAreaFile, MercAreaFile, SmaugAreaFile, RotAreaFile, SmaugWdAreaFile, ParseError
+from area_reader import RomAreaFile, MercAreaFile, SmaugAreaFile, RotAreaFile, SmaugWdAreaFile, EnvyAreaFile, ParseError
 from circlemud import CircleMudFile
 
 
@@ -52,6 +52,19 @@ def detect_format(filepath):
     # Check for #ECONOMY section (SMAUG with ROM-style #AREA)
     if '#ECONOMY' in content[:2000]:
         return 'smaug'
+
+    # Check for Envy format: #AREA with {levels} AND mob format with S letter after race~
+    # Envy has 5 tilde strings (like ROM) but ends mob header line with S (like Merc)
+    if '{' in first_line and first_line.startswith('#AREA'):
+        if '#MOBILES' in content:
+            mob_section = content[content.find('#MOBILES'):]
+            # Envy pattern: race~\nFLAGS AFFECTED ALIGNMENT S\n (S at end after 5 tildes)
+            # Look for the S mob type after what looks like 5 tilde strings
+            envy_pattern = r'~\n[A-Z]+\s+[A-Z0-9]+\s+-?\d+\s+S\s*\n'
+            if re.search(envy_pattern, mob_section[:4000]):
+                return 'envy'
+        # Even without mobs, {levels} in AREA line suggests Envy/Merc variant
+        return 'envy'
 
     # Check for Merc-style mob format
     # Merc mobs: 4 tilde-terminated strings, then "act affected alignment S" (S=mob type letter)
@@ -91,9 +104,10 @@ def detect_and_parse_are_file(filepath):
         'rom': [('rom', RomAreaFile), ('rot', RotAreaFile), ('merc', MercAreaFile), ('smaug', SmaugAreaFile)],
         'rot': [('rot', RotAreaFile), ('rom', RomAreaFile), ('smaug', SmaugAreaFile)],
         'merc': [('merc', MercAreaFile), ('rom', RomAreaFile), ('smaug', SmaugAreaFile)],
+        'envy': [('envy', EnvyAreaFile), ('merc', MercAreaFile), ('rom', RomAreaFile)],
         'smaug': [('smaug', SmaugAreaFile), ('rom', RomAreaFile), ('merc', MercAreaFile)],
         'smaug_areadata': [('smaug', SmaugAreaFile), ('rot', RotAreaFile), ('rom', RomAreaFile), ('merc', MercAreaFile)],
-        'smaug_wd': [('smaug_wd', SmaugWdAreaFile)],
+        'smaug_wd': [],  # Disabled: SmaugWdAreaFile hangs on malformed files
         'invalid': [],  # Skip these files
     }
 
@@ -180,7 +194,7 @@ def main():
     stats = {
         'are_success': 0, 'are_failed': 0,
         'cm_success': 0, 'cm_failed': 0,
-        'formats': {'rom': 0, 'rot': 0, 'merc': 0, 'smaug': 0, 'smaug_wd': 0, 'circlemud': 0},
+        'formats': {'rom': 0, 'rot': 0, 'merc': 0, 'envy': 0, 'smaug': 0, 'smaug_wd': 0, 'circlemud': 0},
         'errors': []
     }
 

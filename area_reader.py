@@ -48,6 +48,8 @@ class AreaFile(object):
 		self.file = io.open(filename, mode='rt', encoding='ascii')
 		self.index = 0
 		self.data = self.file.read()
+		# Normalize Windows CRLF to Unix LF
+		self.data = self.data.replace('\r\n', '\n').replace('\r', '\n')
 		self.filename = filename
 		self.file.close()
 		area_type = self.area_type or RomArea
@@ -117,8 +119,38 @@ class AreaFile(object):
 			number += self.read_number()
 		return number
 
+	def read_dice_or_number(self):
+		"""Read either a dice expression (NdN+N) or a simple number.
+		Returns a Dice object. Simple numbers become Dice(0, 0, number)."""
+		self.skip_whitespace()
+		start_index = self.index
+		# Read the first number
+		number = self.read_number()
+		# Check if next char is 'd' or 'D' (dice expression)
+		if self.current_char.lower() == 'd':
+			self.advance()  # consume 'd'
+			sides = self.read_number()
+			bonus = self.read_number()
+			return Dice(number=number, sides=sides, bonus=bonus)
+		else:
+			# Simple number - return as Dice(0, 0, number)
+			return Dice(number=0, sides=0, bonus=number)
+
 	def read_to_eol(self):
 		return self.read_until('\n')
+
+	def read_to_blank_line(self):
+		"""Read until a blank line (double newline). Used for multi-line descriptions."""
+		lines = []
+		while True:
+			line = self.read_to_eol()
+			if self.current_char == '\n':
+				self.advance()  # Skip the newline
+			# Check if next line is blank (or we're at section marker)
+			if not line.strip() or self.current_char == '#' or self.current_char == '$':
+				break
+			lines.append(line)
+		return '\n'.join(lines)
 
 	def read_until(self, endchar):
 		ahead = self.data.find(endchar, self.index)
@@ -1046,6 +1078,267 @@ class RotAreaFile(RomAreaFile):
 	def load_mobiles(self):
 		for mob in self.load_vnum_section(RotMob):
 			setitem(self.area.mobs, mob.vnum, mob)
+
+
+@attributes
+class EnvyMob(RomMob):
+	"""Envy MUD mob format - like ROM but with S mob type letter and numeric dam_type."""
+	dam_type_num = attr(default=0, type=int)
+
+	@classmethod
+	def read(cls, reader, vnum, **kwargs):
+		logger.debug("Reading Envy mob %d" % vnum)
+		name = reader.read_string()
+		short_desc = reader.read_string()
+		long_desc = reader.read_string()
+		description = reader.read_string()
+		race = reader.read_string()
+		# Envy: act affected alignment MOB_TYPE(S) or group_number
+		act = ROM_ACT_TYPES(reader.read_flag()) | ROM_ACT_TYPES.IS_NPC
+		affected_by = reader.read_flag()
+		alignment = reader.read_number()
+		# Some variants have S letter, others have group number
+		reader.skip_whitespace()
+		if reader.current_char == 'S':
+			reader.advance()  # consume S
+			group = 0
+		else:
+			group = reader.read_number()  # read group number
+		# level hitroll hit_dice mana_or_bonus dam_dice dam_type_num
+		# Note: Some Envy files have 3 dice (hit, mana, dam), others have number instead of mana
+		level = reader.read_number()
+		hitroll = reader.read_number()
+		hit = reader.read_dice_or_number()
+		mana = reader.read_dice_or_number()  # can be dice or number
+		damage = reader.read_dice_or_number()
+		dam_type_num = reader.read_number()
+		# 4-value AC
+		ac = reader.read_object(RomArmorClass)
+		# off imm res vuln flags
+		off_flags = reader.read_flag()
+		imm_flags = reader.read_flag()
+		res_flags = reader.read_flag()
+		vuln_flags = reader.read_flag()
+		# start_pos default_pos sex wealth
+		start_pos = reader.read_number()
+		default_pos = reader.read_number()
+		sex = reader.read_number()
+		# Wealth can sometimes be a dice expression in malformed files
+		reader.skip_whitespace()
+		if reader.current_char.isdigit() or reader.current_char == '-':
+			wealth_str = reader.read_word()
+			# Try to parse as number, otherwise take numeric prefix
+			try:
+				wealth = int(wealth_str)
+			except ValueError:
+				# Extract leading digits
+				import re
+				match = re.match(r'-?\d+', wealth_str)
+				wealth = int(match.group()) if match else 0
+		else:
+			wealth = 0
+		# form parts size material
+		form = reader.read_flag()
+		parts = reader.read_flag()
+		size = reader.read_word()
+		material = reader.read_word()
+		return cls(vnum=vnum, name=name, short_desc=short_desc, long_desc=long_desc,
+				  description=description, race=race, act=act, affected_by=affected_by,
+				  alignment=alignment, level=level, hitroll=hitroll, hit=hit, mana=mana,
+				  damage=damage, dam_type_num=dam_type_num, ac=ac, off_flags=off_flags,
+				  imm_flags=imm_flags, res_flags=res_flags, vuln_flags=vuln_flags,
+				  start_pos=start_pos, default_pos=default_pos, sex=sex, wealth=wealth,
+				  form=form, parts=parts, size=size)
+
+
+@attributes
+class EnvyItem(Item):
+	"""Envy MUD object format."""
+	material = attr(default='', type=str)
+	condition = attr(default='', type=str)
+
+	@classmethod
+	def read(cls, reader, vnum):
+		logger.debug("Reading Envy object %d" % vnum)
+		name = reader.read_string()
+		short_desc = reader.read_string()
+		description = reader.read_string()
+		material = reader.read_string()
+		item_type = reader.read_number()
+		extra_flags = reader.read_flag()
+		wear_flags = reader.read_flag()
+		value = [reader.read_number() for _ in range(5)]
+		weight = reader.read_number()
+		level = reader.read_number()
+		cost = reader.read_number()
+		condition = reader.read_letter()
+		affected = []
+		extra_descriptions = []
+		while True:
+			letter = reader.read_letter()
+			if letter == 'A':
+				loc = reader.read_number()
+				mod = reader.read_number()
+				affected.append({'location': loc, 'modifier': mod})
+			elif letter == 'E':
+				keyword = reader.read_string()
+				# Envy extra descriptions can be multi-line, ending at blank line
+				# Skip the newline after keyword before reading description
+				if reader.current_char == '\n':
+					reader.advance()
+				desc = reader.read_to_blank_line()
+				extra_descriptions.append(ExtraDescription(keyword=keyword, description=desc))
+			elif letter == '#' or letter == '$':
+				reader.index -= 1
+				break
+			else:
+				reader.index -= 1
+				break
+		return cls(vnum=vnum, name=name, short_desc=short_desc, description=description,
+				  material=material, item_type=item_type, extra_flags=extra_flags,
+				  wear_flags=wear_flags, value=value, weight=weight, level=level,
+				  cost=cost, condition=condition, affected=affected,
+				  extra_descriptions=extra_descriptions)
+
+
+@attributes
+class EnvyRoom(Room):
+	"""Envy MUD room format."""
+	area_flags = attr(default=0, type=int)
+
+	@classmethod
+	def read(cls, reader, vnum):
+		logger.debug("Reading Envy room %d" % vnum)
+		name = reader.read_string()
+		description = reader.read_string()
+		area_flags = reader.read_number()
+		room_flags = reader.read_flag()
+		sector_type = reader.read_number()
+		exits = OrderedDict()
+		extra_descriptions = []
+		while True:
+			letter = reader.read_letter()
+			if letter == 'S':
+				break
+			elif letter == 'D':
+				door = reader.read_number()
+				exit_desc = reader.read_string()
+				keyword = reader.read_string()
+				exit_info = reader.read_number()
+				key = reader.read_number()
+				destination = reader.read_number()
+				exits[door] = Exit(door=door, description=exit_desc,
+								  keyword=keyword, exit_info=exit_info, key=key, destination=destination)
+			elif letter == 'E':
+				keyword = reader.read_string()
+				# Room extra descriptions use standard ~ terminator
+				desc = reader.read_string()
+				extra_descriptions.append(ExtraDescription(keyword=keyword, description=desc))
+			elif letter == 'S':
+				# S marks end of room
+				break
+			elif letter == '#' or letter == '$':
+				reader.index -= 1
+				break
+			else:
+				reader.index -= 1
+				break
+		return cls(vnum=vnum, name=name, description=description, area_flags=area_flags,
+				  room_flags=room_flags, sector_type=sector_type, exits=list(exits.values()),
+				  extra_descriptions=extra_descriptions)
+
+
+class EnvyAreaFile(AreaFile):
+	"""Envy MUD format - Merc derivative with extended mob/obj/room formats."""
+	area_type = MercArea
+
+	def read_area_metadata(self):
+		# Envy format: #AREA {levels} Author Name~
+		self.area.metadata = self.read_string()
+
+	def load_mobiles(self):
+		for mob in self.load_vnum_section(EnvyMob):
+			setitem(self.area.mobs, mob.vnum, mob)
+
+	def load_objects(self):
+		for obj in self.load_vnum_section(EnvyItem):
+			setitem(self.area.objects, obj.vnum, obj)
+
+	def load_rooms(self):
+		for room in self.load_vnum_section(EnvyRoom):
+			setitem(self.area.rooms, room.vnum, room)
+
+	def load_resets(self):
+		while True:
+			letter = self.read_letter()
+			if letter == 'S' or letter == '$':
+				break
+			if letter == '*':
+				self.read_to_eol()
+				continue
+			if letter in ('M', 'O', 'P', 'G', 'E', 'D', 'R'):
+				reset = MercReset.read(self, letter)
+				self.area.resets.append(reset)
+			else:
+				self.read_to_eol()
+
+	def load_shops(self):
+		while True:
+			self.skip_whitespace()
+			keeper = self.read_number()
+			if keeper == 0:
+				break
+			buy_types = [self.read_number() for _ in range(self.MAX_TRADES)]
+			profit_buy = self.read_number()
+			profit_sell = self.read_number()
+			open_hour = self.read_number()
+			close_hour = self.read_number()
+			self.read_to_eol()
+			self.area.shops.append({
+				'keeper': keeper,
+				'buy_type': buy_types,
+				'profit_buy': profit_buy,
+				'profit_sell': profit_sell,
+				'open_hour': open_hour,
+				'close_hour': close_hour
+			})
+
+	def load_specials(self):
+		while True:
+			self.skip_whitespace()
+			if self.index >= len(self.data):
+				break
+			letter = self.read_letter()
+			if letter == 'S' or letter == '$' or letter == '#':
+				if letter == '#':
+					self.index -= 1
+				break
+			if letter == '*':
+				self.read_to_eol()
+				continue
+			if letter == 'M':
+				vnum = self.read_number()
+				spec_fun = self.read_word()
+				self.area.specials.append({'mob_vnum': vnum, 'spec_fun': spec_fun})
+				self.read_to_eol()
+			elif letter == 'D':
+				# Some files have Door resets in SPECIALS section
+				self.read_to_eol()
+			else:
+				self.read_to_eol()
+
+	def load_economy(self):
+		# Skip economy section if present
+		self.read_to_eol()
+
+	def load_helps(self):
+		while True:
+			level = self.read_number()
+			keyword = self.read_string()
+			if keyword.startswith('$'):
+				break
+			text = self.read_string()
+			self.area.helps.append(Help(level=level, keyword=keyword, text=text))
 
 
 class SmaugAreaFile(RomAreaFile):
