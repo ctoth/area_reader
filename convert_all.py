@@ -107,7 +107,7 @@ def detect_and_parse_are_file(filepath):
         'envy': [('envy', EnvyAreaFile), ('merc', MercAreaFile), ('rom', RomAreaFile)],
         'smaug': [('smaug', SmaugAreaFile), ('rom', RomAreaFile), ('merc', MercAreaFile)],
         'smaug_areadata': [('smaug', SmaugAreaFile), ('rot', RotAreaFile), ('rom', RomAreaFile), ('merc', MercAreaFile)],
-        'smaug_wd': [],  # Disabled: SmaugWdAreaFile hangs on malformed files
+        'smaug_wd': [('smaug_wd', SmaugWdAreaFile), ('smaug', SmaugAreaFile)],
         'invalid': [],  # Skip these files
     }
 

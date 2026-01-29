@@ -154,6 +154,10 @@ class AreaFile(object):
 
 	def read_until(self, endchar):
 		ahead = self.data.find(endchar, self.index)
+		if ahead == -1:
+			# Terminator not found - report error with context
+			context = self.data[self.index:self.index+50]
+			self.parse_fail(f"Missing '{endchar}' terminator, starting at: {context!r}")
 		result = self.data[self.index:ahead]
 		self.index = ahead
 		return result
@@ -1514,12 +1518,25 @@ class SmaugWdMob(object):
 			# Read extended values until newline or next section
 			while True:
 				reader.skip_whitespace()
-				if reader.current_char in ('\n', '\r', '#'):
+				if reader.current_char in ('\n', '\r', '#', '>'):
 					break
 				try:
 					extended.append(reader.read_number())
 				except:
 					break
+		# Skip MOBprogs (start with >, end with |)
+		reader.skip_whitespace()
+		while reader.current_char == '>':
+			# Skip the MOBprog trigger line
+			reader.read_to_eol()
+			if reader.current_char == '\n':
+				reader.advance()
+			# Skip until | (end of MOBprog)
+			while reader.current_char != '|' and reader.index < len(reader.data) - 1:
+				reader.advance()
+			if reader.current_char == '|':
+				reader.advance()
+			reader.skip_whitespace()
 		return cls(vnum=vnum, name=name, short_desc=short_desc, long_desc=long_desc,
 				  description=description, act=act, affected_by=affected_by,
 				  alignment=alignment, mob_type=mob_type, level=level, hitroll=hitroll,
