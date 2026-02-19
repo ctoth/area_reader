@@ -2,7 +2,7 @@
 
 A Python library to parse MUD area files into structured data.
 
-Reads area files from ROM, Merc, SMAUG, and CircleMUD and converts them to Python objects (attrs classes) that can be serialized to JSON.
+Reads area files from ROM, Merc, SMAUG, Envy, ROT, and CircleMUD and converts them to Python objects (attrs classes) that can be serialized to JSON.
 
 ## Installation
 
@@ -18,7 +18,7 @@ Or with pip:
 pip install attrs cattrs
 ```
 
-## Usage
+## Quick Start
 
 ```python
 import area_reader
@@ -38,37 +38,156 @@ print(af.as_json(indent=2))
 data = af.as_dict()
 ```
 
-### Supported Formats
+## Supported Formats
 
-| Class | Format | File Type |
-|-------|--------|-----------|
-| `RomAreaFile` | ROM 2.4 | Single `.are` file |
-| `MercAreaFile` | Merc 2.1 | Single `.are` file |
-| `SmaugAreaFile` | SMAUG | Single `.are` file |
-| `CircleMudFile` | CircleMUD | Directory with `.wld`, `.mob`, `.obj`, `.zon`, `.shp` |
+| Class | Format | Description |
+|-------|--------|-------------|
+| `RomAreaFile` | ROM 2.4 | Standard ROM format with 5 tilde-terminated strings for mobs |
+| `MercAreaFile` | Merc 2.1 | Original Merc format with 4 tilde-terminated strings |
+| `EnvyAreaFile` | Envy | Envy MUD format with level ranges in braces `{10 30}` |
+| `RotAreaFile` | ROT | Realms of Thera format with extra mob flags |
+| `SmaugAreaFile` | SMAUG | SMAUG format with MOBprogs and `|` end markers |
+| `SmaugWdAreaFile` | SMAUG-WD | SMAUG variant with key-value area metadata |
+| `CircleMudFile` | CircleMUD | Directory with `.wld`, `.mob`, `.obj`, `.zon`, `.shp` files |
 
-### CircleMUD Usage
+## Batch Conversion
+
+Convert all area files in a directory to JSON:
+
+```bash
+# Basic conversion
+python convert_all.py --areas-dir ../areas --output-dir ../json
+
+# With normalized output (unified schema across formats)
+python convert_all.py --normalized --areas-dir ../areas --output-dir ../json
+
+# Tolerant mode (partial parsing for incompatible files)
+python convert_all.py --tolerant --normalized --continue-on-error
+
+# Skip CircleMUD directories
+python convert_all.py --skip-circlemud
+```
+
+### Command Line Options
+
+| Option | Description |
+|--------|-------------|
+| `--areas-dir` | Directory containing `.are` files (default: `../areas`) |
+| `--circlemud-dir` | Directory containing CircleMUD subdirectories (default: `../circleMUD`) |
+| `--output-dir` | Output directory for JSON files (default: `../json`) |
+| `--normalized`, `-n` | Output normalized JSON format |
+| `--tolerant`, `-t` | Skip sections/items that fail to parse |
+| `--skip-are` | Skip `.are` file conversion |
+| `--skip-circlemud` | Skip CircleMUD directory conversion |
+| `--continue-on-error` | Continue processing after errors |
+
+## Normalized Output
+
+The normalized format provides a unified schema across all MUD formats, making it easier to work with areas from different codebases.
+
+```python
+# Get normalized output
+af = area_reader.RomAreaFile('midgaard.are')
+af.load_sections()
+
+# As dict
+data = af.as_normalized_dict()
+
+# As JSON
+json_str = af.as_normalized_json(indent=2)
+
+# Save to file
+af.save_as_normalized_json('midgaard.normalized.json')
+```
+
+### Normalized vs Raw Output
+
+| Aspect | Raw (`as_dict()`) | Normalized (`as_normalized_dict()`) |
+|--------|-------------------|-------------------------------------|
+| Flags | Enum strings: `"ROM_ACT_TYPES.IS_NPC\|SENTINEL"` | List: `["npc", "sentinel"]` |
+| AC | Format-specific (4 values or 1) | Always 4 values: `{pierce, bash, slash, exotic}` |
+| Position | Format-specific (word or number) | Always word: `"standing"` |
+| Sex | Format-specific (word or number) | Always word: `"male"` |
+| Original data | Not preserved | Preserved in `original` field |
+
+### Normalized Mob Example
+
+```json
+{
+  "vnum": 3000,
+  "keywords": ["wizard"],
+  "short_desc": "the wizard",
+  "long_desc": "A wizard walks around behind the counter...",
+  "description": "The wizard looks old and senile...",
+  "level": 23,
+  "alignment": 900,
+  "sex": "male",
+  "race": "human",
+  "act_flags": ["npc", "sentinel", "nopurge"],
+  "affect_flags": ["invis"],
+  "hitroll": 0,
+  "ac": {
+    "pierce": -150,
+    "bash": -150,
+    "slash": -150,
+    "exotic": -150
+  },
+  "hit_dice": {"num": 1, "size": 1, "bonus": 999},
+  "mana_dice": {"num": 1, "size": 1, "bonus": 999},
+  "damage_dice": {"num": 1, "size": 8, "bonus": 32},
+  "damage_type": "magic",
+  "gold": 750,
+  "position": {"default": "standing", "load": "standing"},
+  "resistances": {"immune": ["summon", "charm"], "resist": [], "vuln": []},
+  "body": {"form": [], "parts": [], "size": "medium"},
+  "offense_flags": ["area_attack", "dodge"],
+  "programs": [],
+  "original": { ... }
+}
+```
+
+## Tolerant Parsing
+
+Tolerant mode allows partial parsing when full parsing fails. This is useful for files with format variations or corruption.
+
+```python
+af = area_reader.SmaugAreaFile('area.are')
+af.load_sections(tolerant=True)
+
+# Check for parse errors
+if af._parse_errors:
+    print(f"Warnings: {af._parse_errors}")
+```
+
+In tolerant mode:
+- Failed sections are skipped with warnings logged
+- Failed mobs/objects fall back to partial parsing (basic fields only)
+- Parse errors are collected in `_parse_errors` list
+- Partial objects have `_partial: true` in normalized output
+
+## CircleMUD Usage
 
 CircleMUD uses a split-file format where each zone has separate files for rooms, mobs, objects, etc.
 
 ```python
-from circlemud import load_circlemud_area
+from circlemud import CircleMudFile
 
 # Load a CircleMUD area directory
-area = load_circlemud_area('/path/to/zone_directory')
+area = CircleMudFile('/path/to/zone_directory')
 area.load_sections()
 
 # Access the parsed area
 print(area.area.name)
 print(area.area.rooms['12001'].name)
 
-# Export to JSON
+# Export to JSON (raw or normalized)
 print(area.as_json(indent=2))
+print(area.as_normalized_json(indent=2))
 ```
 
 CircleMUD supports alphanumeric VNUMs (e.g., `QQ00`, `XX74`) which are preserved as strings.
 
-## Output Format
+## Output Format (Raw)
 
 The `as_dict()` / `as_json()` output contains these top-level fields:
 
@@ -334,3 +453,24 @@ See `constants.py` for all flag definitions including:
 - `IMM_FLAGS` - immunities/resistances/vulnerabilities
 - `FORMS` - body type
 - `PARTS` - body parts
+
+## Running Tests
+
+```bash
+uv run pytest
+```
+
+## Architecture
+
+```
+area_reader/
+├── area_reader.py    # Main parser classes (RomAreaFile, MercAreaFile, etc.)
+├── circlemud.py      # CircleMUD parser
+├── constants.py      # Flag enums and constants
+├── normalized.py     # Normalized data classes
+├── normalizer.py     # Format-specific normalizers
+├── convert_all.py    # Batch conversion script
+└── test/             # Test area files
+    ├── rom/
+    └── merc/
+```
