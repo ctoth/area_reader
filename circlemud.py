@@ -744,6 +744,27 @@ class CircleMudFile:
         """Convert to JSON string."""
         return json.dumps(self.as_dict(), indent=indent)
 
+    def as_normalized(self):
+        """Return normalized area data."""
+        from normalizer import AreaNormalizer
+        return AreaNormalizer(self).normalize()
+
+    def as_normalized_dict(self):
+        """Return normalized area as dictionary."""
+        from normalizer import NormalizedConverter
+        return NormalizedConverter().unstructure(self.as_normalized())
+
+    def as_normalized_json(self, indent=None):
+        """Return normalized area as JSON string."""
+        return json.dumps(self.as_normalized_dict(), indent=indent)
+
+    def save_as_normalized_json(self, filepath=None):
+        """Save normalized area to JSON file."""
+        if filepath is None:
+            filepath = os.path.join(self.directory, 'normalized.json')
+        with open(filepath, 'w') as f:
+            json.dump(self.as_normalized_dict(), f, indent=2)
+
 
 def load_circlemud_area(directory):
     """Convenience function to load a CircleMUD area directory."""

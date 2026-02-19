@@ -95,6 +95,15 @@ class AreaFile(object):
 		self.skip_whitespace()
 		while self.current_char.isspace():
 			self.advance()
+		# Handle quoted empty string ('' or "") as 0 - used for "no key" in containers
+		if self.current_char in ("'", '"'):
+			quote = self.current_char
+			self.advance()
+			# Skip any content and closing quote
+			while self.current_char != quote:
+				self.advance()
+			self.advance()  # skip closing quote
+			return 0
 		number = 0
 		sign = False
 		while self.current_char.isspace():
@@ -176,6 +185,14 @@ class AreaFile(object):
 	def read_flag(self):
 		negative = False
 		self.skip_whitespace()
+		# Handle quoted empty string as 0
+		if self.current_char in ("'", '"'):
+			quote = self.current_char
+			self.advance()
+			while self.current_char != quote:
+				self.advance()
+			self.advance()  # skip closing quote
+			return 0
 		if self.current_char == '+':
 			self.advance()
 		if self.current_char == '-':
@@ -205,11 +222,67 @@ class AreaFile(object):
 
 
 	def load_vnum_section(self, section_object_type):
+		tolerant = getattr(self, '_tolerant', False)
 		while True:
 			vnum = self.read_vnum()
 			if vnum == 0:
 				break
-			yield self.read_object(section_object_type, vnum=vnum)
+			if tolerant:
+				start_index = self.index
+				try:
+					yield self.read_object(section_object_type, vnum=vnum)
+				except Exception as e:
+					logger.warning(f"Full parse failed for {section_object_type.__name__} vnum {vnum}: {e}")
+					# Try fallback partial parsing
+					self.index = start_index  # Reset to start of this item
+					partial = self._try_partial_parse(section_object_type, vnum, str(e))
+					if partial:
+						yield partial
+					else:
+						if hasattr(self, '_parse_errors'):
+							self._parse_errors.append(f"Skipped {section_object_type.__name__} {vnum}: {e}")
+						self._skip_to_next_vnum()
+			else:
+				yield self.read_object(section_object_type, vnum=vnum)
+
+	def _try_partial_parse(self, section_object_type, vnum, error_msg):
+		"""Try to parse basic fields (name, descriptions) when full parse fails."""
+		try:
+			# All MUD formats start with tilde-terminated strings for names/descriptions
+			name = self.read_string()  # keywords/name
+			short_desc = self.read_string()  # short description
+			long_desc = self.read_string()  # long description
+			description = self.read_string()  # full description
+
+			# Skip to next vnum
+			self._skip_to_next_vnum()
+
+			# Return a partial object with what we could parse
+			return PartialMudObject(
+				vnum=vnum,
+				name=name,
+				short_desc=short_desc,
+				long_desc=long_desc,
+				description=description,
+				_parse_error=error_msg,
+				_object_type=section_object_type.__name__
+			)
+		except Exception as e2:
+			logger.warning(f"Partial parse also failed for vnum {vnum}: {e2}")
+			self._skip_to_next_vnum()
+			return None
+
+	def _skip_to_next_vnum(self):
+		"""Skip content until next #vnum or #0 (end of section)."""
+		while self.index < len(self.data) - 1:
+			if self.current_char == '#':
+				# Check if this is a vnum or section header
+				next_idx = self.index + 1
+				if next_idx < len(self.data):
+					next_char = self.data[next_idx]
+					if next_char.isdigit() or next_char.isupper() or next_char == '$':
+						return  # Found next item or section
+			self.advance()
 
 	def read_object(self, object_type, **kwargs):
 		if hasattr(object_type, 'read'):
@@ -244,6 +317,21 @@ class AreaFile(object):
 
 	def read_vnum(self):
 		self.skip_whitespace()
+		tolerant = getattr(self, '_tolerant', False)
+		if tolerant and self.current_char != '#':
+			# In tolerant mode, skip forward to find the next # marker
+			self._skip_to_next_vnum()
+			if self.index >= len(self.data) - 1:
+				return 0  # End of file
+		# Peek ahead to check if this is a section header (e.g. #OBJECTS)
+		# Don't consume the # if it's followed by an uppercase letter
+		if self.current_char == '#':
+			next_idx = self.index + 1
+			if next_idx < len(self.data):
+				next_char = self.data[next_idx]
+				if next_char.isupper() or next_char == '$':
+					# This is a section header or EOF, not a vnum
+					return 0
 		self.read_and_verify_letter('#')
 		vnum = self.read_number()
 		return vnum
@@ -265,7 +353,14 @@ class AreaFile(object):
 	def load_economy(self):
 		raise NotImplementedError
 
-	def load_sections(self):
+	def load_sections(self, tolerant=False):
+		"""Load all sections from the area file.
+
+		Args:
+			tolerant: If True, skip sections that fail to parse and continue.
+			         Partial data will be available. Errors are logged as warnings.
+		"""
+		self._tolerant = tolerant
 		readers = {
 			'area': self.read_area_metadata,
 			'areadata': self.load_areadata,
@@ -282,6 +377,7 @@ class AreaFile(object):
 			'ranges': self.load_ranges,
 			'flags': self.load_flags,
 		}
+		self._parse_errors = []  # Track errors in tolerant mode
 		while True:
 			section_name = self.read_section_name()
 			self.current_section_name = section_name
@@ -294,8 +390,14 @@ class AreaFile(object):
 				logger.info("Processing section %s" % section_name)
 				try:
 					readers[section_name]()
-				except Exception:
-					self.parse_fail("Error reading section %r" % section_name)
+				except Exception as e:
+					if tolerant:
+						error_msg = f"Error reading section {section_name!r}: {e}"
+						logger.warning(error_msg)
+						self._parse_errors.append(error_msg)
+						self.skip_section(section_name)
+					else:
+						self.parse_fail("Error reading section %r" % section_name)
 
 	def load_areadata(self):
 		"""Default: skip areadata if not implemented."""
@@ -321,12 +423,37 @@ class AreaFile(object):
 			self.read_to_eol()
 
 	def load_flags(self):
-		"""Default: skip flags if not implemented."""
-		self.read_number()
+		"""Default: skip flags section - read until next section."""
+		while True:
+			self.skip_whitespace()
+			if self.current_char == '#' or self.current_char == '$':
+				break
+			self.read_to_eol()
 
 	def skip_section(self, section_name):
+		"""Skip to the next section header (#SECTIONNAME or $ EOF marker).
+
+		Handles VNUM sections (#1234) by continuing past them until a real
+		section header is found (identified by uppercase letters after #).
+		"""
 		logger.debug("Skipping section %s", section_name)
-		self.read_until('#')
+		while self.index < len(self.data) - 1:
+			self.read_until('#')
+			if self.index >= len(self.data) - 1:
+				break
+			# Peek at what's after the #
+			next_char = self.data[self.index + 1] if self.index + 1 < len(self.data) else ''
+			if next_char == '$' or next_char.isupper():
+				# This is a section header or EOF marker, stop here
+				break
+			elif next_char.isdigit() or next_char == '0':
+				# This is a VNUM (#1234), skip past it
+				self.advance()  # skip the #
+				continue
+			else:
+				# Unknown, skip past it
+				self.advance()
+				continue
 
 	def read_section_name(self):
 		self.read_and_verify_letter('#')
@@ -400,6 +527,27 @@ class AreaFile(object):
 		with open(fname, 'w') as f:
 			json.dump(self.as_dict(), f, indent=2)
 
+	def as_normalized(self):
+		"""Return normalized area data."""
+		from normalizer import AreaNormalizer
+		return AreaNormalizer(self).normalize()
+
+	def as_normalized_dict(self):
+		"""Return normalized area as dictionary."""
+		from normalizer import NormalizedConverter
+		return NormalizedConverter().unstructure(self.as_normalized())
+
+	def as_normalized_json(self, indent=None):
+		"""Return normalized area as JSON string."""
+		return json.dumps(self.as_normalized_dict(), indent=indent)
+
+	def save_as_normalized_json(self, filepath=None):
+		"""Save normalized area to JSON file."""
+		if filepath is None:
+			filepath = os.path.splitext(self.filename)[0] + '.normalized.json'
+		with open(filepath, 'w') as f:
+			json.dump(self.as_normalized_dict(), f, indent=2)
+
 class RomAreaFile(AreaFile):
 
 	def load_mobiles(self):
@@ -431,6 +579,22 @@ class MudBase(object):
 	extra_descriptions = attr(default=Factory(list), type=List[ExtraDescription])
 
 @attributes
+class PartialMudObject(object):
+	"""Partially parsed mob/object when full parsing fails.
+
+	Contains basic fields that are consistent across formats:
+	vnum, name, short_desc, long_desc, description.
+	"""
+	vnum = attr(default=0, type=int)
+	name = attr(default='', type=str)
+	short_desc = attr(default='', type=str)
+	long_desc = attr(default='', type=str)
+	description = attr(default='', type=str)
+	_parse_error = attr(default='', type=str)
+	_object_type = attr(default='', type=str)
+	_partial = attr(default=True, type=bool)  # Flag to indicate this is partial data
+
+@attributes
 class Item(MudBase):
 	short_desc = field(default='', type=str)
 	item_type = field(default=-1, type=int)
@@ -454,8 +618,8 @@ class MercAffectData(object):
 class RomItem(Item):
 
 	@staticmethod
-	def convert_condition(letter):
-		condition = -1
+	def convert_condition(value):
+		# Handle both letter conditions (P/G/A/W/D/B/R) and numeric conditions
 		conditions = {
 			'P': 100,
 			'G': 90,
@@ -465,8 +629,13 @@ class RomItem(Item):
 			'B': 10,
 			'R': 0,
 		}
-		condition = conditions[letter]
-		return condition
+		if value in conditions:
+			return conditions[value]
+		# Numeric condition - some variants use numbers directly
+		try:
+			return int(value)
+		except (ValueError, TypeError):
+			return 100  # Default to perfect condition
 
 	material = field(default='', type=str)
 	condition = field(default=100, type=int, original_type=Letter, on_read=convert_condition)
@@ -496,7 +665,12 @@ class RomItem(Item):
 		level = reader.read_number()
 		weight = reader.read_number()
 		cost = reader.read_number()
-		condition = cls.convert_condition(reader.read_letter())
+		# Condition can be letter (P/G/A/W/D/B/R) or number in some variants
+		reader.skip_whitespace()
+		if reader.current_char.isdigit() or reader.current_char == '-':
+			condition = reader.read_number()
+		else:
+			condition = cls.convert_condition(reader.read_letter())
 		affected = []
 		extra_descriptions = []
 		while True:
@@ -754,6 +928,9 @@ class Room(MudBase):
 		sector_type = reader.read_number()
 		if sector_type == -1:
 			sector_type = 0
+		# SMAUG rooms may have extra values on this line (tele_delay, tele_vnum, tunnel, etc.)
+		# Skip to end of line to ignore them
+		reader.read_to_eol()
 		room = cls(vnum=vnum, name=name, description=description, area_number=area_number, room_flags=room_flags, sector_type=sector_type)
 		room.read_metadata(reader)
 		return room
@@ -775,6 +952,10 @@ class Room(MudBase):
 				self.extra_descriptions.append(reader.read_object(ExtraDescription))
 			elif letter == 'O':
 				self.owner = reader.read_string()
+			elif letter == '>':
+				# SMAUG room prog - skip until | terminator
+				reader.read_until('|')
+				reader.advance()  # skip the |
 			else:
 				reader.parse_fail("Don't know how to process room attribute: %s" % letter)
 
@@ -868,6 +1049,102 @@ class RomShop(object):
 @attributes
 class SmaugMob(RomMob):
 	affected_by = attr(default=0, type=SMAUG_AFFECTED_BY, converter=SMAUG_AFFECTED_BY)
+
+	@classmethod
+	def read(cls, reader, vnum, **kwargs):
+		"""Read SMAUG mob format (different from ROM format).
+
+		SMAUG format:
+		- 4 tilde-terminated strings (no race string)
+		- 8 lines of numeric stats (no tildes)
+		- Optional MOBprogs (> type~code~)
+		- End marker: |
+		"""
+		logger.debug("Reading SMAUG mob %d" % vnum)
+		name = reader.read_string()
+		short_desc = reader.read_string()
+		long_desc = reader.read_string()
+		description = reader.read_string()
+
+		# Line 1: act affected alignment mob_type
+		act = SMAUG_AFFECTED_BY(reader.read_flag())
+		affected_by = reader.read_flag()
+		alignment = reader.read_number()
+		mob_type = reader.read_letter()  # S, W, C, etc.
+
+		# Line 2: level hitroll hitdice damdice
+		level = reader.read_number()
+		hitroll = reader.read_number()
+		# Read hitdice but we don't have a damage bonus in this format
+		reader.read_number()  # thac0 or unused
+		hit = Dice.read(reader=reader)
+		damage = Dice.read(reader=reader)
+
+		# Line 3: gold exp (or gold 0)
+		wealth = reader.read_number()
+		reader.read_number()  # exp or unused
+
+		# Line 4: start_pos default_pos sex
+		start_pos = reader.read_number()
+		default_pos = reader.read_number()
+		sex = reader.read_number()
+
+		# Line 5: 7 AC values (or variations)
+		# Just read the rest of the line
+		reader.read_to_eol()
+
+		# Lines 6-8: various flags and stats
+		reader.read_to_eol()  # line 6
+		reader.read_to_eol()  # line 7
+		reader.read_to_eol()  # line 8
+
+		# Read MOBprogs until | marker
+		mprogs = []
+		while True:
+			reader.skip_whitespace()
+			if reader.current_char == '|':
+				reader.advance()
+				break
+			if reader.current_char == '>':
+				reader.advance()
+				reader.skip_whitespace()
+				prog_type = reader.read_word()
+				prog_arg = reader.read_string()  # args~
+				prog_code = reader.read_string()  # code~
+				mprogs.append({'type': prog_type, 'arg': prog_arg, 'code': prog_code})
+			elif reader.current_char == '#':
+				# Hit next vnum or section, stop here
+				break
+			else:
+				# Unknown content, skip line
+				reader.read_to_eol()
+
+		# Convert numeric positions to words
+		pos_map = {0: 'dead', 1: 'mortallywounded', 2: 'incapacitated',
+		           3: 'stunned', 4: 'sleeping', 5: 'resting', 6: 'sitting',
+		           7: 'fighting', 8: 'standing'}
+		sex_map = {0: 'none', 1: 'male', 2: 'female'}
+
+		return cls(
+			vnum=vnum,
+			name=name,
+			short_desc=short_desc,
+			long_desc=long_desc,
+			description=description,
+			race='',  # SMAUG doesn't have race in same format
+			act=act,
+			affected_by=affected_by,
+			alignment=alignment,
+			level=level,
+			hitroll=hitroll,
+			hit=hit,
+			damage=damage,
+			wealth=wealth,
+			start_pos=pos_map.get(start_pos, 'standing'),
+			default_pos=pos_map.get(default_pos, 'standing'),
+			sex=sex_map.get(sex, 'none'),
+			mprogs=mprogs,
+		)
 
 
 @attributes
@@ -1257,8 +1534,31 @@ class EnvyAreaFile(AreaFile):
 	area_type = MercArea
 
 	def read_area_metadata(self):
-		# Envy format: #AREA {levels} Author Name~
-		self.area.metadata = self.read_string()
+		# Envy can have multiple AREA formats:
+		# 1. Single string: {levels} Author Name~
+		# 2. ROM-style: filename~ name~ metadata~ first_vnum last_vnum
+		first_str = self.read_string()
+		self.skip_whitespace()
+		# Check if next char starts another tilde-string or is a digit/section marker
+		if self.current_char == '#' or self.current_char == '$':
+			# Single string format
+			self.area.metadata = first_str
+		elif self.current_char.isdigit():
+			# Could be vnum range or next section - likely single string format
+			# Try to read two numbers for vnum range
+			self.area.metadata = first_str
+			try:
+				self.area.first_vnum = self.read_number()
+				self.area.last_vnum = self.read_number()
+			except:
+				pass  # Not vnum range, just metadata
+		else:
+			# ROM-style multi-string format
+			self.area.original_filename = first_str
+			self.area.name = self.read_string()
+			self.area.metadata = self.read_string()
+			self.area.first_vnum = self.read_number()
+			self.area.last_vnum = self.read_number()
 
 	def load_mobiles(self):
 		for mob in self.load_vnum_section(EnvyMob):
@@ -1458,7 +1758,9 @@ class SmaugAreaFile(RomAreaFile):
 			self.read_to_eol()
 
 	def load_flags(self):
+		# SMAUG #FLAGS section has two numbers: area_flags and area_reset_flags
 		self.read_number()  # Discard area flags
+		self.read_number()  # Discard area reset flags
 
 	def load_room(self, vnum):
 		logger.debug("Reading room %d" % vnum)

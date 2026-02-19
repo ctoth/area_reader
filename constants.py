@@ -331,6 +331,12 @@ class EXIT_DIRECTIONS(enum.Enum):
 	WEST = 3
 	UP = 4
 	DOWN = 5
+	# SMAUG extended directions
+	SOMEWHERE = 6
+	NORTHEAST = 7
+	NORTHWEST = 8
+	SOUTHEAST = 9
+	SOUTHWEST = 10
 
 class EXIT_FLAGS(enum.IntFlag):
 	NONE = 0
@@ -354,10 +360,14 @@ class SECTOR_TYPES(enum.Enum):
 	MOUNTAIN = 5
 	WATER_SWIM = 6
 	WATER_NOSWIM = 7
-	UNUSED = 8
+	UNDERWATER = 8
 	AIR = 9
 	DESERT = 10
-	MAX = 11
+	DUNNO = 11  # Unknown/unused
+	OCEANFLOOR = 12
+	UNDERGROUND = 13
+	LAVA = 14
+	SWAMP = 15
 
 class SMAUG_AFFECTED_BY(enum.IntFlag):
 	BLIND = 1

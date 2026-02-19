@@ -53,9 +53,13 @@ def detect_format(filepath):
     if '#ECONOMY' in content[:2000]:
         return 'smaug'
 
-    # Check for Envy format: #AREA with {levels} AND mob format with S letter after race~
+    # Check for Envy format: #AREA with {levels} in AREA section AND mob with S letter after race~
     # Envy has 5 tilde strings (like ROM) but ends mob header line with S (like Merc)
-    if '{' in first_line and first_line.startswith('#AREA'):
+    # Check for { in AREA section (between #AREA and next #)
+    area_section_end = content.find('#', content.find('#AREA') + 1) if '#AREA' in content else 500
+    area_section = content[:area_section_end] if area_section_end > 0 else content[:500]
+
+    if '{' in area_section or '[' in area_section:
         if '#MOBILES' in content:
             mob_section = content[content.find('#MOBILES'):]
             # Envy pattern: race~\nFLAGS AFFECTED ALIGNMENT S\n (S at end after 5 tildes)
@@ -63,18 +67,23 @@ def detect_format(filepath):
             envy_pattern = r'~\n[A-Z]+\s+[A-Z0-9]+\s+-?\d+\s+S\s*\n'
             if re.search(envy_pattern, mob_section[:4000]):
                 return 'envy'
-        # Even without mobs, {levels} in AREA line suggests Envy/Merc variant
+        # Even without mobs, {levels} in AREA section suggests Envy/DSA variant
         return 'envy'
 
-    # Check for Merc-style mob format
-    # Merc mobs: 4 tilde-terminated strings, then "act affected alignment S" (S=mob type letter)
-    # ROM mobs: 5 tilde-terminated strings (includes race~), then "act affected alignment group"
+    # Check for Merc vs Envy by counting tilde strings before mob type letter
     if '#MOBILES' in content:
         mob_section = content[content.find('#MOBILES'):]
 
-        # Look for Merc pattern: line ending with " S" or " E" etc. after tilde
+        # Envy format check: look for race~ followed by S mob type
+        # Pattern: word ending in ~\n, then flags ending in S on next line
+        # The key is that Envy has a race word before the flags, Merc doesn't
+        # Check for lowercase word followed by ~ then flags ending in S
+        envy_race_pattern = r'[a-z]+~\n[A-Z]+[a-zA-Z]*\s+[A-Z0-9]+\s+-?\d+\s+S\s*\n'
+        if re.search(envy_race_pattern, mob_section[:4000]):
+            return 'envy'
+
+        # Check for Merc pattern (4 tilde strings): name~ short~ long~ desc~ then "ACT AFF ALIGN S"
         # Pattern: ~\n followed by flags line ending in single letter (mob type)
-        # e.g., "~\n2|4|128 0 1000 S\n" or "~\nABC 0 -500 S\n"
         merc_pattern = r'~\n[A-Za-z0-9|]+\s+\d+\s+-?\d+\s+[A-Z]\s*\n'
         if re.search(merc_pattern, mob_section[:4000]):
             return 'merc'
@@ -95,7 +104,7 @@ def detect_format(filepath):
     return 'rom'
 
 
-def detect_and_parse_are_file(filepath):
+def detect_and_parse_are_file(filepath, tolerant=False):
     """Detect format and parse with appropriate parser."""
     detected = detect_format(filepath)
 
@@ -120,7 +129,7 @@ def detect_and_parse_are_file(filepath):
     for name, parser_class in parsers:
         try:
             af = parser_class(filepath)
-            af.load_sections()
+            af.load_sections(tolerant=tolerant)
             return af, name
         except Exception as e:
             errors.append((name, str(e)))
@@ -130,17 +139,27 @@ def detect_and_parse_are_file(filepath):
     raise ParseError(f"All parsers failed for {filepath} (detected: {detected}):\n{error_msg}")
 
 
-def convert_are_file(filepath, output_dir):
+def convert_are_file(filepath, output_dir, normalized=False, tolerant=False):
     """Convert a single .are file to JSON."""
     filename = os.path.basename(filepath)
-    json_name = filename.replace('.are', '.json')
+    if normalized:
+        json_name = filename.replace('.are', '.normalized.json')
+    else:
+        json_name = filename.replace('.are', '.json')
     output_path = os.path.join(output_dir, json_name)
 
-    af, format_name = detect_and_parse_are_file(filepath)
+    af, format_name = detect_and_parse_are_file(filepath, tolerant=tolerant)
 
-    data = af.as_dict()
-    data['_source_format'] = format_name
-    data['_source_file'] = filepath
+    if normalized:
+        data = af.as_normalized_dict()
+    else:
+        data = af.as_dict()
+        data['_source_format'] = format_name
+        data['_source_file'] = filepath
+
+    # Add parse errors if in tolerant mode
+    if tolerant and hasattr(af, '_parse_errors') and af._parse_errors:
+        data['_parse_errors'] = af._parse_errors
 
     with open(output_path, 'w') as f:
         json.dump(data, f, indent=2)
@@ -148,18 +167,24 @@ def convert_are_file(filepath, output_dir):
     return format_name
 
 
-def convert_circlemud_dir(dirpath, output_dir):
+def convert_circlemud_dir(dirpath, output_dir, normalized=False, tolerant=False):
     """Convert a CircleMUD directory to JSON."""
     dirname = os.path.basename(dirpath)
-    json_name = f"cm_{dirname}.json"
+    if normalized:
+        json_name = f"cm_{dirname}.normalized.json"
+    else:
+        json_name = f"cm_{dirname}.json"
     output_path = os.path.join(output_dir, json_name)
 
     cf = CircleMudFile(dirpath)
-    cf.load_sections()
+    cf.load_sections()  # CircleMUD doesn't use tolerant mode yet
 
-    data = cf.as_dict()
-    data['_source_format'] = 'circlemud'
-    data['_source_dir'] = dirpath
+    if normalized:
+        data = cf.as_normalized_dict()
+    else:
+        data = cf.as_dict()
+        data['_source_format'] = 'circlemud'
+        data['_source_dir'] = dirpath
 
     with open(output_path, 'w') as f:
         json.dump(data, f, indent=2)
@@ -180,6 +205,10 @@ def main():
                        help='Skip CircleMUD directory conversion')
     parser.add_argument('--continue-on-error', action='store_true',
                        help='Continue processing after errors')
+    parser.add_argument('--normalized', '-n', action='store_true',
+                       help='Output normalized JSON format')
+    parser.add_argument('--tolerant', '-t', action='store_true',
+                       help='Skip sections/items that fail to parse (get partial data)')
     args = parser.parse_args()
 
     # Resolve paths relative to script location
@@ -208,7 +237,7 @@ def main():
         for i, filepath in enumerate(are_files, 1):
             relpath = filepath.relative_to(areas_dir)
             try:
-                format_name = convert_are_file(str(filepath), str(output_dir))
+                format_name = convert_are_file(str(filepath), str(output_dir), normalized=args.normalized, tolerant=args.tolerant)
                 stats['are_success'] += 1
                 stats['formats'][format_name] += 1
                 print(f"[{i}/{total}] OK ({format_name}): {relpath}")
@@ -237,7 +266,7 @@ def main():
         for i, dirpath in enumerate(cm_dirs, 1):
             relpath = dirpath.relative_to(circlemud_dir)
             try:
-                convert_circlemud_dir(str(dirpath), str(output_dir))
+                convert_circlemud_dir(str(dirpath), str(output_dir), normalized=args.normalized)
                 stats['cm_success'] += 1
                 stats['formats']['circlemud'] += 1
                 print(f"[{i}/{total}] OK: {relpath}")
