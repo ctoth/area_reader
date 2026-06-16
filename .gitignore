@@ -1,0 +1,13 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.benchmarks/
+.venv/
+venv/
+
+# Local scratch / unrelated tooling
+notes-*.md
+pyghidra_mcp_projects/

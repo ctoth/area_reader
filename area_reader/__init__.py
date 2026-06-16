@@ -16,7 +16,7 @@ from attr import attr, attributes, Factory, fields
 from cattr import converters
 from operator import setitem
 
-from constants import *
+from area_reader.constants import *
 
 def field(type=None, read=True, on_read=None, original_type=None, only_if=None, *args, **kwargs):
 	metadata = dict(read=read)
@@ -1251,8 +1251,11 @@ def print_area(area_file_path, area_type=RomAreaFile):
 	area_file.load_sections()
 	print(area_file.as_json())
 
-if __name__ == '__main__':
+def main():
 	if len(sys.argv) < 2:
 		print("Must supply an area")
 		sys.exit(1)
 	print_area(sys.argv[1])
+
+if __name__ == '__main__':
+	main()
