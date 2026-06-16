@@ -45,7 +45,7 @@ class AreaFile(object):
 
 	def __init__(self, filename):
 		super(AreaFile, self).__init__()
-		self.file = io.open(filename, mode='rt', encoding='ascii')
+		self.file = io.open(filename, mode='rt', encoding='latin-1')
 		self.index = 0
 		self.data = self.file.read()
 		self.filename = filename
@@ -115,6 +115,29 @@ class AreaFile(object):
 	def read_to_eol(self):
 		return self.read_until('\n')
 
+	def skip_smaug_programs(self):
+		self.skip_whitespace()
+		while self.current_char == '>':
+			program_end = self.data.find('\n|\n', self.index)
+			if program_end == -1:
+				program_end = self.data.find('\r\n|\r\n', self.index)
+			if program_end != -1:
+				self.index = program_end + 3
+				self.skip_whitespace()
+				continue
+			next_record = self.data.find('\n#', self.index)
+			if next_record == -1:
+				self.index = len(self.data) - 1
+				return
+			self.index = next_record + 1
+
+	def read_number_line(self):
+		self.skip_whitespace()
+		line = self.read_to_eol().strip()
+		if not line:
+			return []
+		return [int(value) for value in line.split()]
+
 	def read_until(self, endchar):
 		ahead = self.data.find(endchar, self.index)
 		result = self.data[self.index:ahead]
@@ -123,13 +146,15 @@ class AreaFile(object):
 
 	@property
 	def current_char(self):
+		if self.index >= len(self.data):
+			return '\0'
 		return self.data[self.index]
 
 	def advance(self):
 		self.index += 1
 
 	def skip_whitespace(self):
-		while self.current_char.isspace():
+		while self.index < len(self.data) and self.current_char.isspace():
 			self.advance()
 
 	def read_flag(self):
@@ -148,7 +173,7 @@ class AreaFile(object):
 		while self.current_char.isdigit():
 			number = number * 10 + int(self.current_char)
 			self.advance()
-		if self.current_char == '|':
+		if self.current_char == '|' or self.current_char == '&':
 			self.advance()
 			number += self.read_flag()
 		if negative:
@@ -561,7 +586,7 @@ class RomMob(RomCharacter):
 		start_pos = reader.read_word()
 		default_pos = reader.read_word()
 		sex = reader.read_word()
-		wealth = int(reader.read_number() / 20)
+		wealth = reader.read_number()
 		form = reader.read_flag()
 		parts = reader.read_flag()
 		size = reader.read_word()
@@ -658,6 +683,15 @@ class Exit(object):
 		return cls(door=door, description=description, keyword=keyword, exit_info=exit_info, key=key, destination=destination)
 
 @attributes
+class SmaugExit(Exit):
+	door = attr(default=None, type=int)
+	distance = attr(default=0, type=int)
+	pulltype = attr(default=0, type=int)
+	pull = attr(default=0, type=int)
+	x = attr(default=0, type=int)
+	y = attr(default=0, type=int)
+
+@attributes
 class Room(MudBase):
 	owner = attr(default=None, type=str)
 	area = attr(default=None)
@@ -723,9 +757,9 @@ class Reset(object):
 		else:
 			arg3 = reader.read_number()
 		if letter == 'P' or letter == 'M':
-			arg4 = 0
-		else:
 			arg4 = reader.read_number()
+		else:
+			arg4 = 0
 		reader.index -= 1
 		comment = reader.read_to_eol()
 		return cls(command=command, arg1=arg1, arg2=arg2, arg3=arg3, arg4=arg4, comment=comment)
@@ -764,19 +798,18 @@ class RomArea(object):
 class MercRoom(Room):
 	room_flags = attr(default=0, type=MERC_ROOM_FLAGS, converter=MERC_ROOM_FLAGS)
 
-	@classmethod
-	def read_metadata(cls, reader):
-		logger.debug("Reading room data for %d" % cls.vnum)
+	def read_metadata(self, reader):
+		logger.debug("Reading room data for %d" % self.vnum)
 		while True:
 			letter = reader.read_letter()
 			if letter == 'S':
 				break
 			if letter == 'D':
-				cls.exits.append(Exit.read(reader=reader))
+				self.exits.append(Exit.read(reader=reader))
 			elif letter == 'E':
-				cls.extra_descriptions.append(reader.read_object(ExtraDescription))
+				self.extra_descriptions.append(reader.read_object(ExtraDescription))
 			else:
-				reader.parse_fail("cls %d has flag %s not DES" % (cls.vnum, letter))
+				reader.parse_fail("room %d has flag %s not DES" % (self.vnum, letter))
 
 @attributes
 class RomShop(object):
@@ -791,20 +824,173 @@ class RomShop(object):
 class SmaugMob(RomMob):
 	affected_by = attr(default=0, type=SMAUG_AFFECTED_BY, converter=SMAUG_AFFECTED_BY)
 
+	@classmethod
+	def read(cls, reader, vnum):
+		logger.debug("Reading SMAUG mob %d", vnum)
+		name = reader.read_string()
+		short_desc = reader.read_string()
+		long_desc = reader.read_string()
+		description = reader.read_string()
+		act = reader.read_flag() | ROM_ACT_TYPES.IS_NPC
+		affected_by = reader.read_flag()
+		alignment = reader.read_number()
+		letter = reader.read_letter()
+		level = reader.read_number()
+		hitroll = reader.read_number()
+		ac = reader.read_number()
+		hit = Dice.read(reader=reader)
+		damage = Dice.read(reader=reader)
+		if letter not in ('S', 'C', 'V'):
+			reader.parse_fail("Reading SMAUG MOB vnum %d unexpected type %s" % (vnum, letter))
+		numeric_lines = []
+		while True:
+			reader.skip_whitespace()
+			if reader.current_char == '#' or reader.current_char == '>':
+				break
+			numeric_lines.append(reader.read_number_line())
+		complex_line_count = 0
+		if letter in ('C', 'V'):
+			complex_line_count = 4
+		if letter == 'V':
+			complex_line_count = 5
+		position_index = len(numeric_lines) - complex_line_count - 1
+		if position_index < 0:
+			reader.parse_fail("SMAUG MOB vnum %d missing position line" % vnum)
+		position_line = numeric_lines[position_index]
+		if len(position_line) < 3:
+			reader.parse_fail("SMAUG MOB vnum %d malformed position line" % vnum)
+		money_values = []
+		for line in numeric_lines[:position_index]:
+			money_values.extend(line)
+		wealth = money_values[0] if money_values else 0
+		start_pos = position_line[0]
+		default_pos = position_line[1]
+		sex = position_line[2]
+		reader.skip_smaug_programs()
+		return cls(vnum=vnum, name=name, short_desc=short_desc, long_desc=long_desc, description=description, act=act, affected_by=affected_by, alignment=alignment, level=level, hitroll=hitroll, ac=ac, hit=hit, damage=damage, wealth=wealth, start_pos=start_pos, default_pos=default_pos, sex=sex)
+
+@attributes
+class SmaugItem(Item):
+	layers = attr(default=0, type=int)
+
+	@classmethod
+	def read(cls, reader, vnum):
+		logger.debug("Reading SMAUG object %d", vnum)
+		name = reader.read_string()
+		short_desc = reader.read_string()
+		description = reader.read_string()
+		reader.read_string() # action description
+		item_type = reader.read_number()
+		extra_flags = reader.read_flag()
+		wear_flags = reader.read_flag()
+		header = [int(value) for value in reader.read_to_eol().split()]
+		layers = header[0] if len(header) > 0 else 0
+		level = header[1] if len(header) > 1 else 0
+		reader.skip_whitespace()
+		value = [int(value) for value in reader.read_to_eol().split()]
+		reader.skip_whitespace()
+		cost_line = [int(value) for value in reader.read_to_eol().split()]
+		weight = cost_line[0] if len(cost_line) > 0 else 0
+		cost = cost_line[1] if len(cost_line) > 1 else 0
+		reader.skip_whitespace()
+		if reader.current_char not in ('A', 'E', '>', '#'):
+			reader.read_to_eol()
+		affected = []
+		extra_descriptions = []
+		while True:
+			letter = reader.read_letter()
+			if letter == 'A':
+				aff = MercAffectData()
+				affected.append(aff)
+				aff.type = -1
+				aff.duration = -1
+				aff.location = reader.read_number()
+				aff.modifier = reader.read_number()
+			elif letter == 'E':
+				extra_descriptions.append(reader.read_object(ExtraDescription))
+			elif letter == '>':
+				reader.index -= 1
+				reader.skip_smaug_programs()
+			else:
+				reader.index -= 1
+				break
+		return cls(vnum=vnum, name=name, short_desc=short_desc, description=description, item_type=item_type, extra_flags=extra_flags, wear_flags=wear_flags, value=value, level=level, weight=weight, cost=cost, affected=affected, extra_descriptions=extra_descriptions, layers=layers)
+
 @attributes
 class SmaugArea(RomArea):
+	author = attr(default='', type=str)
+	credits = attr(default='', type=str)
+	flags = attr(default=0, type=int)
+	version = attr(default=0, type=int)
+	low_soft_range = attr(default=0, type=int)
+	high_soft_range = attr(default=0, type=int)
+	low_hard_range = attr(default=0, type=int)
+	high_hard_range = attr(default=0, type=int)
 	resetmsg = attr(default='', type=str)
 	high_economy = attr(default=0)
 	low_economy = attr(default=0)
 
-
 @attributes
 class SmaugRoom(Room):
+	sector_type = attr(default=0, type=int)
 	tele_delay = attr(default=0)
 	tele_vnum = attr(default=0)
 	tunnel = attr(default=None)
 	max_weight = attr(default=None)
 	light = attr(default=0)
+
+	@classmethod
+	def read(cls, reader, vnum):
+		logger.debug("Reading SMAUG room with vnum %d", vnum)
+		name = reader.read_string()
+		description = reader.read_string()
+		area_number = reader.read_number()
+		room_flags = reader.read_flag()
+		line = reader.read_to_eol()
+		values = [int(value) for value in line.split()]
+		while len(values) < 5:
+			values.append(0)
+		room = cls(vnum=vnum, name=name, description=description, area_number=area_number, room_flags=room_flags, sector_type=values[0], tele_delay=values[1], tele_vnum=values[2], tunnel=values[3], max_weight=values[4])
+		room.read_metadata(reader)
+		return room
+
+	def read_metadata(self, reader):
+		while True:
+			letter = reader.read_letter()
+			if letter == 'S':
+				break
+			if letter == 'D':
+				self.exits.append(self.read_exit(reader))
+			elif letter == 'E':
+				self.extra_descriptions.append(reader.read_object(ExtraDescription))
+			elif letter == 'M':
+				reader.read_number()
+				reader.read_number()
+				reader.read_number()
+				reader.read_letter()
+			elif letter == '>':
+				reader.index -= 1
+				reader.skip_smaug_programs()
+			else:
+				reader.parse_fail("SMAUG room %d has unknown flag %s" % (self.vnum, letter))
+
+	def read_exit(self, reader):
+		door = reader.read_number()
+		description = reader.read_string()
+		keyword = reader.read_string()
+		reader.skip_whitespace()
+		line = reader.read_to_eol()
+		values = [int(value) for value in line.split()]
+		while len(values) < 6:
+			values.append(0)
+		locks, key, destination, distance, pulltype, pull = values[:6]
+		if locks == 1:
+			exit_info = EXIT_FLAGS.ISDOOR
+		elif locks == 2:
+			exit_info = EXIT_FLAGS.ISDOOR | EXIT_FLAGS.PICKPROOF
+		else:
+			exit_info = locks
+		return SmaugExit(door=door, description=description, keyword=keyword, exit_info=exit_info, key=key, destination=destination, distance=distance, pulltype=pulltype, pull=pull)
 
 
 @attributes
@@ -827,14 +1013,8 @@ class MercReset(object):
 			arg3 = 0
 		else:
 			arg3 = reader.read_number()
-		if letter == 'P' or letter == 'M':
-			arg4 = 0
-		else:
-			arg4 = reader.read_number()
-		arg5 = reader.read_number()
-		reader.index -= 1
 		comment = reader.read_to_eol()
-		return cls(command=command, arg1=arg1, arg2=arg2, arg3=arg3, arg4=arg4, arg5=arg5, comment=comment)
+		return cls(command=command, arg1=arg1, arg2=arg2, arg3=arg3, comment=comment)
 
 @attributes
 class MercMob(RomMob):
@@ -911,6 +1091,10 @@ class MercAreaFile(AreaFile):
 		for item in self.load_vnum_section(MercItem):
 			setitem(self.area.objects, item.vnum, item)
 
+	def load_rooms(self):
+		for room in self.load_vnum_section(MercRoom):
+			setitem(self.area.rooms, room.vnum, room)
+
 	def load_resets(self):
 		for reset in self.read_flat_section(MercReset):
 			self.area.resets.append(reset)
@@ -921,9 +1105,119 @@ class MercAreaFile(AreaFile):
 class SmaugAreaFile(RomAreaFile):
 	area_type = SmaugArea
 
+	def load_sections(self):
+		readers = {
+			'area': self.read_area_metadata,
+			'author': self.load_author,
+			'credits': self.load_credits,
+			'flags': self.load_flags,
+			'ranges': self.load_ranges,
+			'version': self.load_version,
+			'resetmsg': self.load_resetmsg,
+			'economy': self.load_economy,
+			'helps': self.load_helps,
+			'mobiles': self.load_mobiles,
+			'objects': self.load_objects,
+			'rooms': self.load_rooms,
+			'resets': self.load_resets,
+			'shops': self.load_shops,
+			'specials': self.load_specials,
+			'repairs': self.load_repairs,
+			'continent': self.load_ignored_string,
+			'climate': self.load_ignored_line,
+			'neighbor': self.load_ignored_line,
+			'spelllimit': self.load_ignored_line,
+		}
+		while True:
+			self.skip_whitespace()
+			if self.index >= len(self.data):
+				return
+			section_name = self.read_section_name()
+			self.current_section_name = section_name
+			if section_name == '$':
+				return
+			reader = readers.get(section_name)
+			if reader is None:
+				self.skip_section(section_name)
+			else:
+				logger.info("Processing section %s" % section_name)
+				try:
+					reader()
+				except Exception:
+					self.parse_fail("Error reading section %r" % section_name)
+
+	def read_area_metadata(self):
+		self.area.name = self.read_string()
+
+	def load_author(self):
+		self.area.author = self.read_string()
+
+	def load_credits(self):
+		self.area.credits = self.read_string()
+
+	def load_flags(self):
+		self.area.flags = self.read_number()
+		self.read_to_eol()
+
+	def load_ranges(self):
+		self.area.low_soft_range = self.read_number()
+		self.area.high_soft_range = self.read_number()
+		self.area.low_hard_range = self.read_number()
+		self.area.high_hard_range = self.read_number()
+		self.read_word() # $
+
+	def load_version(self):
+		self.area.version = self.read_number()
+
+	def load_ignored_string(self):
+		self.read_string()
+
+	def load_ignored_line(self):
+		self.read_to_eol()
+
 	def load_mobiles(self):
-		for mob in self.load_vnum_section(SmaugMob):
+		for mob in self.load_smaug_vnum_section(SmaugMob):
 			setitem(self.area.mobs, mob.vnum, mob)
+
+	def load_objects(self):
+		for item in self.load_smaug_vnum_section(SmaugItem):
+			setitem(self.area.objects, item.vnum, item)
+
+	def load_rooms(self):
+		for room in self.load_smaug_vnum_section(SmaugRoom):
+			setitem(self.area.rooms, room.vnum, room)
+
+	def load_smaug_vnum_section(self, section_object_type):
+		while True:
+			self.skip_whitespace()
+			if self.index >= len(self.data):
+				break
+			if self.current_char != '#':
+				self.parse_fail("Expected # got %s" % self.current_char)
+			next_char = self.data[self.index + 1]
+			if not (next_char.isdigit() or next_char == '-'):
+				break
+			vnum = self.read_vnum()
+			if vnum == 0:
+				break
+			yield self.read_object(section_object_type, vnum=vnum)
+
+	def load_resets(self):
+		for reset in self.read_flat_section(MercReset):
+			self.area.resets.append(reset)
+
+	def load_repairs(self):
+		while True:
+			keeper = self.read_number()
+			if keeper == 0:
+				break
+			for _ in range(self.MAX_TRADES):
+				self.read_number()
+			self.read_number()
+			self.read_number()
+			self.read_number()
+			self.read_number()
+			self.read_to_eol()
 
 	def load_resetmsg(self):
 		self.area.resetmsg = self.read_string()
