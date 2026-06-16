@@ -1,4 +1,6 @@
 # Area Reader
+[![CI](https://github.com/ctoth/area_reader/actions/workflows/ci.yml/badge.svg)](https://github.com/ctoth/area_reader/actions/workflows/ci.yml)
+
 A Python Library to parse MUD area files
 
 This project reads area files from old MUDs and presents them as Python objects.
