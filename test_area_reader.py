@@ -1,5 +1,6 @@
 import area_reader
 import os
+import pytest
 from pathlib import Path
 import tempfile
 from hypothesis import given, settings, strategies as st
@@ -16,6 +17,12 @@ small_int = st.integers(min_value=0, max_value=9999)
 rom_source_dir = Path(r"C:\Users\Q\src\Rom24b6\area")
 merc_source_dir = Path(r"C:\Users\Q\src\merc-mud\area")
 smaug_source_dir = Path(r"C:\Users\Q\src\_smaug_\db\area")
+swr_source_dir = Path(r"C:\Users\Q\src\swrfuss")
+
+def swr_are_paths():
+	if not swr_source_dir.exists():
+		return []
+	return sorted(swr_source_dir.rglob("*.are"))
 
 def test_loading_rom_area(rom_path):
 	af = area_reader.RomAreaFile(rom_path)
@@ -306,6 +313,97 @@ An object is here.~
 		assert item.cost == cost
 
 
+@given(
+	version=st.integers(min_value=1, max_value=99),
+	low_soft=st.integers(min_value=0, max_value=60),
+	high_soft=st.integers(min_value=60, max_value=103),
+	low_hard=st.integers(min_value=0, max_value=60),
+	high_hard=st.integers(min_value=60, max_value=103),
+	mob_vnum=st.integers(min_value=1, max_value=50000),
+	object_vnum=st.integers(min_value=1, max_value=50000),
+	room_vnum=st.integers(min_value=1, max_value=50000),
+	gold=st.integers(min_value=0, max_value=1_000_000),
+)
+@settings(max_examples=20, deadline=None)
+def test_swr_fuss_area_reads_keyed_records(version, low_soft, high_soft, low_hard, high_hard, mob_vnum, object_vnum, room_vnum, gold):
+	with tempfile.TemporaryDirectory() as directory:
+		path = write_area(directory, f"""#FUSSAREA
+#AREADATA
+Version      {version}
+Name         SWR Test~
+Author       Builder~
+Ranges       {low_soft} {high_soft} {low_hard} {high_hard}
+Economy      123 456
+ResetFreq    15
+#ENDAREADATA
+
+#MOBILE
+Vnum       {mob_vnum}
+Keywords   test mob~
+Short      a test mob~
+Long       A test mob waits here.
+~
+Desc       A plain SWR mobile.
+~
+Race       Human~
+Position   standing~
+DefPos     standing~
+Gender     neuter~
+Actflags   npc sentinel~
+Stats1     0 50 0 0 {gold} 0
+Stats2     5 10 25
+Stats3     1 4 2
+Stats4     0 0 0 3 3
+Attribs    10 10 10 10 10 10 10 0
+Saves      0 0 0 0 0
+Speaks     common~
+Speaking   common~
+#ENDMOBILE
+
+#OBJECT
+Vnum     {object_vnum}
+Keywords test object~
+Type     trash~
+Short    a test object~
+Long     A test object lies here.~
+WFlags   take~
+Values   1 2 3 4 5 6
+Stats    7 8 9 10 11
+#ENDOBJECT
+
+#ROOM
+Vnum     {room_vnum}
+Name     Test Room~
+Sector   city~
+Flags    nomob indoors~
+Stats    1 2 3
+Desc     A plain SWR room.
+~
+Reset M 0 {mob_vnum} 1 {room_vnum}
+#ENDROOM
+
+#ENDAREA
+""")
+
+		af = area_reader.SwrAreaFile(path)
+		af.load_sections()
+
+		assert af.area.name == "SWR Test"
+		assert af.area.version == version
+		assert af.area.author == "Builder"
+		assert af.area.low_soft_range == low_soft
+		assert af.area.high_soft_range == high_soft
+		assert af.area.low_hard_range == low_hard
+		assert af.area.high_hard_range == high_hard
+		assert af.area.high_economy == 123
+		assert af.area.low_economy == 456
+		assert af.area.mobs[mob_vnum].wealth == gold
+		assert af.area.objects[object_vnum].weight == 7
+		assert af.area.objects[object_vnum].cost == 8
+		assert af.area.rooms[room_vnum].name == "Test Room"
+		assert af.area.rooms[room_vnum].resets[0].command == "M"
+
+
 def test_loading_smaug_map1_source_area_when_available():
 	path = smaug_source_dir / "map1.are"
 	if not path.exists():
@@ -370,3 +468,10 @@ def test_loading_actual_smaug_source_areas_when_available():
 		af = area_reader.SmaugAreaFile(path)
 		af.load_sections()
 		assert af.area
+
+
+@pytest.mark.parametrize("swr_path", swr_are_paths(), ids=lambda path: str(path.relative_to(swr_source_dir)))
+def test_loading_actual_swr_are_file_when_available(swr_path):
+	af = area_reader.SwrAreaFile(swr_path)
+	af.load_sections()
+	assert af.area

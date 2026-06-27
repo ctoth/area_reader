@@ -994,6 +994,12 @@ class SmaugRoom(Room):
 
 
 @attributes
+class SwrRoom(SmaugRoom):
+	sector = attr(default='', type=str)
+	resets = attr(default=Factory(list))
+
+
+@attributes
 class MercReset(object):
 	command = attr(default=None)
 	arg1 = attr(default=None)
@@ -1240,6 +1246,343 @@ class SmaugAreaFile(RomAreaFile):
 
 	def read_line(self):
 		return self.read_to_eol()
+
+
+class SwrAreaFile(SmaugAreaFile):
+
+	def load_sections(self):
+		self.skip_whitespace()
+		if self.data.startswith("#FUSSAREA", self.index):
+			self.read_section_name()
+			self.load_fuss_area()
+			return
+		if self.current_char == '#':
+			start = self.index
+			self.advance()
+			word = self.read_word()
+			self.index = start
+			if word.isdigit():
+				for mob in self.load_smaug_vnum_section(SmaugMob):
+					setitem(self.area.mobs, mob.vnum, mob)
+				return
+		super().load_sections()
+
+	def load_mobiles(self):
+		for mob in self.load_swr_vnum_section(SmaugMob):
+			setitem(self.area.mobs, mob.vnum, mob)
+
+	def load_objects(self):
+		for item in self.load_swr_vnum_section(SmaugItem):
+			setitem(self.area.objects, item.vnum, item)
+
+	def load_rooms(self):
+		for room in self.load_swr_vnum_section(SmaugRoom):
+			setitem(self.area.rooms, room.vnum, room)
+
+	def load_swr_vnum_section(self, section_object_type):
+		while True:
+			self.skip_whitespace()
+			if self.index >= len(self.data):
+				break
+			if self.current_char != '#':
+				self.parse_fail("Expected # got %s" % self.current_char)
+			next_char = self.data[self.index + 1]
+			if not (next_char.isdigit() or next_char == '-'):
+				break
+			vnum = self.read_vnum()
+			self.skip_whitespace()
+			if vnum == 0 and (self.index >= len(self.data) or self.current_char == '#'):
+				break
+			yield self.read_object(section_object_type, vnum=vnum)
+
+	def load_fuss_area(self):
+		while True:
+			self.skip_whitespace()
+			if self.index >= len(self.data):
+				return
+			section_name = self.read_section_name()
+			self.current_section_name = section_name
+			if section_name == 'areadata':
+				self.load_fuss_areadata()
+			elif section_name == 'mobile':
+				mob = self.read_fuss_mobile()
+				setitem(self.area.mobs, mob.vnum, mob)
+			elif section_name == 'object':
+				item = self.read_fuss_object()
+				setitem(self.area.objects, item.vnum, item)
+			elif section_name == 'room':
+				room = self.read_fuss_room()
+				setitem(self.area.rooms, room.vnum, room)
+				self.area.resets.extend(room.resets)
+			elif section_name == 'endarea':
+				return
+			else:
+				self.skip_fuss_value()
+
+	def skip_fuss_value(self):
+		line_end = self.data.find('\n', self.index)
+		if line_end == -1:
+			self.index = len(self.data)
+			return
+		if '~' in self.data[self.index:line_end]:
+			self.read_string()
+		else:
+			self.read_to_eol()
+
+	def read_fuss_numbers(self):
+		return [int(value) for value in self.read_to_eol().split()]
+
+	def load_fuss_areadata(self):
+		while True:
+			word = self.read_word()
+			if word == "#ENDAREADATA":
+				return
+			if word == "Author":
+				self.area.author = self.read_string()
+			elif word == "Economy":
+				self.area.high_economy = self.read_number()
+				self.area.low_economy = self.read_number()
+			elif word == "Flags":
+				self.area.flags = 0
+				self.read_string()
+			elif word == "Name":
+				self.area.name = self.read_string()
+			elif word == "Ranges":
+				values = self.read_fuss_numbers()
+				if len(values) >= 4:
+					self.area.low_soft_range = values[0]
+					self.area.high_soft_range = values[1]
+					self.area.low_hard_range = values[2]
+					self.area.high_hard_range = values[3]
+			elif word == "ResetMsg":
+				self.area.resetmsg = self.read_string()
+			elif word == "ResetFreq":
+				self.read_number()
+			elif word == "Version":
+				self.area.version = self.read_number()
+			else:
+				self.skip_fuss_value()
+
+	def read_fuss_mobile(self):
+		vnum = 0
+		name = ''
+		short_desc = ''
+		long_desc = ''
+		description = ''
+		race = ''
+		position = ''
+		default_position = ''
+		sex = ''
+		stats1 = [0, 0, 0, 0, 0, 0]
+		stats2 = [0, 0, 0]
+		stats3 = [0, 0, 0]
+		stats4 = [0, 0, 0, 0, 0]
+		while True:
+			word = self.read_word()
+			if word == "#ENDMOBILE":
+				break
+			if word == "#MUDPROG":
+				self.skip_fuss_program()
+			elif word == "Vnum":
+				vnum = self.read_number()
+			elif word == "Keywords":
+				name = self.read_string()
+			elif word == "Short":
+				short_desc = self.read_string()
+			elif word == "Long":
+				long_desc = self.read_string()
+			elif word == "Desc":
+				description = self.read_string()
+			elif word == "Race":
+				race = self.read_string()
+			elif word == "Position":
+				position = self.read_string()
+			elif word == "DefPos":
+				default_position = self.read_string()
+			elif word == "Gender":
+				sex = self.read_string()
+			elif word == "Stats1":
+				stats1 = self.read_fuss_numbers()
+			elif word == "Stats2":
+				stats2 = self.read_fuss_numbers()
+			elif word == "Stats3":
+				stats3 = self.read_fuss_numbers()
+			elif word == "Stats4":
+				stats4 = self.read_fuss_numbers()
+			elif word in ("Actflags", "Affected", "Attacks", "Attribs", "Bodyparts", "Defenses", "Immune", "RepairData", "Resist", "Saves", "ShopData", "Speaks", "Speaking", "Specfun", "Specfun2", "Suscept", "VIPFlags"):
+				self.skip_fuss_value()
+			else:
+				self.skip_fuss_value()
+		while len(stats1) < 6:
+			stats1.append(0)
+		while len(stats2) < 3:
+			stats2.append(0)
+		while len(stats3) < 3:
+			stats3.append(0)
+		while len(stats4) < 5:
+			stats4.append(0)
+		return RomMob(
+			vnum=vnum,
+			name=name,
+			short_desc=short_desc,
+			long_desc=long_desc,
+			description=description,
+			race=race,
+			alignment=stats1[0],
+			level=stats1[1],
+			hitroll=stats4[3],
+			hit=Dice(number=stats2[0], sides=stats2[1], bonus=stats2[2]),
+			damage=Dice(number=stats3[0], sides=stats3[1], bonus=stats3[2]),
+			ac=RomArmorClass(pierce=stats1[3], bash=stats1[3], slash=stats1[3], exotic=stats1[3]),
+			wealth=stats1[4],
+			start_pos=position,
+			default_pos=default_position,
+			sex=sex,
+		)
+
+	def read_fuss_object(self):
+		vnum = 0
+		name = ''
+		short_desc = ''
+		description = ''
+		value = []
+		weight = 0
+		cost = 0
+		level = 0
+		layers = 0
+		extra_descriptions = []
+		while True:
+			word = self.read_word()
+			if word == "#ENDOBJECT":
+				break
+			if word == "#EXDESC":
+				extra_descriptions.append(self.read_fuss_extra_description())
+			elif word == "#MUDPROG":
+				self.skip_fuss_program()
+			elif word == "Vnum":
+				vnum = self.read_number()
+			elif word == "Keywords":
+				name = self.read_string()
+			elif word == "Short":
+				short_desc = self.read_string()
+			elif word == "Long":
+				description = self.read_string()
+			elif word == "Values":
+				value = self.read_fuss_numbers()
+			elif word == "Stats":
+				stats = self.read_fuss_numbers()
+				if len(stats) > 0:
+					weight = stats[0]
+				if len(stats) > 1:
+					cost = stats[1]
+				if len(stats) > 3:
+					level = stats[3]
+				if len(stats) > 4:
+					layers = stats[4]
+			elif word in ("Action", "Affect", "AffectData", "Flags", "Spells", "Type", "WFlags"):
+				self.skip_fuss_value()
+			else:
+				self.skip_fuss_value()
+		return SmaugItem(vnum=vnum, name=name, short_desc=short_desc, description=description, value=value, weight=weight, cost=cost, level=level, layers=layers, extra_descriptions=extra_descriptions)
+
+	def read_fuss_room(self):
+		vnum = 0
+		name = ''
+		description = ''
+		sector = ''
+		tele_delay = 0
+		tele_vnum = 0
+		tunnel = 0
+		exits = []
+		extra_descriptions = []
+		resets = []
+		while True:
+			word = self.read_word()
+			if word == "#ENDROOM":
+				break
+			if word == "#EXIT":
+				exits.append(self.read_fuss_exit())
+			elif word == "#EXDESC":
+				extra_descriptions.append(self.read_fuss_extra_description())
+			elif word == "#MUDPROG":
+				self.skip_fuss_program()
+			elif word == "Vnum":
+				vnum = self.read_number()
+			elif word == "Name":
+				name = self.read_string()
+			elif word == "Desc":
+				description = self.read_string()
+			elif word == "Sector":
+				sector = self.read_string()
+			elif word == "Stats":
+				stats = self.read_fuss_numbers()
+				if len(stats) > 0:
+					tele_delay = stats[0]
+				if len(stats) > 1:
+					tele_vnum = stats[1]
+				if len(stats) > 2:
+					tunnel = stats[2]
+			elif word == "Reset":
+				letter = self.read_letter()
+				resets.append(MercReset.read(reader=self, letter=letter))
+			elif word == "Flags":
+				self.skip_fuss_value()
+			else:
+				self.skip_fuss_value()
+		return SwrRoom(vnum=vnum, name=name, description=description, sector=sector, tele_delay=tele_delay, tele_vnum=tele_vnum, tunnel=tunnel, exits=exits, extra_descriptions=extra_descriptions, resets=resets)
+
+	def read_fuss_exit(self):
+		door = None
+		description = ''
+		keyword = ''
+		key = 0
+		destination = 0
+		distance = 0
+		while True:
+			word = self.read_word()
+			if word == "#ENDEXIT":
+				return SmaugExit(door=door, description=description, keyword=keyword, key=key, destination=destination, distance=distance)
+			if word == "Desc":
+				description = self.read_string()
+			elif word == "Direction":
+				door = self.read_string()
+			elif word == "Distance":
+				distance = self.read_number()
+			elif word == "Key":
+				key = self.read_number()
+			elif word == "Keywords":
+				keyword = self.read_string()
+			elif word == "ToRoom":
+				destination = self.read_number()
+			elif word == "Flags":
+				self.skip_fuss_value()
+			else:
+				self.skip_fuss_value()
+
+	def read_fuss_extra_description(self):
+		keyword = ''
+		description = ''
+		while True:
+			word = self.read_word()
+			if word == "#ENDEXDESC":
+				return ExtraDescription(keyword=keyword, description=description)
+			if word == "ExDescKey":
+				keyword = self.read_string()
+			elif word == "ExDesc":
+				description = self.read_string()
+			else:
+				self.skip_fuss_value()
+
+	def skip_fuss_program(self):
+		while True:
+			word = self.read_word()
+			if word == "#ENDPROG":
+				return
+			if word in ("Arglist", "Comlist", "Progtype"):
+				self.read_string()
+			else:
+				self.skip_fuss_value()
+
 
 class EnumNameConverter(converters.Converter):
 	def _unstructure_enum(self, obj):
