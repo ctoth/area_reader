@@ -18,11 +18,46 @@ rom_source_dir = Path(r"C:\Users\Q\src\Rom24b6\area")
 merc_source_dir = Path(r"C:\Users\Q\src\merc-mud\area")
 smaug_source_dir = Path(r"C:\Users\Q\src\_smaug_\db\area")
 swr_source_dir = Path(r"C:\Users\Q\src\swrfuss")
+circle_source_dir = Path(r"C:\Users\Q\src\circlemud")
+
+def write_circle_world(directory, *, zon=None, wld=None, mob=None, obj=None, shp=None):
+	root = Path(directory)
+	world = root / "lib" / "world"
+	for family, text in {
+		"zon": zon,
+		"wld": wld,
+		"mob": mob,
+		"obj": obj,
+		"shp": shp,
+	}.items():
+		family_dir = world / family
+		family_dir.mkdir(parents=True, exist_ok=True)
+		index = family_dir / "index"
+		if text is None:
+			index.write_text("$\n", encoding="ascii")
+			continue
+		filename = f"1.{family}"
+		(family_dir / filename).write_text(text, encoding="ascii")
+		index.write_text(f"{filename}\n$\n", encoding="ascii")
+	return root
 
 def swr_are_paths():
 	if not swr_source_dir.exists():
 		return []
 	return sorted(swr_source_dir.rglob("*.are"))
+
+def circle_indexed_paths(family):
+	index = circle_source_dir / "lib" / "world" / family / "index"
+	if not index.exists():
+		return []
+	base = index.parent
+	paths = []
+	for line in index.read_text(encoding="ascii").splitlines():
+		name = line.strip()
+		if not name or name == "$":
+			continue
+		paths.append(base / name)
+	return paths
 
 def test_loading_rom_area(rom_path):
 	af = area_reader.RomAreaFile(rom_path)
@@ -402,6 +437,291 @@ Reset M 0 {mob_vnum} 1 {room_vnum}
 		assert af.area.objects[object_vnum].cost == 8
 		assert af.area.rooms[room_vnum].name == "Test Room"
 		assert af.area.rooms[room_vnum].resets[0].command == "M"
+
+
+def test_circle_rooms_read_flags_exits_and_extra_descriptions():
+	with tempfile.TemporaryDirectory() as directory:
+		root = write_circle_world(directory, wld="""#3001
+Temple~
+The temple is quiet.
+~
+30 dJ 0
+D0
+A northern road.
+~
+gate~
+2 3010 3002
+E
+altar~
+The altar is worn smooth.
+~
+S
+$
+""")
+
+		af = area_reader.CircleAreaFile(root)
+		af.load_sections()
+
+		room = af.area.rooms[3001]
+		assert room.name == "Temple"
+		assert room.room_flags == area_reader.circle_asciiflag_conv("dJ")
+		assert room.sector_type == 0
+		assert room.exits[0].description == "A northern road.\n"
+		assert room.exits[0].keyword == "gate"
+		assert room.exits[0].exit_info == area_reader.EXIT_FLAGS.ISDOOR | area_reader.EXIT_FLAGS.PICKPROOF
+		assert room.exits[0].key == 3010
+		assert room.exits[0].destination == 3002
+		assert room.extra_descriptions[0].keyword == "altar"
+
+
+def test_circle_simple_mobile_uses_circle_transforms():
+	with tempfile.TemporaryDirectory() as directory:
+		root = write_circle_world(directory, mob="""#10
+clone~
+the clone~
+A boring old clone is standing here.
+~
+This clone is nothing to look at.
+~
+b 0 -25 S
+7 3 4 2d8+11 1d4+2
+50 125
+8 5 1
+$
+""")
+
+		af = area_reader.CircleAreaFile(root)
+		af.load_sections()
+
+		mob = af.area.mobs[10]
+		assert mob.name == "clone"
+		assert mob.act == area_reader.circle_asciiflag_conv("b") | area_reader.CircleMobFlags.ISNPC
+		assert mob.affected_by == 0
+		assert mob.alignment == -25
+		assert mob.level == 7
+		assert mob.hitroll == 17
+		assert mob.ac == 40
+		assert mob.hit == area_reader.Dice(number=2, sides=8, bonus=11)
+		assert mob.damage == area_reader.Dice(number=1, sides=4, bonus=2)
+		assert mob.wealth == 50
+		assert mob.exp == 125
+		assert mob.default_pos == 8
+		assert mob.start_pos == 5
+		assert mob.sex == 1
+
+
+def test_circle_enhanced_mobile_reads_espec_section():
+	with tempfile.TemporaryDirectory() as directory:
+		root = write_circle_world(directory, mob="""#1
+Puff dragon fractal~
+Puff~
+Puff the Fractal Dragon is here.
+~
+Puff considers a higher reality.
+~
+anopqr dkp 1000 E
+26 1 -1 5d10+550 4d6+3
+10000 155000
+8 8 2
+BareHandAttack: 12
+Str: 18
+E
+$
+""")
+
+		af = area_reader.CircleAreaFile(root)
+		af.load_sections()
+
+		mob = af.area.mobs[1]
+		assert mob.level == 26
+		assert mob.especs["BareHandAttack"] == "12"
+		assert mob.especs["Str"] == "18"
+
+
+def test_circle_objects_end_at_next_record():
+	with tempfile.TemporaryDirectory() as directory:
+		root = write_circle_world(directory, obj="""#10
+waybread bread~
+a waybread~
+Some waybread has been put here.~
+~
+19 g 1
+24 0 0 0
+1 50 50
+E
+waybread bread~
+The waybread is traditional travelling food.
+~
+#11
+coin~
+a coin~
+A coin lies here.~
+~
+20 0 1
+1 2 3 4
+1 2 3
+$
+""")
+
+		af = area_reader.CircleAreaFile(root)
+		af.load_sections()
+
+		assert sorted(af.area.objects) == [10, 11]
+		item = af.area.objects[10]
+		assert item.item_type == 19
+		assert item.extra_flags == area_reader.circle_asciiflag_conv("g")
+		assert item.wear_flags == 1
+		assert item.value == [24, 0, 0, 0]
+		assert item.weight == 1
+		assert item.cost == 50
+		assert item.rent == 50
+		assert item.extra_descriptions[0].keyword == "waybread bread"
+
+
+def test_circle_zones_follow_circle_reset_command_arity():
+	with tempfile.TemporaryDirectory() as directory:
+		root = write_circle_world(directory, zon="""#30
+Midgaard~
+3000 3099 30 2
+M 0 3000 1 3001
+G 1 3010 2
+E 1 3011 1 16
+R 0 3001 3012
+D 0 3001 0 2
+S
+$
+""")
+
+		af = area_reader.CircleAreaFile(root)
+		af.load_sections()
+
+		zone = af.area.zones[30]
+		assert zone.name == "Midgaard"
+		assert zone.bot == 3000
+		assert zone.top == 3099
+		assert zone.lifespan == 30
+		assert zone.reset_mode == 2
+		assert [(reset.command, reset.if_flag, reset.arg1, reset.arg2, reset.arg3) for reset in zone.resets] == [
+			("M", 0, 3000, 1, 3001),
+			("G", 1, 3010, 2, None),
+			("E", 1, 3011, 1, 16),
+			("R", 0, 3001, 3012, None),
+			("D", 0, 3001, 0, 2),
+		]
+
+
+def test_circle_v3_shop_records_parse_core_fields():
+	with tempfile.TemporaryDirectory() as directory:
+		root = write_circle_world(directory, shp="""CircleMUD v3.0 Shop File~
+#3000~
+3050
+3051
+-1
+1.15
+0.15
+SCROLL
+WAND
+-1
+%s Sorry, I haven't got exactly that item.~
+%s You don't seem to have that.~
+%s I don't buy such items.~
+%s That is too expensive for me!~
+%s You can't afford it!~
+%s That'll be %d coins, please.~
+%s You'll get %d coins for it!~
+0
+2
+3000
+2
+3033
+-1
+0
+28
+$
+""")
+
+		af = area_reader.CircleAreaFile(root)
+		af.load_sections()
+
+		shop = af.area.shops[3000]
+		assert shop.products == [3050, 3051]
+		assert shop.profit_buy == 1.15
+		assert shop.profit_sell == 0.15
+		assert shop.buy_type == ["SCROLL", "WAND"]
+		assert shop.keeper == 3000
+		assert shop.rooms == [3033]
+		assert shop.open_hour == 0
+		assert shop.close_hour == 28
+		assert shop.messages[0] == "%s Sorry, I haven't got exactly that item."
+
+
+def test_loading_actual_circle_zones_when_available():
+	if not circle_source_dir.exists():
+		return
+
+	af = area_reader.CircleAreaFile(circle_source_dir)
+	af.load_zones()
+
+	assert len(af.area.zones) == len(circle_indexed_paths("zon"))
+	assert 0 in af.area.zones
+
+
+def test_loading_actual_circle_rooms_when_available():
+	if not circle_source_dir.exists():
+		return
+
+	af = area_reader.CircleAreaFile(circle_source_dir)
+	af.load_rooms()
+
+	assert af.area.rooms
+	assert 0 in af.area.rooms
+
+
+def test_loading_actual_circle_mobiles_when_available():
+	if not circle_source_dir.exists():
+		return
+
+	af = area_reader.CircleAreaFile(circle_source_dir)
+	af.load_mobiles()
+
+	assert af.area.mobs
+	assert 1 in af.area.mobs
+
+
+def test_loading_actual_circle_objects_when_available():
+	if not circle_source_dir.exists():
+		return
+
+	af = area_reader.CircleAreaFile(circle_source_dir)
+	af.load_objects()
+
+	assert af.area.objects
+	assert 0 in af.area.objects
+
+
+def test_loading_actual_circle_shops_when_available():
+	if not circle_source_dir.exists():
+		return
+
+	af = area_reader.CircleAreaFile(circle_source_dir)
+	af.load_shops()
+
+	assert af.area.shops
+	assert 3000 in af.area.shops
+
+
+def test_loading_actual_circle_world_when_available():
+	if not circle_source_dir.exists():
+		return
+
+	af = area_reader.CircleAreaFile(circle_source_dir)
+	af.load_sections()
+
+	assert af.area.zones
+	assert af.area.rooms
+	assert af.area.mobs
+	assert af.area.objects
+	assert af.area.shops
 
 
 def test_loading_smaug_map1_source_area_when_available():
