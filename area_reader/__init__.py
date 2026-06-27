@@ -2112,10 +2112,17 @@ class CoffeeMudItem(object):
 	name = attr(default='')
 	description = attr(default='')
 	display = attr(default='')
-	value = attr(default='')
-	material = attr(default='')
+	prop = attr(default='')
+	flag = attr(default=0)
+	value = attr(default=0)
+	material = attr(default=0)
+	read_text = attr(default='')
 	worn_location = attr(default='')
-	worn_bitmap = attr(default='')
+	worn_bitmap = attr(default=0)
+	capacity = attr(default=0)
+	container_flags = attr(default=0)
+	open_ticks = attr(default=0)
+	affects = attr(default=Factory(list))
 	raw_text = attr(default='')
 	raw_data = attr(default=Factory(dict))
 	nested_area = attr(default=None)
@@ -2388,10 +2395,17 @@ class CoffeeMudAreaFile(object):
 			name=self.value_from_data(raw_data, 'NAME'),
 			description=self.value_from_data(raw_data, 'DESC'),
 			display=self.value_from_data(raw_data, 'DISP'),
-			value=self.value_from_data(raw_data, 'VALUE'),
-			material=self.value_from_data(raw_data, 'MTRAL'),
+			prop=self.value_from_data(raw_data, 'PROP'),
+			flag=self.int_from_data(raw_data, 'FLAG'),
+			value=self.int_from_data(raw_data, 'VALUE'),
+			material=self.int_from_data(raw_data, 'MTRAL'),
+			read_text=self.value_from_data(raw_data, 'READ'),
 			worn_location=self.value_from_data(raw_data, 'WORNL'),
-			worn_bitmap=self.value_from_data(raw_data, 'WORNB'),
+			worn_bitmap=self.int_from_data(raw_data, 'WORNB'),
+			capacity=self.int_from_data(raw_data, 'CAPA'),
+			container_flags=self.int_from_data(raw_data, 'CONT'),
+			open_ticks=self.int_from_data(raw_data, 'OPENTK'),
+			affects=self.read_affects(text_root),
 			raw_text=raw_text,
 			raw_data=raw_data,
 		)

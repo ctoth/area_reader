@@ -156,6 +156,33 @@ def test_coffeemud_mob_reads_nested_common_fields_and_collections():
 		assert mob.raw_data["PROP"] == "11|76|8|8|0|8|90|1.0|19|23|0|"
 
 
+def test_coffeemud_item_reads_nested_common_fields_container_fields_and_affects():
+	with tempfile.TemporaryDirectory() as directory:
+		path = write_coffeemud_file(directory, """<ITEMS><ITEM><ICLAS>GenContainer</ICLAS><IUSES>2147483647</IUSES><ILEVL>42</ILEVL><IABLE>0</IABLE><IREJV>0</IREJV><ITEXT>&lt;NAME&gt;an iron potion rack&lt;/NAME&gt;&lt;DESC&gt;an iron potion rack.  &lt;/DESC&gt;&lt;DISP&gt;an iron potion rack lies here&lt;/DISP&gt;&lt;PROP&gt;0|0|0|0|0|42|0|1.0|21|0|0|&lt;/PROP&gt;&lt;IMG /&gt;&lt;BEHAVES /&gt;&lt;AFFECS&gt;&lt;AFF&gt;&lt;ACLASS&gt;Prop_NoPurge&lt;/ACLASS&gt;&lt;ATEXT /&gt;&lt;/AFF&gt;&lt;/AFFECS&gt;&lt;FLAG&gt;27&lt;/FLAG&gt;&lt;IDENT /&gt;&lt;VALUE&gt;105&lt;/VALUE&gt;&lt;MTRAL&gt;801&lt;/MTRAL&gt;&lt;READ /&gt;&lt;WORNL&gt;false&lt;/WORNL&gt;&lt;WORNB&gt;512&lt;/WORNB&gt;&lt;CAPA&gt;120&lt;/CAPA&gt;&lt;CONT&gt;2048&lt;/CONT&gt;&lt;OPENTK&gt;30&lt;/OPENTK&gt;</ITEXT></ITEM></ITEMS>""")
+
+		af = area_reader.CoffeeMudAreaFile(path)
+		af.load_sections()
+
+		item = af.area.items[0]
+		assert item.class_id == "GenContainer"
+		assert item.uses == 2147483647
+		assert item.level == 42
+		assert item.name == "an iron potion rack"
+		assert item.description == "an iron potion rack.  "
+		assert item.display == "an iron potion rack lies here"
+		assert item.prop == "0|0|0|0|0|42|0|1.0|21|0|0|"
+		assert item.flag == 27
+		assert item.value == 105
+		assert item.material == 801
+		assert item.read_text == ""
+		assert item.worn_location == "false"
+		assert item.worn_bitmap == 512
+		assert item.capacity == 120
+		assert item.container_flags == 2048
+		assert item.open_ticks == 30
+		assert item.affects[0].class_id == "Prop_NoPurge"
+
+
 @given(arg1=small_int, arg2=small_int, arg3=small_int, arg4=small_int)
 @settings(max_examples=30, deadline=None)
 def test_rom_reset_reads_arg4_for_mobile_resets(arg1, arg2, arg3, arg4):
@@ -837,6 +864,22 @@ def test_loading_actual_coffeemud_deities_when_available():
 	assert af.area.mobs[0].class_id == "GenDeity"
 	assert af.area.mobs[0].rejuv == 0
 	assert af.area.mobs[0].raw_data["CLEREQ"] == "-class +cleric +necromancer +doomsayer +templar"
+
+
+def test_loading_actual_coffeemud_junk_items_when_available():
+	path = coffeemud_source_dir / "resources" / "examples" / "junk.cmare"
+	if not path.exists():
+		return
+
+	af = area_reader.CoffeeMudAreaFile(path)
+	af.load_sections()
+
+	expected_items = path.read_text(encoding="latin-1").count("<ITEM>")
+	assert len(af.area.items) == expected_items
+	assert af.area.items[0].name == "an iron sifter"
+	assert af.area.items[0].value == 26
+	assert af.area.items[1].capacity == 37
+	assert af.area.items[2].affects[0].class_id == "Prop_NoPurge"
 
 
 def test_loading_smaug_map1_source_area_when_available():
