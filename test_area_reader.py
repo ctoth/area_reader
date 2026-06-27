@@ -183,6 +183,35 @@ def test_coffeemud_item_reads_nested_common_fields_container_fields_and_affects(
 		assert item.affects[0].class_id == "Prop_NoPurge"
 
 
+def test_coffeemud_area_reads_rooms_exits_and_room_content():
+	with tempfile.TemporaryDirectory() as directory:
+		path = write_coffeemud_file(directory, """<AREA><ACLAS>StdArea</ACLAS><ANAME>Test Area</ANAME><ADESC>A test area.</ADESC><ACLIM>1</ACLIM><ASUBS>builder</ASUBS><ATECH>2</ATECH><ADATA><AUTHOR>Builder</AUTHOR></ADATA><AROOMS><AROOM><ROOMID>Test Area#1</ROOMID><RAREA>Test Area</RAREA><RCLAS>StoneRoom</RCLAS><RDISP>A quiet room</RDISP><RDESC>A plain room.</RDESC><RTEXT>&lt;RCLIM&gt;3&lt;/RCLIM&gt;&lt;RATMO&gt;4&lt;/RATMO&gt;</RTEXT><ROOMEXITS><REXIT><XDIRE>0</XDIRE><XDOOR>Test Area#2</XDOOR><XEXIT><EXID>StdOpenDoorway</EXID><EXDAT>&lt;NAME&gt;a doorway&lt;/NAME&gt;</EXDAT></XEXIT></REXIT></ROOMEXITS><ROOMCONTENT><ROOMMOBS><RMOB><MCLAS>GenMob</MCLAS><MLEVL>5</MLEVL><MABLE>1</MABLE><MREJV>10</MREJV><MTEXT>&lt;NAME&gt;a room mob&lt;/NAME&gt;&lt;MONEY&gt;7&lt;/MONEY&gt;</MTEXT></RMOB></ROOMMOBS><ROOMITEMS><RITEM COUNT="2"><ICLAS>GenItem</ICLAS><IIDEN>item1</IIDEN><ILOCA>container1</ILOCA><IUSES>1</IUSES><ILEVL>2</ILEVL><IABLE>3</IABLE><IREJV>4</IREJV><ITEXT>&lt;NAME&gt;a room item&lt;/NAME&gt;&lt;VALUE&gt;9&lt;/VALUE&gt;</ITEXT></RITEM></ROOMITEMS></ROOMCONTENT></AROOM></AROOMS></AREA>""")
+
+		af = area_reader.CoffeeMudAreaFile(path)
+		af.load_sections()
+
+		assert af.area.class_id == "StdArea"
+		assert af.area.name == "Test Area"
+		assert af.area.raw_data["AUTHOR"] == "Builder"
+		room = af.area.rooms["Test Area#1"]
+		assert room.class_id == "StoneRoom"
+		assert room.display == "A quiet room"
+		assert room.climate == 3
+		assert room.atmosphere == 4
+		assert room.exits[0].direction == 0
+		assert room.exits[0].target_room_id == "Test Area#2"
+		assert room.exits[0].class_id == "StdOpenDoorway"
+		assert room.exits[0].raw_data["NAME"] == "a doorway"
+		assert room.mobs[0].name == "a room mob"
+		assert room.mobs[0].money == 7
+		assert room.items[0].class_id == "GenItem"
+		assert room.items[0].count == 2
+		assert room.items[0].ident == "item1"
+		assert room.items[0].location == "container1"
+		assert room.items[0].name == "a room item"
+		assert room.items[0].value == 9
+
+
 @given(arg1=small_int, arg2=small_int, arg3=small_int, arg4=small_int)
 @settings(max_examples=30, deadline=None)
 def test_rom_reset_reads_arg4_for_mobile_resets(arg1, arg2, arg3, arg4):

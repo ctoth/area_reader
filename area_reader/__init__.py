@@ -2105,6 +2105,9 @@ class CoffeeMudMob(object):
 @attributes
 class CoffeeMudItem(object):
 	class_id = attr(default='')
+	ident = attr(default='')
+	location = attr(default='')
+	count = attr(default=1)
 	uses = attr(default=0)
 	level = attr(default=0)
 	ability = attr(default=0)
@@ -2291,8 +2294,8 @@ class CoffeeMudAreaFile(object):
 			return self.element_to_data(element)
 		return OrderedDict([(tag, self.element_to_data(element))])
 
-	def read_mobs(self, element):
-		return [self.read_mob(child) for child in element if self.clean_tag(child.tag).upper() == 'MOB']
+	def read_mobs(self, element, tag='MOB'):
+		return [self.read_mob(child) for child in element if self.clean_tag(child.tag).upper() == tag]
 
 	def read_mob(self, element):
 		raw_text = self.child_text(element, 'MTEXT')
@@ -2377,8 +2380,8 @@ class CoffeeMudAreaFile(object):
 			for ability in self.children(abilities, 'ABLTY')
 		]
 
-	def read_items(self, element):
-		return [self.read_item(child) for child in element if self.clean_tag(child.tag).upper() == 'ITEM']
+	def read_items(self, element, tag='ITEM'):
+		return [self.read_item(child) for child in element if self.clean_tag(child.tag).upper() == tag]
 
 	def read_item(self, element):
 		raw_text = self.child_text(element, 'ITEXT')
@@ -2388,6 +2391,9 @@ class CoffeeMudAreaFile(object):
 			raw_data = self.document_to_data(text_root)
 		return CoffeeMudItem(
 			class_id=self.child_text(element, 'ICLAS'),
+			ident=self.child_text(element, 'IIDEN'),
+			location=self.child_text(element, 'ILOCA'),
+			count=self.int_text(element.attrib.get('COUNT'), 1),
 			uses=self.child_int(element, 'IUSES'),
 			level=self.child_int(element, 'ILEVL'),
 			ability=self.child_int(element, 'IABLE'),
@@ -2443,9 +2449,53 @@ class CoffeeMudAreaFile(object):
 			description=self.child_text(element, 'RDESC'),
 			climate=self.int_from_data(raw_data, 'RCLIM'),
 			atmosphere=self.int_from_data(raw_data, 'RATMO'),
+			exits=self.read_room_exits(element),
+			mobs=self.read_room_mobs(element),
+			items=self.read_room_items(element),
 			raw_text=raw_text,
 			raw_data=raw_data,
 		)
+
+	def read_room_exits(self, room_element):
+		exits = self.child(room_element, 'ROOMEXITS')
+		if exits is None:
+			return []
+		return [self.read_exit(exit_element) for exit_element in self.children(exits, 'REXIT')]
+
+	def read_exit(self, element):
+		exit_element = self.child(element, 'XEXIT')
+		class_id = ''
+		raw_data = {}
+		if exit_element is not None:
+			class_id = self.child_text(exit_element, 'EXID')
+			raw_text = self.child_text(exit_element, 'EXDAT')
+			raw_root = self.parse_escaped_xml(raw_text)
+			if raw_root is not None:
+				raw_data = self.document_to_data(raw_root)
+		return CoffeeMudExit(
+			direction=self.child_int(element, 'XDIRE'),
+			target_room_id=self.child_text(element, 'XDOOR'),
+			class_id=class_id,
+			raw_data=raw_data,
+		)
+
+	def read_room_mobs(self, room_element):
+		content = self.child(room_element, 'ROOMCONTENT')
+		if content is None:
+			return []
+		mobs = self.child(content, 'ROOMMOBS')
+		if mobs is None:
+			return []
+		return self.read_mobs(mobs, tag='RMOB')
+
+	def read_room_items(self, room_element):
+		content = self.child(room_element, 'ROOMCONTENT')
+		if content is None:
+			return []
+		items = self.child(content, 'ROOMITEMS')
+		if items is None:
+			return []
+		return self.read_items(items, tag='RITEM')
 
 	def value_from_data(self, data, key, default=''):
 		value = data.get(key, default)
