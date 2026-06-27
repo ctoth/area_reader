@@ -19,6 +19,7 @@ merc_source_dir = Path(r"C:\Users\Q\src\merc-mud\area")
 smaug_source_dir = Path(r"C:\Users\Q\src\_smaug_\db\area")
 swr_source_dir = Path(r"C:\Users\Q\src\swrfuss")
 circle_source_dir = Path(r"C:\Users\Q\src\circlemud")
+coffeemud_source_dir = Path(r"C:\Users\Q\src\coffeemud")
 
 def write_coffeemud_file(directory, text):
 	path = Path(directory) / "area.cmare"
@@ -123,8 +124,36 @@ def test_coffeemud_direct_room_parses_as_room_record():
 		af.load_sections()
 
 		assert af.area.top_level == "AROOM"
-		assert "Test Area#1" in af.area.rooms
-		assert af.area.rooms["Test Area#1"].class_id == "StoneRoom"
+	assert "Test Area#1" in af.area.rooms
+	assert af.area.rooms["Test Area#1"].class_id == "StoneRoom"
+
+
+def test_coffeemud_mob_reads_nested_common_fields_and_collections():
+	with tempfile.TemporaryDirectory() as directory:
+		path = write_coffeemud_file(directory, """<MOBS><MOB><MCLAS>GenMob</MCLAS><MLEVL>8</MLEVL><MABLE>11</MABLE><MREJV>90</MREJV><MTEXT>&lt;NAME&gt;the death dog&lt;/NAME&gt;&lt;DESC&gt;A large two-headed hound barks at you viciously.&lt;/DESC&gt;&lt;DISP&gt;The death dog stands here.&lt;/DISP&gt;&lt;PROP&gt;11|76|8|8|0|8|90|1.0|19|23|0|&lt;/PROP&gt;&lt;BEHAVES&gt;&lt;BHAVE&gt;&lt;BCLASS&gt;CombatAbilities&lt;/BCLASS&gt;&lt;BPARMS /&gt;&lt;/BHAVE&gt;&lt;BHAVE&gt;&lt;BCLASS&gt;MobileAggressive&lt;/BCLASS&gt;&lt;BPARMS&gt;WANDER&lt;/BPARMS&gt;&lt;/BHAVE&gt;&lt;/BEHAVES&gt;&lt;AFFECS&gt;&lt;AFF&gt;&lt;ACLASS&gt;Skill_Dodge&lt;/ACLASS&gt;&lt;ATEXT /&gt;&lt;/AFF&gt;&lt;/AFFECS&gt;&lt;FLAG&gt;0&lt;/FLAG&gt;&lt;MONEY&gt;14&lt;/MONEY&gt;&lt;VARMONEY&gt;0.0&lt;/VARMONEY&gt;&lt;GENDER&gt;N&lt;/GENDER&gt;&lt;MRACE&gt;Dog&lt;/MRACE&gt;&lt;FACTIONS&gt;&lt;FCTN ID="ALIGNMENT.INI"&gt;1&lt;/FCTN&gt;&lt;FCTN ID="INCLINATION.INI"&gt;0&lt;/FCTN&gt;&lt;/FACTIONS&gt;&lt;ABLTYS&gt;&lt;ABLTY&gt;&lt;ACLASS&gt;Skill_Disarm&lt;/ACLASS&gt;&lt;APROF&gt;100&lt;/APROF&gt;&lt;ADATA&gt;&lt;AWRAP /&gt;&lt;/ADATA&gt;&lt;/ABLTY&gt;&lt;/ABLTYS&gt;</MTEXT></MOB></MOBS>""")
+
+		af = area_reader.CoffeeMudAreaFile(path)
+		af.load_sections()
+
+		mob = af.area.mobs[0]
+		assert mob.class_id == "GenMob"
+		assert mob.level == 8
+		assert mob.ability == 11
+		assert mob.rejuv == 90
+		assert mob.name == "the death dog"
+		assert mob.description == "A large two-headed hound barks at you viciously."
+		assert mob.display == "The death dog stands here."
+		assert mob.race == "Dog"
+		assert mob.gender == "N"
+		assert mob.money == 14
+		assert [behavior.class_id for behavior in mob.behaviors] == ["CombatAbilities", "MobileAggressive"]
+		assert mob.behaviors[1].parameters == "WANDER"
+		assert mob.affects[0].class_id == "Skill_Dodge"
+		assert mob.factions["ALIGNMENT.INI"] == 1
+		assert mob.factions["INCLINATION.INI"] == 0
+		assert mob.abilities[0].class_id == "Skill_Disarm"
+		assert mob.abilities[0].proficiency == 100
+		assert mob.raw_data["PROP"] == "11|76|8|8|0|8|90|1.0|19|23|0|"
 
 
 @given(arg1=small_int, arg2=small_int, arg3=small_int, arg4=small_int)
@@ -778,6 +807,36 @@ def test_loading_actual_circle_world_when_available():
 	assert af.area.mobs
 	assert af.area.objects
 	assert af.area.shops
+
+
+def test_loading_actual_coffeemud_monsters_when_available():
+	path = coffeemud_source_dir / "resources" / "examples" / "monsters.cmare"
+	if not path.exists():
+		return
+
+	af = area_reader.CoffeeMudAreaFile(path)
+	af.load_sections()
+
+	expected_mobs = path.read_text(encoding="latin-1").count("<MOB>")
+	assert len(af.area.mobs) == expected_mobs
+	assert af.area.mobs[0].name == "the death dog"
+	assert af.area.mobs[0].behaviors
+	assert af.area.mobs[0].abilities
+
+
+def test_loading_actual_coffeemud_deities_when_available():
+	path = coffeemud_source_dir / "resources" / "examples" / "deities.cmare"
+	if not path.exists():
+		return
+
+	af = area_reader.CoffeeMudAreaFile(path)
+	af.load_sections()
+
+	expected_mobs = path.read_text(encoding="latin-1").count("<MOB>")
+	assert len(af.area.mobs) == expected_mobs
+	assert af.area.mobs[0].class_id == "GenDeity"
+	assert af.area.mobs[0].rejuv == 0
+	assert af.area.mobs[0].raw_data["CLEREQ"] == "-class +cleric +necromancer +doomsayer +templar"
 
 
 def test_loading_smaug_map1_source_area_when_available():

@@ -10,6 +10,7 @@ import html
 import io
 import json
 import random
+import re
 import os
 import sys
 import xml.etree.ElementTree as ET
@@ -2061,6 +2062,25 @@ class CircleAreaFile(object):
 
 
 @attributes
+class CoffeeMudBehavior(object):
+	class_id = attr(default='')
+	parameters = attr(default='')
+
+
+@attributes
+class CoffeeMudAffect(object):
+	class_id = attr(default='')
+	text = attr(default='')
+
+
+@attributes
+class CoffeeMudAbility(object):
+	class_id = attr(default='')
+	proficiency = attr(default=0)
+	data = attr(default='')
+
+
+@attributes
 class CoffeeMudMob(object):
 	class_id = attr(default='')
 	level = attr(default=0)
@@ -2072,6 +2092,12 @@ class CoffeeMudMob(object):
 	race = attr(default='')
 	gender = attr(default='')
 	money = attr(default=0)
+	variable_money = attr(default=0.0)
+	flag = attr(default=0)
+	behaviors = attr(default=Factory(list))
+	affects = attr(default=Factory(list))
+	factions = attr(default=Factory(dict))
+	abilities = attr(default=Factory(list))
 	raw_text = attr(default='')
 	raw_data = attr(default=Factory(dict))
 
@@ -2148,10 +2174,14 @@ class CoffeeMudAreaFile(object):
 		self.load_root(root)
 
 	def parse_document(self, text):
+		text = self.escape_bare_ampersands(text)
 		try:
 			return ET.fromstring(text)
 		except ET.ParseError:
 			return ET.fromstring("<ROOT>" + text + "</ROOT>")
+
+	def escape_bare_ampersands(self, text):
+		return re.sub(r'&(?!#\d+;|#x[0-9A-Fa-f]+;|[A-Za-z][A-Za-z0-9]*;)', '&amp;', text)
 
 	def parse_escaped_xml(self, value):
 		if not value:
@@ -2206,6 +2236,9 @@ class CoffeeMudAreaFile(object):
 				return child
 		return None
 
+	def children(self, element, tag):
+		return [child for child in element if self.clean_tag(child.tag).upper() == tag]
+
 	def child_text(self, element, tag, default=''):
 		child = self.child(element, tag)
 		if child is None or child.text is None:
@@ -2218,6 +2251,15 @@ class CoffeeMudAreaFile(object):
 			return default
 		try:
 			return int(text)
+		except ValueError:
+			return default
+
+	def child_float(self, element, tag, default=0.0):
+		text = self.child_text(element, tag, '')
+		if text == '':
+			return default
+		try:
+			return float(text)
 		except ValueError:
 			return default
 
@@ -2262,9 +2304,71 @@ class CoffeeMudAreaFile(object):
 			race=self.value_from_data(raw_data, 'MRACE'),
 			gender=self.value_from_data(raw_data, 'GENDER'),
 			money=self.int_from_data(raw_data, 'MONEY'),
+			variable_money=self.float_from_data(raw_data, 'VARMONEY'),
+			flag=self.int_from_data(raw_data, 'FLAG'),
+			behaviors=self.read_behaviors(text_root),
+			affects=self.read_affects(text_root),
+			factions=self.read_factions(text_root),
+			abilities=self.read_abilities(text_root),
 			raw_text=raw_text,
 			raw_data=raw_data,
 		)
+
+	def read_behaviors(self, text_root):
+		if text_root is None:
+			return []
+		behaves = self.child(text_root, 'BEHAVES')
+		if behaves is None:
+			return []
+		return [
+			CoffeeMudBehavior(
+				class_id=self.child_text(behavior, 'BCLASS'),
+				parameters=self.child_text(behavior, 'BPARMS'),
+			)
+			for behavior in self.children(behaves, 'BHAVE')
+		]
+
+	def read_affects(self, text_root):
+		if text_root is None:
+			return []
+		affects = self.child(text_root, 'AFFECS')
+		if affects is None:
+			return []
+		return [
+			CoffeeMudAffect(
+				class_id=self.child_text(affect, 'ACLASS'),
+				text=self.child_text(affect, 'ATEXT'),
+			)
+			for affect in self.children(affects, 'AFF')
+		]
+
+	def read_factions(self, text_root):
+		if text_root is None:
+			return {}
+		factions = self.child(text_root, 'FACTIONS')
+		if factions is None:
+			return {}
+		result = {}
+		for faction in self.children(factions, 'FCTN'):
+			faction_id = faction.attrib.get('ID', '')
+			if faction_id:
+				result[faction_id] = self.int_text(faction.text)
+		return result
+
+	def read_abilities(self, text_root):
+		if text_root is None:
+			return []
+		abilities = self.child(text_root, 'ABLTYS')
+		if abilities is None:
+			return []
+		return [
+			CoffeeMudAbility(
+				class_id=self.child_text(ability, 'ACLASS'),
+				proficiency=self.child_int(ability, 'APROF'),
+				data=self.element_to_data(self.child(ability, 'ADATA')) if self.child(ability, 'ADATA') is not None else '',
+			)
+			for ability in self.children(abilities, 'ABLTY')
+		]
 
 	def read_items(self, element):
 		return [self.read_item(child) for child in element if self.clean_tag(child.tag).upper() == 'ITEM']
@@ -2344,6 +2448,23 @@ class CoffeeMudAreaFile(object):
 		try:
 			return int(value)
 		except (TypeError, ValueError):
+			return default
+
+	def float_from_data(self, data, key, default=0.0):
+		value = self.value_from_data(data, key, '')
+		if value == '':
+			return default
+		try:
+			return float(value)
+		except (TypeError, ValueError):
+			return default
+
+	def int_text(self, text, default=0):
+		if text is None or text == '':
+			return default
+		try:
+			return int(text)
+		except ValueError:
 			return default
 
 	def as_dict(self):
