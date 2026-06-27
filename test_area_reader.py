@@ -20,6 +20,11 @@ smaug_source_dir = Path(r"C:\Users\Q\src\_smaug_\db\area")
 swr_source_dir = Path(r"C:\Users\Q\src\swrfuss")
 circle_source_dir = Path(r"C:\Users\Q\src\circlemud")
 
+def write_coffeemud_file(directory, text):
+	path = Path(directory) / "area.cmare"
+	path.write_text(text, encoding="utf-8")
+	return path
+
 def write_circle_world(directory, *, zon=None, wld=None, mob=None, obj=None, shp=None):
 	root = Path(directory)
 	world = root / "lib" / "world"
@@ -69,6 +74,57 @@ def test_loading_merc_area(merc_path):
 	af = area_reader.MercAreaFile(merc_path)
 	af.load_sections()
 	assert af.area
+
+
+def test_coffeemud_top_level_mobs_parse_as_dict_and_json():
+	with tempfile.TemporaryDirectory() as directory:
+		path = write_coffeemud_file(directory, """<MOBS><MOB><MCLAS>GenMob</MCLAS><MLEVL>8</MLEVL><MABLE>11</MABLE><MREJV>90</MREJV><MTEXT>&lt;NAME&gt;the death dog&lt;/NAME&gt;</MTEXT></MOB></MOBS>""")
+
+		af = area_reader.CoffeeMudAreaFile(path)
+		af.load_sections()
+
+		assert af.area.top_level == "MOBS"
+		assert len(af.area.mobs) == 1
+		assert af.area.mobs[0].class_id == "GenMob"
+		assert af.as_dict()["mobs"][0]["class_id"] == "GenMob"
+		assert "GenMob" in af.as_json()
+
+
+def test_coffeemud_top_level_items_parse():
+	with tempfile.TemporaryDirectory() as directory:
+		path = write_coffeemud_file(directory, """<ITEMS><ITEM><ICLAS>GenItem</ICLAS><IUSES>2147483647</IUSES><ILEVL>68</ILEVL><IABLE>0</IABLE><IREJV>0</IREJV><ITEXT>&lt;NAME&gt;an iron sifter&lt;/NAME&gt;</ITEXT></ITEM></ITEMS>""")
+
+		af = area_reader.CoffeeMudAreaFile(path)
+		af.load_sections()
+
+		assert af.area.top_level == "ITEMS"
+		assert len(af.area.items) == 1
+		assert af.area.items[0].class_id == "GenItem"
+
+
+def test_coffeemud_top_level_area_parses_metadata():
+	with tempfile.TemporaryDirectory() as directory:
+		path = write_coffeemud_file(directory, """<AREA><ACLAS>StdArea</ACLAS><ANAME>Test Area</ANAME><ADESC>A test area.</ADESC><ACLIM>1</ACLIM><ASUBS /><ATECH>2</ATECH><ADATA /><AROOMS /></AREA>""")
+
+		af = area_reader.CoffeeMudAreaFile(path)
+		af.load_sections()
+
+		assert af.area.top_level == "AREA"
+		assert af.area.class_id == "StdArea"
+		assert af.area.name == "Test Area"
+		assert af.area.description == "A test area."
+
+
+def test_coffeemud_direct_room_parses_as_room_record():
+	with tempfile.TemporaryDirectory() as directory:
+		path = write_coffeemud_file(directory, """<AROOM><ROOMID>Test Area#1</ROOMID><RAREA>Test Area</RAREA><RCLAS>StoneRoom</RCLAS><RDISP>A quiet room</RDISP><RDESC>A plain room.</RDESC><RTEXT /><ROOMEXITS /><ROOMCONTENT><ROOMMOBS /><ROOMITEMS /></ROOMCONTENT></AROOM>""")
+
+		af = area_reader.CoffeeMudAreaFile(path)
+		af.load_sections()
+
+		assert af.area.top_level == "AROOM"
+		assert "Test Area#1" in af.area.rooms
+		assert af.area.rooms["Test Area#1"].class_id == "StoneRoom"
 
 
 @given(arg1=small_int, arg2=small_int, arg3=small_int, arg4=small_int)

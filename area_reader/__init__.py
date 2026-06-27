@@ -6,11 +6,13 @@ logging.basicConfig(level=logging.INFO)
 
 from collections import OrderedDict
 import enum
+import html
 import io
 import json
 import random
 import os
 import sys
+import xml.etree.ElementTree as ET
 from typing import List, Dict, Optional
 from attr import attr, attributes, Factory, fields
 from cattr import converters
@@ -2050,6 +2052,299 @@ class CircleAreaFile(object):
 			open_hour_2 = int(self.read_line().strip())
 			close_hour_2 = int(self.read_line().strip())
 		return CircleShop(vnum=vnum, products=products, profit_buy=profit_buy, profit_sell=profit_sell, buy_type=buy_type, messages=messages, temper=temper, bitvector=bitvector, keeper=keeper, with_who=with_who, rooms=rooms, open_hour=open_hour, close_hour=close_hour, open_hour_2=open_hour_2, close_hour_2=close_hour_2)
+
+	def as_dict(self):
+		return EnumNameConverter().unstructure(self.area)
+
+	def as_json(self, indent=None):
+		return json.dumps(self.as_dict(), indent=indent)
+
+
+@attributes
+class CoffeeMudMob(object):
+	class_id = attr(default='')
+	level = attr(default=0)
+	ability = attr(default=0)
+	rejuv = attr(default=0)
+	name = attr(default='')
+	description = attr(default='')
+	display = attr(default='')
+	race = attr(default='')
+	gender = attr(default='')
+	money = attr(default=0)
+	raw_text = attr(default='')
+	raw_data = attr(default=Factory(dict))
+
+
+@attributes
+class CoffeeMudItem(object):
+	class_id = attr(default='')
+	uses = attr(default=0)
+	level = attr(default=0)
+	ability = attr(default=0)
+	rejuv = attr(default=0)
+	name = attr(default='')
+	description = attr(default='')
+	display = attr(default='')
+	value = attr(default='')
+	material = attr(default='')
+	worn_location = attr(default='')
+	worn_bitmap = attr(default='')
+	raw_text = attr(default='')
+	raw_data = attr(default=Factory(dict))
+	nested_area = attr(default=None)
+
+
+@attributes
+class CoffeeMudExit(object):
+	direction = attr(default=0)
+	target_room_id = attr(default='')
+	class_id = attr(default='')
+	raw_data = attr(default=Factory(dict))
+
+
+@attributes
+class CoffeeMudRoom(object):
+	room_id = attr(default='')
+	area = attr(default='')
+	class_id = attr(default='')
+	display = attr(default='')
+	description = attr(default='')
+	climate = attr(default=0)
+	atmosphere = attr(default=0)
+	exits = attr(default=Factory(list))
+	mobs = attr(default=Factory(list))
+	items = attr(default=Factory(list))
+	raw_text = attr(default='')
+	raw_data = attr(default=Factory(dict))
+
+
+@attributes
+class CoffeeMudArea(object):
+	top_level = attr(default='')
+	class_id = attr(default='')
+	name = attr(default='')
+	description = attr(default='')
+	climate = attr(default=0)
+	sub_ops = attr(default='')
+	theme = attr(default=0)
+	raw_data = attr(default=Factory(dict))
+	rooms = attr(default=Factory(OrderedDict))
+	mobs = attr(default=Factory(list))
+	items = attr(default=Factory(list))
+	objects = attr(default=Factory(list))
+
+
+class CoffeeMudAreaFile(object):
+
+	def __init__(self, filename):
+		self.filename = os.fspath(filename)
+		with io.open(filename, mode='rt', encoding='latin-1') as coffee_file:
+			self.data = coffee_file.read()
+		self.area = CoffeeMudArea()
+
+	def load_sections(self):
+		root = self.parse_document(self.data)
+		self.load_root(root)
+
+	def parse_document(self, text):
+		try:
+			return ET.fromstring(text)
+		except ET.ParseError:
+			return ET.fromstring("<ROOT>" + text + "</ROOT>")
+
+	def parse_escaped_xml(self, value):
+		if not value:
+			return None
+		return self.parse_document(html.unescape(value))
+
+	def load_root(self, root):
+		tag = self.clean_tag(root.tag)
+		if tag == 'ROOT':
+			for child in root:
+				self.load_root(child)
+			return
+		if tag == 'MOBS':
+			self.area.top_level = 'MOBS'
+			self.area.mobs.extend(self.read_mobs(root))
+		elif tag == 'MOB':
+			self.area.top_level = 'MOB'
+			self.area.mobs.append(self.read_mob(root))
+		elif tag == 'ITEMS':
+			self.area.top_level = 'ITEMS'
+			self.area.items.extend(self.read_items(root))
+			self.area.objects = self.area.items
+		elif tag == 'ITEM':
+			self.area.top_level = 'ITEM'
+			item = self.read_item(root)
+			self.area.items.append(item)
+			self.area.objects = self.area.items
+		elif tag == 'AREA':
+			area = self.read_area(root)
+			area.top_level = 'AREA'
+			self.area = area
+		elif tag == 'AROOMS':
+			self.area.top_level = 'AROOMS'
+			for room in self.read_rooms(root):
+				self.area.rooms[room.room_id] = room
+		elif tag == 'AROOM':
+			self.area.top_level = 'AROOM'
+			room = self.read_room(root)
+			self.area.rooms[room.room_id] = room
+		else:
+			self.area.top_level = tag
+			self.area.raw_data[tag] = self.element_to_data(root)
+
+	def clean_tag(self, tag):
+		if '}' in tag:
+			return tag.rsplit('}', 1)[1]
+		return tag
+
+	def child(self, element, tag):
+		for child in element:
+			if self.clean_tag(child.tag).upper() == tag:
+				return child
+		return None
+
+	def child_text(self, element, tag, default=''):
+		child = self.child(element, tag)
+		if child is None or child.text is None:
+			return default
+		return child.text
+
+	def child_int(self, element, tag, default=0):
+		text = self.child_text(element, tag, '')
+		if text == '':
+			return default
+		try:
+			return int(text)
+		except ValueError:
+			return default
+
+	def element_to_data(self, element):
+		if len(element) == 0:
+			return element.text or ''
+		data = OrderedDict()
+		for child in element:
+			tag = self.clean_tag(child.tag)
+			value = self.element_to_data(child)
+			if tag in data:
+				if not isinstance(data[tag], list):
+					data[tag] = [data[tag]]
+				data[tag].append(value)
+			else:
+				data[tag] = value
+		return data
+
+	def document_to_data(self, element):
+		tag = self.clean_tag(element.tag)
+		if tag == 'ROOT':
+			return self.element_to_data(element)
+		return OrderedDict([(tag, self.element_to_data(element))])
+
+	def read_mobs(self, element):
+		return [self.read_mob(child) for child in element if self.clean_tag(child.tag).upper() == 'MOB']
+
+	def read_mob(self, element):
+		raw_text = self.child_text(element, 'MTEXT')
+		raw_data = {}
+		text_root = self.parse_escaped_xml(raw_text)
+		if text_root is not None:
+			raw_data = self.document_to_data(text_root)
+		return CoffeeMudMob(
+			class_id=self.child_text(element, 'MCLAS'),
+			level=self.child_int(element, 'MLEVL'),
+			ability=self.child_int(element, 'MABLE'),
+			rejuv=self.child_int(element, 'MREJV', self.child_int(element, 'MREJUV')),
+			name=self.value_from_data(raw_data, 'NAME'),
+			description=self.value_from_data(raw_data, 'DESC'),
+			display=self.value_from_data(raw_data, 'DISP'),
+			race=self.value_from_data(raw_data, 'MRACE'),
+			gender=self.value_from_data(raw_data, 'GENDER'),
+			money=self.int_from_data(raw_data, 'MONEY'),
+			raw_text=raw_text,
+			raw_data=raw_data,
+		)
+
+	def read_items(self, element):
+		return [self.read_item(child) for child in element if self.clean_tag(child.tag).upper() == 'ITEM']
+
+	def read_item(self, element):
+		raw_text = self.child_text(element, 'ITEXT')
+		raw_data = {}
+		text_root = self.parse_escaped_xml(raw_text)
+		if text_root is not None:
+			raw_data = self.document_to_data(text_root)
+		return CoffeeMudItem(
+			class_id=self.child_text(element, 'ICLAS'),
+			uses=self.child_int(element, 'IUSES'),
+			level=self.child_int(element, 'ILEVL'),
+			ability=self.child_int(element, 'IABLE'),
+			rejuv=self.child_int(element, 'IREJV'),
+			name=self.value_from_data(raw_data, 'NAME'),
+			description=self.value_from_data(raw_data, 'DESC'),
+			display=self.value_from_data(raw_data, 'DISP'),
+			value=self.value_from_data(raw_data, 'VALUE'),
+			material=self.value_from_data(raw_data, 'MTRAL'),
+			worn_location=self.value_from_data(raw_data, 'WORNL'),
+			worn_bitmap=self.value_from_data(raw_data, 'WORNB'),
+			raw_text=raw_text,
+			raw_data=raw_data,
+		)
+
+	def read_area(self, element):
+		area = CoffeeMudArea(
+			class_id=self.child_text(element, 'ACLAS'),
+			name=self.child_text(element, 'ANAME'),
+			description=self.child_text(element, 'ADESC'),
+			climate=self.child_int(element, 'ACLIM'),
+			sub_ops=self.child_text(element, 'ASUBS'),
+			theme=self.child_int(element, 'ATECH'),
+			raw_data=self.element_to_data(self.child(element, 'ADATA')) if self.child(element, 'ADATA') is not None else {},
+		)
+		rooms = self.child(element, 'AROOMS')
+		if rooms is not None:
+			for room in self.read_rooms(rooms):
+				area.rooms[room.room_id] = room
+		return area
+
+	def read_rooms(self, element):
+		return [self.read_room(child) for child in element if self.clean_tag(child.tag).upper() == 'AROOM']
+
+	def read_room(self, element):
+		raw_text = self.child_text(element, 'RTEXT')
+		raw_data = {}
+		text_root = self.parse_escaped_xml(raw_text)
+		if text_root is not None:
+			raw_data = self.document_to_data(text_root)
+		return CoffeeMudRoom(
+			room_id=self.child_text(element, 'ROOMID'),
+			area=self.child_text(element, 'RAREA'),
+			class_id=self.child_text(element, 'RCLAS'),
+			display=self.child_text(element, 'RDISP'),
+			description=self.child_text(element, 'RDESC'),
+			climate=self.int_from_data(raw_data, 'RCLIM'),
+			atmosphere=self.int_from_data(raw_data, 'RATMO'),
+			raw_text=raw_text,
+			raw_data=raw_data,
+		)
+
+	def value_from_data(self, data, key, default=''):
+		value = data.get(key, default)
+		if isinstance(value, list):
+			return value[0] if value else default
+		if value is None:
+			return default
+		return value
+
+	def int_from_data(self, data, key, default=0):
+		value = self.value_from_data(data, key, '')
+		if value == '':
+			return default
+		try:
+			return int(value)
+		except (TypeError, ValueError):
+			return default
 
 	def as_dict(self):
 		return EnumNameConverter().unstructure(self.area)
