@@ -185,7 +185,7 @@ def test_coffeemud_item_reads_nested_common_fields_container_fields_and_affects(
 
 def test_coffeemud_area_reads_rooms_exits_and_room_content():
 	with tempfile.TemporaryDirectory() as directory:
-		path = write_coffeemud_file(directory, """<AREA><ACLAS>StdArea</ACLAS><ANAME>Test Area</ANAME><ADESC>A test area.</ADESC><ACLIM>1</ACLIM><ASUBS>builder</ASUBS><ATECH>2</ATECH><ADATA><AUTHOR>Builder</AUTHOR></ADATA><AROOMS><AROOM><ROOMID>Test Area#1</ROOMID><RAREA>Test Area</RAREA><RCLAS>StoneRoom</RCLAS><RDISP>A quiet room</RDISP><RDESC>A plain room.</RDESC><RTEXT>&lt;RCLIM&gt;3&lt;/RCLIM&gt;&lt;RATMO&gt;4&lt;/RATMO&gt;</RTEXT><ROOMEXITS><REXIT><XDIRE>0</XDIRE><XDOOR>Test Area#2</XDOOR><XEXIT><EXID>StdOpenDoorway</EXID><EXDAT>&lt;NAME&gt;a doorway&lt;/NAME&gt;</EXDAT></XEXIT></REXIT></ROOMEXITS><ROOMCONTENT><ROOMMOBS><RMOB><MCLAS>GenMob</MCLAS><MLEVL>5</MLEVL><MABLE>1</MABLE><MREJV>10</MREJV><MTEXT>&lt;NAME&gt;a room mob&lt;/NAME&gt;&lt;MONEY&gt;7&lt;/MONEY&gt;</MTEXT></RMOB></ROOMMOBS><ROOMITEMS><RITEM COUNT="2"><ICLAS>GenItem</ICLAS><IIDEN>item1</IIDEN><ILOCA>container1</ILOCA><IUSES>1</IUSES><ILEVL>2</ILEVL><IABLE>3</IABLE><IREJV>4</IREJV><ITEXT>&lt;NAME&gt;a room item&lt;/NAME&gt;&lt;VALUE&gt;9&lt;/VALUE&gt;</ITEXT></RITEM></ROOMITEMS></ROOMCONTENT></AROOM></AROOMS></AREA>""")
+		path = write_coffeemud_file(directory, """<AREA><ACLAS>StdArea</ACLAS><ANAME>Test Area</ANAME><ADESC>A test area.</ADESC><ACLIM>1</ACLIM><ASUBS>builder</ASUBS><ATECH>2</ATECH><ADATA><AUTHOR>Builder</AUTHOR></ADATA><AROOMS><AROOM><ROOMID>Test Area#1</ROOMID><RAREA>Test Area</RAREA><RCLAS>StoneRoom</RCLAS><RDISP>A quiet room</RDISP><RDESC>A plain room.</RDESC><RTEXT>&lt;RCLIM&gt;3&lt;/RCLIM&gt;&lt;RATMO&gt;4&lt;/RATMO&gt;</RTEXT><ROOMEXITS><REXIT><XDIRE>0</XDIRE><XDOOR>Test Area#2</XDOOR><XEXIT><EXID>StdOpenDoorway</EXID><EXDAT>&lt;NAME&gt;a doorway&lt;/NAME&gt;</EXDAT></XEXIT></REXIT></ROOMEXITS><ROOMCONTENT><ROOMMOBS><RMOB><MCLAS>GenMob</MCLAS><MLEVL>5</MLEVL><MABLE>1</MABLE><MREJV>10</MREJV><MTEXT>&lt;NAME&gt;a room mob&lt;/NAME&gt;&lt;MONEY&gt;7&lt;/MONEY&gt;</MTEXT></RMOB></ROOMMOBS><ROOMITEMS><RITEM COUNT=2><ICLAS>GenItem</ICLAS><IIDEN>item1</IIDEN><ILOCA>container1</ILOCA><IUSES>1</IUSES><ILEVL>2</ILEVL><IABLE>3</IABLE><IREJV>4</IREJV><ITEXT>&lt;NAME&gt;a room item&lt;/NAME&gt;&lt;VALUE&gt;9&lt;/VALUE&gt;</ITEXT></RITEM></ROOMITEMS></ROOMCONTENT></AROOM></AROOMS></AREA>""")
 
 		af = area_reader.CoffeeMudAreaFile(path)
 		af.load_sections()
@@ -210,6 +210,20 @@ def test_coffeemud_area_reads_rooms_exits_and_room_content():
 		assert room.items[0].location == "container1"
 		assert room.items[0].name == "a room item"
 		assert room.items[0].value == 9
+
+
+def test_coffeemud_item_parses_nested_ssarea():
+	with tempfile.TemporaryDirectory() as directory:
+		path = write_coffeemud_file(directory, """<ITEMS><ITEM><ICLAS>GenBoardable</ICLAS><IUSES>100</IUSES><ILEVL>1</ILEVL><IABLE>0</IABLE><IREJV>0</IREJV><ITEXT>&lt;NAME&gt;a skiff&lt;/NAME&gt;&lt;DESC&gt;a small skiff&lt;/DESC&gt;&lt;DISP&gt;a skiff is here&lt;/DISP&gt;&lt;SSAREA&gt;&lt;AREA&gt;&lt;ACLAS&gt;StdBoardableShip&lt;/ACLAS&gt;&lt;ANAME&gt;Skiff&lt;/ANAME&gt;&lt;ADESC /&gt;&lt;ACLIM&gt;0&lt;/ACLIM&gt;&lt;ASUBS /&gt;&lt;ATECH&gt;0&lt;/ATECH&gt;&lt;ADATA /&gt;&lt;AROOMS&gt;&lt;AROOM&gt;&lt;ROOMID&gt;Skiff#0&lt;/ROOMID&gt;&lt;RAREA&gt;Skiff&lt;/RAREA&gt;&lt;RCLAS&gt;ShipDeck&lt;/RCLAS&gt;&lt;RDISP&gt;The Deck&lt;/RDISP&gt;&lt;RDESC /&gt;&lt;RTEXT /&gt;&lt;ROOMEXITS /&gt;&lt;ROOMCONTENT&gt;&lt;ROOMMOBS /&gt;&lt;ROOMITEMS /&gt;&lt;/ROOMCONTENT&gt;&lt;/AROOM&gt;&lt;/AROOMS&gt;&lt;/AREA&gt;&lt;/SSAREA&gt;</ITEXT></ITEM></ITEMS>""")
+
+		af = area_reader.CoffeeMudAreaFile(path)
+		af.load_sections()
+
+		item = af.area.items[0]
+		assert "SSAREA" in item.raw_data
+		assert item.nested_area.name == "Skiff"
+		assert item.nested_area.class_id == "StdBoardableShip"
+		assert "Skiff#0" in item.nested_area.rooms
 
 
 @given(arg1=small_int, arg2=small_int, arg3=small_int, arg4=small_int)
@@ -909,6 +923,48 @@ def test_loading_actual_coffeemud_junk_items_when_available():
 	assert af.area.items[0].value == 26
 	assert af.area.items[1].capacity == 37
 	assert af.area.items[2].affects[0].class_id == "Prop_NoPurge"
+
+
+def test_loading_actual_coffeemud_shipbuilding_nested_areas_when_available():
+	path = coffeemud_source_dir / "resources" / "skills" / "shipbuilding.cmare"
+	if not path.exists():
+		return
+
+	af = area_reader.CoffeeMudAreaFile(path)
+	af.load_sections()
+
+	assert af.area.items
+	assert af.area.items[0].nested_area is not None
+	assert af.area.items[0].nested_area.rooms
+	first_room = next(iter(af.area.items[0].nested_area.rooms.values()))
+	assert first_room.exits
+
+
+def test_loading_actual_coffeemud_caravanbuilding_nested_contents_when_available():
+	path = coffeemud_source_dir / "resources" / "skills" / "caravanbuilding.cmare"
+	if not path.exists():
+		return
+
+	af = area_reader.CoffeeMudAreaFile(path)
+	af.load_sections()
+
+	nested_areas = [item.nested_area for item in af.area.items if item.nested_area is not None]
+	assert nested_areas
+	assert any(room.items for area in nested_areas for room in area.rooms.values())
+
+
+def test_loading_actual_coffeemud_clancastles_nested_rooms_and_exits_when_available():
+	path = coffeemud_source_dir / "resources" / "skills" / "clancastles.cmare"
+	if not path.exists():
+		return
+
+	af = area_reader.CoffeeMudAreaFile(path)
+	af.load_sections()
+
+	nested_areas = [item.nested_area for item in af.area.items if item.nested_area is not None]
+	assert nested_areas
+	assert any(len(area.rooms) > 1 for area in nested_areas)
+	assert any(room.exits for area in nested_areas for room in area.rooms.values())
 
 
 def test_loading_smaug_map1_source_area_when_available():

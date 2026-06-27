@@ -2184,11 +2184,18 @@ class CoffeeMudAreaFile(object):
 		self.load_root(root)
 
 	def parse_document(self, text):
+		text = self.quote_unquoted_attributes(text)
 		text = self.escape_bare_ampersands(text)
 		try:
 			return ET.fromstring(text)
 		except ET.ParseError:
 			return ET.fromstring("<ROOT>" + text + "</ROOT>")
+
+	def quote_unquoted_attributes(self, text):
+		return re.sub(r'<[^<>]+>', self.quote_tag_unquoted_attributes, text)
+
+	def quote_tag_unquoted_attributes(self, match):
+		return re.sub(r'(\s+[A-Za-z_:][A-Za-z0-9:_.-]*)=([^\s"\'=<>/]+)', r'\1="\2"', match.group(0))
 
 	def escape_bare_ampersands(self, text):
 		return re.sub(r'&(?!#\d+;|#x[0-9A-Fa-f]+;|[A-Za-z][A-Za-z0-9]*;)', '&amp;', text)
@@ -2196,7 +2203,10 @@ class CoffeeMudAreaFile(object):
 	def parse_escaped_xml(self, value):
 		if not value:
 			return None
-		return self.parse_document(html.unescape(value))
+		return self.parse_document(html.unescape(self.repair_split_entities(value)))
+
+	def repair_split_entities(self, value):
+		return re.sub(r'&\s+(lt|gt|amp|quot|apos);', r'&\1;', value)
 
 	def load_root(self, root):
 		tag = self.clean_tag(root.tag)
@@ -2389,6 +2399,7 @@ class CoffeeMudAreaFile(object):
 		text_root = self.parse_escaped_xml(raw_text)
 		if text_root is not None:
 			raw_data = self.document_to_data(text_root)
+		nested_area = self.read_nested_area(text_root)
 		return CoffeeMudItem(
 			class_id=self.child_text(element, 'ICLAS'),
 			ident=self.child_text(element, 'IIDEN'),
@@ -2414,7 +2425,19 @@ class CoffeeMudAreaFile(object):
 			affects=self.read_affects(text_root),
 			raw_text=raw_text,
 			raw_data=raw_data,
+			nested_area=nested_area,
 		)
+
+	def read_nested_area(self, text_root):
+		if text_root is None:
+			return None
+		ssarea = self.child(text_root, 'SSAREA')
+		if ssarea is None:
+			return None
+		area = self.child(ssarea, 'AREA')
+		if area is None:
+			return None
+		return self.read_area(area)
 
 	def read_area(self, element):
 		area = CoffeeMudArea(
