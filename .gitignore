@@ -11,3 +11,7 @@ venv/
 # Local scratch / unrelated tooling
 notes-*.md
 pyghidra_mcp_projects/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
