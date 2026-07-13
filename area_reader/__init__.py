@@ -161,26 +161,40 @@ class AreaFile(object):
 			self.advance()
 
 	def read_flag(self):
-		negative = False
-		self.skip_whitespace()
-		if self.current_char == '+':
-			self.advance()
-		if self.current_char == '-':
-			negative = True
-			self.advance()
-		number = 0
-		if not self.current_char.isdigit():
-			while self.current_char.isalpha():
-				number += flag_convert(self.current_char)
+		words = []
+		while True:
+			word = 0
+			while True:
+				negative = False
+				self.skip_whitespace()
+				if self.current_char == '+':
+					self.advance()
+				if self.current_char == '-':
+					negative = True
+					self.advance()
+				number = 0
+				if not self.current_char.isdigit():
+					while self.current_char.isalpha():
+						number += flag_convert(self.current_char)
+						self.advance()
+				while self.current_char.isdigit():
+					number = number * 10 + int(self.current_char)
+					self.advance()
+				if negative:
+					number *= -1
+				word += number
+				if self.current_char != '|':
+					break
 				self.advance()
-		while self.current_char.isdigit():
-			number = number * 10 + int(self.current_char)
+			words.append(word)
+			if self.current_char != '&':
+				break
 			self.advance()
-		if self.current_char == '|' or self.current_char == '&':
-			self.advance()
-			number += self.read_flag()
-		if negative:
-			number *= -1
+		if len(words) == 1:
+			return words[0]
+		number = 0
+		for index, word in enumerate(words):
+			number |= (word & 0xFFFFFFFF) << (index * 32)
 		return number
 
 

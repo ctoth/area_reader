@@ -437,6 +437,36 @@ A plain mobile.
 		assert mob.wealth == gold
 
 
+def test_smaug_extended_bitvectors_preserve_word_boundaries():
+	with tempfile.TemporaryDirectory() as directory:
+		path = write_area(directory, """#AREA
+SMAUG Test~
+#MOBILES
+#1
+mob~
+a mob~
+A mob stands here.
+~
+A plain mobile.
+~
+1073741827&2048 0&4 0 S
+1 0 0 1d1+0 1d1+0
+0 0
+8 8 0
+#0
+#ROOMS
+#0
+#$
+""")
+
+		af = area_reader.SmaugAreaFile(path)
+		af.load_sections()
+
+		mob = af.area.mobs[1]
+		assert int(mob.act) == (1073741827 | (2048 << 32))
+		assert int(mob.affected_by) == 4 << 32
+
+
 @given(
 	sector_type=st.integers(min_value=0, max_value=10),
 	tele_delay=st.integers(min_value=0, max_value=100),
