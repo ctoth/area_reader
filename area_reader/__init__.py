@@ -1880,6 +1880,8 @@ class CircleAreaFile(object):
 			zone = CircleZone(vnum=vnum, name=name, bot=bot, top=top, lifespan=lifespan, reset_mode=reset_mode)
 			while True:
 				line = self.read_line().strip()
+				if not line and self.current_char == '\0':
+					self.parse_fail("premature end of file")
 				if not line or line.startswith('*'):
 					continue
 				command = line[0]

@@ -848,6 +848,32 @@ $
 		]
 
 
+def test_circle_zone_rejects_premature_eof(monkeypatch):
+	with tempfile.TemporaryDirectory() as directory:
+		root = write_circle_world(directory, zon="""#30
+Midgaard~
+3000 3099 30 2
+M 0 3000 1 3001
+""")
+
+		af = area_reader.CircleAreaFile(root)
+		original_read_line = af.read_line
+		eof_reads = 0
+
+		def bounded_read_line():
+			nonlocal eof_reads
+			line = original_read_line()
+			if line == '' and af.current_char == '\0':
+				eof_reads += 1
+				if eof_reads > 1:
+					raise AssertionError("zone parser retried EOF")
+			return line
+
+		monkeypatch.setattr(af, "read_line", bounded_read_line)
+		with pytest.raises(area_reader.ParseError, match="premature end of file"):
+			af.load_zones()
+
+
 def test_circle_v3_shop_records_parse_core_fields():
 	with tempfile.TemporaryDirectory() as directory:
 		root = write_circle_world(directory, shp="""CircleMUD v3.0 Shop File~
