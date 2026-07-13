@@ -844,6 +844,7 @@ class RomShop(object):
 @attributes
 class SmaugMob(RomMob):
 	ac = attr(default=0, type=int)
+	act = field(default=SMAUG_ACT_TYPES.IS_NPC.value, type=SMAUG_ACT_TYPES, converter=SMAUG_ACT_TYPES)
 	affected_by = attr(default=0, type=SMAUG_AFFECTED_BY, converter=SMAUG_AFFECTED_BY)
 
 	@classmethod
@@ -853,7 +854,7 @@ class SmaugMob(RomMob):
 		short_desc = reader.read_string()
 		long_desc = reader.read_string()
 		description = reader.read_string()
-		act = reader.read_flag() | ROM_ACT_TYPES.IS_NPC
+		act = reader.read_flag() | SMAUG_ACT_TYPES.IS_NPC
 		affected_by = reader.read_flag()
 		alignment = reader.read_number()
 		letter = reader.read_letter()

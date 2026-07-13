@@ -467,6 +467,48 @@ A plain mobile.
 		assert int(mob.affected_by) == 4 << 32
 
 
+def test_smaug_mobile_flags_use_smaug_engine_bit_positions():
+	with tempfile.TemporaryDirectory() as directory:
+		path = write_area(directory, """#AREA
+SMAUG Test~
+#MOBILES
+#1
+mob~
+a mob~
+A mob stands here.
+~
+A plain mobile.
+~
+2048 4194344 0 S
+1 0 0 1d1+0 1d1+0
+0 0
+8 8 0
+#0
+#ROOMS
+#0
+#$
+""")
+
+		af = area_reader.SmaugAreaFile(path)
+		af.load_sections()
+
+		mob = af.area.mobs[1]
+		assert mob.act == (
+			area_reader.SMAUG_ACT_TYPES.IS_NPC
+			| area_reader.SMAUG_ACT_TYPES.IMMORTAL
+		)
+		assert mob.affected_by == (
+			area_reader.SMAUG_AFFECTED_BY.DETECT_INVIS
+			| area_reader.SMAUG_AFFECTED_BY.DETECT_HIDDEN
+			| area_reader.SMAUG_AFFECTED_BY.TRUESIGHT
+		)
+		result = af.as_dict()["mobs"][1]
+		assert result["act"] == "SMAUG_ACT_TYPES.IS_NPC|IMMORTAL"
+		assert result["affected_by"] == (
+			"SMAUG_AFFECTED_BY.DETECT_INVIS|DETECT_HIDDEN|TRUESIGHT"
+		)
+
+
 @given(
 	sector_type=st.integers(min_value=0, max_value=10),
 	tele_delay=st.integers(min_value=0, max_value=100),
