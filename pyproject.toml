@@ -26,7 +26,18 @@ area-reader = "area_reader:main"
 test = [
     "pytest",
     "hypothesis",
+    "pytest-cov",
 ]
+
+[tool.pytest.ini_options]
+addopts = "--cov=area_reader --cov-branch --cov-report=term-missing"
+
+[tool.coverage.run]
+branch = true
+source = ["area_reader"]
+
+[tool.coverage.report]
+show_missing = true
 
 [tool.hatch.build.targets.wheel]
 packages = ["area_reader"]
