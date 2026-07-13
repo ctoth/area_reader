@@ -116,7 +116,12 @@ def render_record(instance, section=None):
 			continue
 		value = getattr(instance, attribute.name)
 		chunks.append(_decoration(native.prefix, instance))
-		chunks.append(native.encode(value, instance))
+		try:
+			chunks.append(native.encode(value, instance))
+		except NativeWriteError as error:
+			raise NativeWriteError(
+				"%s.%s: %s" % (instance.__class__.__name__, attribute.name, error)
+			) from error
 		chunks.append(_decoration(native.suffix, instance))
 	chunks.append(getattr(instance.__class__, 'NATIVE_SUFFIX', ''))
 	return ''.join(chunks)

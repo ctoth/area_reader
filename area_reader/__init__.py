@@ -487,6 +487,25 @@ def native_item_values(value, owner):
 	return ' '.join(encoded)
 
 
+def native_four_numbers(value, owner):
+	if len(value) != 4:
+		raise NativeWriteError("Merc object values must contain four entries")
+	return ' '.join(native_number(item, owner) for item in value)
+
+
+def native_merc_exit_lock(value, owner):
+	del owner
+	locks = {
+		int(EXIT_FLAGS.NONE): 0,
+		int(EXIT_FLAGS.ISDOOR): 1,
+		int(EXIT_FLAGS.ISDOOR | EXIT_FLAGS.PICKPROOF): 2,
+	}
+	try:
+		return str(locks[int(value)])
+	except KeyError:
+		raise NativeWriteError("Merc exit flags %r have no native lock code" % value)
+
+
 def native_trade_types(value, owner):
 	del owner
 	if len(value) != AreaFile.MAX_TRADES:
@@ -546,8 +565,8 @@ class Item(MudBase):
 class MercAffectData(object):
 	type = attr(default=--1)
 	duration = attr(default=-1)
-	location = attr(default=-1)
-	modifier = attr(default=-1)
+	location = field(default=-1, native=NativeField(1, native_number, prefix='A\n'))
+	modifier = field(default=-1, native=NativeField(2, native_number))
 	bitvector = attr(default=0)
 
 @attributes
@@ -842,7 +861,18 @@ class RomAffectData(object):
 
 @attributes
 class MercArea(object):
-	metadata = attr(default="")
+	NATIVE_SECTIONS = (
+		NativeSection('AREA', owner_section='area'),
+		NativeSection('HELPS', collection='helps', end='0 $~\n'),
+		NativeSection('MOBILES', collection='mobs', end='#0\n', mapping=True),
+		NativeSection('OBJECTS', collection='objects', end='#0\n', mapping=True),
+		NativeSection('ROOMS', collection='rooms', end='#0\n', mapping=True),
+		NativeSection('RESETS', collection='resets', end='S\n'),
+		NativeSection('SHOPS', collection='shops', end='0\n'),
+		NativeSection('SPECIALS', collection='specials', end='S\n'),
+	)
+
+	metadata = field(default='', native=NativeField(1, native_tilde_string, section='area'))
 	helps = attr(default=Factory(list))
 	rooms = attr(default=Factory(OrderedDict))
 	mobs = attr(default=Factory(OrderedDict))
@@ -894,6 +924,17 @@ class Exit(object):
 		elif locks == 4:
 			exit_info = EXIT_FLAGS.ISDOOR | EXIT_FLAGS.NOPASS | EXIT_FLAGS.PICKPROOF
 		return cls(door=door, description=description, keyword=keyword, exit_info=exit_info, key=key, destination=destination)
+
+
+@attributes
+class MercExit(Exit):
+	exit_info = field(
+		default=0,
+		type=EXIT_FLAGS,
+		converter=EXIT_FLAGS,
+		native=NativeField(4, native_merc_exit_lock),
+	)
+
 
 @attributes
 class SmaugExit(Exit):
@@ -1018,9 +1059,15 @@ class Reset(object):
 
 @attributes
 class Special(object):
-	command = field(default=None, native=NativeField(1, native_raw, suffix=' '))
-	arg1 = field(default=None, native=NativeField(2, native_number, suffix=' '))
-	arg2 = field(default=None, native=NativeField(3, native_word, suffix=''))
+	command = field(default=None, native=NativeField(1, native_reset_command, suffix=native_reset_command_suffix))
+	arg1 = field(
+		default=None,
+		native=NativeField(2, native_number, suffix=' ', when=lambda owner: owner.command is not None),
+	)
+	arg2 = field(
+		default=None,
+		native=NativeField(3, native_word, suffix='', when=lambda owner: owner.command is not None),
+	)
 	comment = field(default=None, type=str, native=NativeField(4, native_comment))
 
 	@classmethod
@@ -1060,7 +1107,17 @@ class RomArea(object):
 
 @attributes
 class MercRoom(Room):
-	room_flags = attr(default=0, type=MERC_ROOM_FLAGS, converter=MERC_ROOM_FLAGS)
+	owner = attr(default=None, type=str)
+	clan = attr(default='', type=str)
+	room_flags = field(
+		default=0,
+		type=MERC_ROOM_FLAGS,
+		converter=MERC_ROOM_FLAGS,
+		native=NativeField(4, native_flag),
+	)
+	heal_rate = attr(default=100, type=int)
+	mana_rate = attr(default=100, type=int)
+	exits = field(default=Factory(list), type=List[MercExit], native=NativeField(8, native_records, suffix=''))
 
 	def read_metadata(self, reader):
 		logger.debug("Reading room data for %d" % self.vnum)
@@ -1069,7 +1126,7 @@ class MercRoom(Room):
 			if letter == 'S':
 				break
 			if letter == 'D':
-				self.exits.append(Exit.read(reader=reader))
+				self.exits.append(MercExit.read(reader=reader))
 			elif letter == 'E':
 				self.extra_descriptions.append(reader.read_object(ExtraDescription))
 			else:
@@ -1267,16 +1324,32 @@ class SwrRoom(SmaugRoom):
 	resets = attr(default=Factory(list))
 
 
+def native_merc_reset_arg2_suffix(owner):
+	return '' if owner.command in ('G', 'R') else ' '
+
+
 @attributes
 class MercReset(object):
-	command = attr(default=None)
-	if_flag = attr(default=0)
-	arg1 = attr(default=None)
-	arg2 = attr(default=None)
-	arg3 = attr(default=None)
+	command = field(default=None, native=NativeField(1, native_reset_command, suffix=native_reset_command_suffix))
+	if_flag = field(
+		default=0,
+		native=NativeField(2, native_number, suffix=' ', when=lambda owner: owner.command is not None),
+	)
+	arg1 = field(
+		default=None,
+		native=NativeField(3, native_number, suffix=' ', when=lambda owner: owner.command is not None),
+	)
+	arg2 = field(
+		default=None,
+		native=NativeField(4, native_number, suffix=native_merc_reset_arg2_suffix, when=lambda owner: owner.command is not None),
+	)
+	arg3 = field(
+		default=None,
+		native=NativeField(5, native_number, suffix='', when=lambda owner: owner.command not in (None, 'G', 'R')),
+	)
 	arg4 = attr(default=None)
 	arg5 = attr(default=None)
-	comment = attr(default=None)
+	comment = field(default=None, native=NativeField(6, native_comment))
 
 	@classmethod
 	def read(cls, reader, letter):
@@ -1293,8 +1366,43 @@ class MercReset(object):
 
 @attributes
 class MercMob(RomMob):
-	ac = attr(default=0, type=int)
-	act = field(default=MERC_ACT_TYPES.IS_NPC.value, type=MERC_ACT_TYPES, converter=MERC_ACT_TYPES)
+	vnum = field(default=0, type=VNum, read=False, native=NativeField(0, native_number, prefix='#'))
+	name = field(default='', type=str, native=NativeField(1, native_tilde_string))
+	short_desc = field(default='', type=str, native=NativeField(2, native_tilde_string))
+	long_desc = field(default='', type=str, native=NativeField(3, native_tilde_string))
+	description = field(default='', type=str, native=NativeField(4, native_tilde_string))
+	extra_descriptions = attr(default=Factory(list), type=List[ExtraDescription])
+	race = attr(default='', type=str)
+	group = attr(default=0, type=int)
+	act = field(
+		default=MERC_ACT_TYPES.IS_NPC.value,
+		type=MERC_ACT_TYPES,
+		converter=MERC_ACT_TYPES,
+		native=NativeField(5, native_flag),
+	)
+	affected_by = field(default=0, type=AFFECTED_BY, converter=AFFECTED_BY, native=NativeField(6, native_flag))
+	alignment = field(default=0, type=int, native=NativeField(7, native_number))
+	level = field(default=0, type=int, native=NativeField(8, native_number, prefix='S\n'))
+	hitroll = field(default=0, type=int, native=NativeField(9, native_number))
+	ac = field(default=0, type=int, native=NativeField(10, native_number))
+	hit = field(default=Factory(Dice), type=Dice, native=NativeField(11, native_nested))
+	damage = field(default=Factory(Dice), type=Dice, native=NativeField(12, native_nested))
+	mana = attr(default=Factory(Dice), type=Dice)
+	damtype = attr(default='', type=Word)
+	material = attr(default='', type=str)
+	wealth = field(default=0, type=int, native=NativeField(13, native_number))
+	xp = field(default=0, type=int, native=NativeField(14, native_number))
+	default_pos = field(default=0, type=int, native=NativeField(15, native_number))
+	start_pos = field(default=0, type=int, native=NativeField(16, native_number))
+	sex = field(default=0, type=int, native=NativeField(17, native_number))
+	off_flags = attr(default=0, type=OFFENSE, converter=OFFENSE)
+	imm_flags = attr(default=0, type=IMM_FLAGS, converter=IMM_FLAGS)
+	res_flags = attr(default=0, type=IMM_FLAGS, converter=IMM_FLAGS)
+	vuln_flags = attr(default=0, type=IMM_FLAGS, converter=IMM_FLAGS)
+	form = attr(default=0, type=FORMS, converter=FORMS)
+	parts = attr(default=0, type=PARTS, converter=PARTS)
+	size = attr(default=None, type=Word)
+	mprogs = field(default=Factory(list), type=Optional[List[RomMobprog]])
 
 	@classmethod
 	def read(cls, reader, vnum):
@@ -1313,16 +1421,31 @@ class MercMob(RomMob):
 		hit = Dice.read(reader=reader)
 		damage = Dice.read(reader=reader)
 		wealth = reader.read_number()
-		reader.read_number() #xp can't be used!
+		xp = reader.read_number()
 		default_pos = reader.read_number() # position
 		start_pos = reader.read_number() # start pos
 		sex = reader.read_number()
 		if letter != 'S':
 			reader.parse_fail("Reading MOB vnum %d non S: %s" % (vnum, letter))
-		return cls(vnum=vnum, name=name, short_desc=short_desc, long_desc=long_desc, description=description, act=act, affected_by=affected_by, alignment=alignment, level=level, hitroll=hitroll, ac=ac, hit=hit, damage=damage, wealth=wealth, start_pos=start_pos, default_pos=default_pos, sex=sex)
+		return cls(vnum=vnum, name=name, short_desc=short_desc, long_desc=long_desc, description=description, act=act, affected_by=affected_by, alignment=alignment, level=level, hitroll=hitroll, ac=ac, hit=hit, damage=damage, wealth=wealth, xp=xp, start_pos=start_pos, default_pos=default_pos, sex=sex)
 
 @attributes
 class MercItem(Item):
+	vnum = field(default=0, type=VNum, read=False, native=NativeField(0, native_number, prefix='#'))
+	name = field(default='', type=str, native=NativeField(1, native_tilde_string))
+	short_desc = field(default='', type=str, native=NativeField(2, native_tilde_string))
+	description = field(default='', type=str, native=NativeField(3, native_tilde_string))
+	action_description = field(default='', type=str, native=NativeField(4, native_tilde_string))
+	item_type = field(default=-1, type=int, native=NativeField(5, native_number))
+	extra_flags = field(default=0, type=int, native=NativeField(6, native_number))
+	wear_flags = field(default=0, type=WEAR_FLAGS, converter=WEAR_FLAGS, native=NativeField(7, native_number))
+	value = field(default=Factory(list), type=List, native=NativeField(8, native_four_numbers))
+	weight = field(default=0, type=int, native=NativeField(9, native_number))
+	cost = field(default=0, type=int, native=NativeField(10, native_number))
+	cost_per_day = field(default=0, type=int, native=NativeField(11, native_number))
+	level = attr(default=0, type=int)
+	affected = field(default=Factory(list), native=NativeField(12, native_records, suffix=''))
+	extra_descriptions = field(default=Factory(list), type=List[ExtraDescription], native=NativeField(13, native_records, suffix=''))
 
 	@classmethod
 	def read(cls, reader, vnum):
@@ -1330,14 +1453,14 @@ class MercItem(Item):
 		name = reader.read_string()
 		short_desc = reader.read_string()
 		description = reader.read_string()
-		reader.read_string() # Action Description, unused
+		action_description = reader.read_string()
 		item_type = reader.read_number()
 		extra_flags = reader.read_flag()
 		wear_flags = reader.read_flag()
 		value = [reader.read_number(), reader.read_number(), reader.read_number(), reader.read_number()]
 		weight = reader.read_number()
 		cost = reader.read_number()
-		reader.read_number() # cost per day
+		cost_per_day = reader.read_number()
 		affected = []
 		extra_descriptions = []
 		while True:
@@ -1354,10 +1477,17 @@ class MercItem(Item):
 			else:
 				reader.index -= 1
 				break
-		return cls(vnum=vnum, name=name, short_desc=short_desc, description=description, item_type=item_type, extra_flags=extra_flags, wear_flags=wear_flags, value=value, weight=weight, cost=cost, affected=affected, extra_descriptions=extra_descriptions)
+		return cls(vnum=vnum, name=name, short_desc=short_desc, description=description, action_description=action_description, item_type=item_type, extra_flags=extra_flags, wear_flags=wear_flags, value=value, weight=weight, cost=cost, cost_per_day=cost_per_day, affected=affected, extra_descriptions=extra_descriptions)
 
 class MercAreaFile(AreaFile):
 	area_type = MercArea
+
+	def dumps(self):
+		return render_document(self.area, self.area.NATIVE_SECTIONS, self.skipped_sections)
+
+	def write(self, path):
+		with io.open(path, mode='wt', encoding='latin-1', newline='\n') as area_file:
+			area_file.write(self.dumps())
 
 	def load_mobiles(self):
 		for mob in self.load_vnum_section(MercMob):

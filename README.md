@@ -12,7 +12,7 @@ very easy to do things like render the entire tree of objects out as JSON or sim
 | Format | Reader class | Native writer | Source shape |
 |---|---|---|---|
 | ROM | `RomAreaFile` | `dumps()` / `write()` | single tilde-delimited `.are` file |
-| Merc | `MercAreaFile` | — | single tilde-delimited area file |
+| Merc | `MercAreaFile` | `dumps()` / `write()` | single tilde-delimited area file |
 | SMAUG | `SmaugAreaFile` | — | single tilde-delimited area file |
 | SWR / FUSS | `SwrAreaFile` | — | single tilde-delimited area file |
 | CircleMUD | `CircleAreaFile` | — | indexed world tree (`wld`/`mob`/`obj`/`zon`/`shp`) directory |
@@ -33,18 +33,18 @@ Every reader exposes the same shape: construct it with a path, call
 RomArea(name='Midgaard', metadata='{ All } Diku    Midgaard', original_filename='midgaard.are', first_vnum=3000, last_vnum=3399, ... )
 ```
 
-ROM areas can be rendered to a canonical native form or written directly:
+ROM and Merc areas can be rendered to a canonical native form or written directly:
 
 ```python
 text = area_file.dumps()
 area_file.write("midgaard-canonical.are")
 ```
 
-The ROM writer preserves the parsed semantic model and reaches a canonical
-fixed point: parsing its output and rendering again produces the same model and
-text. It does not claim byte-for-byte reproduction of source whitespace or flag
-spelling. Native field order and codecs live on the existing attrs models, and
-unrecognized source sections are retained as native sections.
+The native writers preserve the parsed semantic model and reach a canonical
+fixed point: parsing their output and rendering again produces the same model
+and text. They do not claim byte-for-byte reproduction of source whitespace or
+flag spelling. Native field order and codecs live on the existing attrs models,
+and unrecognized source sections are retained as native sections.
 
 ### CircleMUD
 
