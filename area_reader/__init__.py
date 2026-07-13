@@ -79,6 +79,8 @@ class AreaFile(object):
 			end = self.current_char
 			self.advance()
 			word = self.read_until(end)
+			if self.current_char != end:
+				self.parse_fail("Unterminated quoted word")
 			self.advance()
 			return word
 		while self.current_char != '\0' and not self.current_char.isspace():
@@ -89,6 +91,8 @@ class AreaFile(object):
 	def read_string(self):
 		self.skip_whitespace()
 		res = self.read_until('~')
+		if self.current_char != '~':
+			self.parse_fail("Unterminated string")
 		self.advance()
 		return res
 		
@@ -143,6 +147,8 @@ class AreaFile(object):
 
 	def read_until(self, endchar):
 		ahead = self.data.find(endchar, self.index)
+		if ahead == -1:
+			ahead = len(self.data)
 		result = self.data[self.index:ahead]
 		self.index = ahead
 		return result

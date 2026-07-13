@@ -68,3 +68,36 @@ def test_flag_convert_maps_every_engine_letter_to_its_bit(index):
 def test_flag_convert_rejects_multi_character_inputs(invalid_flag):
 	with pytest.raises(ValueError, match="Unable to convert flag"):
 		area_reader.flag_convert(invalid_flag)
+
+
+delimiter_payload = st.text(
+	alphabet=string.ascii_letters + string.digits + " .,!?\n\t",
+	min_size=0,
+	max_size=100,
+)
+
+
+@given(payload=delimiter_payload)
+@settings(max_examples=30, deadline=None)
+def test_fread_string_preserves_generated_tilde_terminated_payloads(payload):
+	reader = reader_for(payload + "~")
+
+	assert reader.read_string() == payload.lstrip()
+
+
+@given(payload=delimiter_payload)
+@settings(max_examples=30, deadline=None)
+def test_fread_string_rejects_eof_before_tilde(payload):
+	reader = reader_for(payload)
+
+	with pytest.raises(area_reader.ParseError, match="Unterminated string"):
+		reader.read_string()
+
+
+@given(payload=delimiter_payload)
+@settings(max_examples=30, deadline=None)
+def test_fread_word_rejects_eof_inside_quotes(payload):
+	reader = reader_for("'" + payload)
+
+	with pytest.raises(area_reader.ParseError, match="Unterminated quoted word"):
+		reader.read_word()
