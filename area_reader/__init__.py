@@ -20,8 +20,22 @@ from cattr import converters
 from operator import setitem
 
 from area_reader.constants import *
+from area_reader.native import (
+	NativeField,
+	NativeSection,
+	NativeWriteError,
+	flag as native_flag,
+	nested as native_nested,
+	number as native_number,
+	raw as native_raw,
+	records as native_records,
+	render_document,
+	signed_number as native_signed_number,
+	tilde_string as native_tilde_string,
+	word as native_word,
+)
 
-def field(type=None, read=True, on_read=None, original_type=None, only_if=None, *args, **kwargs):
+def field(type=None, read=True, on_read=None, original_type=None, only_if=None, native=None, *args, **kwargs):
 	metadata = dict(read=read)
 	if on_read:
 		metadata['on_read'] = on_read
@@ -29,6 +43,8 @@ def field(type=None, read=True, on_read=None, original_type=None, only_if=None, 
 		metadata['original_type'] = original_type
 	if only_if:
 		metadata['only_if'] = only_if
+	if native:
+		metadata['native'] = native
 	return attr(type=type, metadata=metadata, *args, **kwargs)
 
 class ParseError(Exception): pass
@@ -55,10 +71,12 @@ class AreaFile(object):
 		self.file.close()
 		area_type = self.area_type or RomArea
 		self.area = area_type()
+		self.skipped_sections = []
 		self.current_section_name = "N/A"
 		self.readers = {
 			Word: self.read_word,
 			Letter: self.read_letter,
+			VNum: self.read_number,
 			str: self.read_string,
 			int: self.read_number,
 			VNum: self.read_number,
@@ -309,10 +327,10 @@ class AreaFile(object):
 			if vnum == 0:
 				break
 			self.area.mobprogs[vnum] = self.read_string()
-	
+
 	def skip_section(self, section_name):
 		logger.debug("Skipping section %s", section_name)
-		self.read_until('#')
+		self.skipped_sections.append((section_name, self.read_until('#')))
 
 	def read_section_name(self):
 		self.read_and_verify_letter('#')
@@ -349,7 +367,7 @@ class AreaFile(object):
 			shop.open_hour = self.read_number()
 			shop.close_hour = self.read_number()
 			self.area.shops.append(shop)
-			self.read_to_eol()
+			shop.comment = self.read_to_eol()
 
 	def load_helps(self):
 		while True:
@@ -387,6 +405,12 @@ class AreaFile(object):
 			json.dump(self.as_dict(), f, indent=2)
 
 class RomAreaFile(AreaFile):
+	def dumps(self):
+		return render_document(self.area, self.area.NATIVE_SECTIONS, self.skipped_sections)
+
+	def write(self, path):
+		with io.open(path, mode='wt', encoding='latin-1', newline='\n') as area_file:
+			area_file.write(self.dumps())
 
 	def load_mobiles(self):
 		for mob in self.load_vnum_section(RomMob):
@@ -404,10 +428,100 @@ class RomAreaFile(AreaFile):
 		self.area.last_vnum = self.read_number()
 
 
+def native_divide_by_ten(value, owner):
+	del owner
+	if value % 10:
+		raise NativeWriteError("Armor class %r is not divisible by ten" % value)
+	return str(value // 10)
+
+
+def native_condition(value, owner):
+	del owner
+	conditions = {
+		100: 'P',
+		90: 'G',
+		75: 'A',
+		50: 'W',
+		25: 'D',
+		10: 'B',
+		0: 'R',
+	}
+	try:
+		return conditions[value]
+	except KeyError:
+		raise NativeWriteError("ROM condition %r has no native letter" % value)
+
+
+def native_exit_lock(value, owner):
+	del owner
+	locks = {
+		int(EXIT_FLAGS.NONE): 0,
+		int(EXIT_FLAGS.ISDOOR): 1,
+		int(EXIT_FLAGS.ISDOOR | EXIT_FLAGS.PICKPROOF): 2,
+		int(EXIT_FLAGS.ISDOOR | EXIT_FLAGS.NOPASS): 3,
+		int(EXIT_FLAGS.ISDOOR | EXIT_FLAGS.NOPASS | EXIT_FLAGS.PICKPROOF): 4,
+	}
+	try:
+		return str(locks[int(value)])
+	except KeyError:
+		raise NativeWriteError("ROM exit flags %r have no native lock code" % value)
+
+
+def native_item_values(value, owner):
+	if len(value) != 5:
+		raise NativeWriteError("ROM object values must contain five entries")
+	word_positions = {
+		'weapon': {0, 3},
+		'drink': {2},
+		'fountain': {2},
+		'wand': {3},
+		'staff': {3},
+		'potion': {1, 2, 3, 4},
+		'pill': {1, 2, 3, 4},
+		'scroll': {1, 2, 3, 4},
+	}.get(owner.item_type, set())
+	encoded = []
+	for index, item in enumerate(value):
+		encoder = native_word if index in word_positions else native_flag
+		encoded.append(encoder(item, owner))
+	return ' '.join(encoded)
+
+
+def native_trade_types(value, owner):
+	del owner
+	if len(value) != AreaFile.MAX_TRADES:
+		raise NativeWriteError("ROM shops require exactly five trade types")
+	return ' '.join(str(item) for item in value)
+
+
+def native_reset_command(value, owner):
+	del owner
+	return '*' if value is None else str(value)
+
+
+def native_comment(value, owner):
+	del owner
+	if not value:
+		return ''
+	return str(value)
+
+
+def native_reset_command_suffix(owner):
+	return '' if owner.command is None else ' '
+
+
+def native_reset_arg2_suffix(owner):
+	return '' if owner.command in ('G', 'R') else ' '
+
+
+def native_reset_arg3_suffix(owner):
+	return ' ' if owner.command in ('P', 'M') else ''
+
+
 @attributes
 class ExtraDescription(object):
-	keyword = field(default='', type=str)
-	description = field(default='', type=str)
+	keyword = field(default='', type=str, native=NativeField(1, native_tilde_string, prefix='E\n'))
+	description = field(default='', type=str, native=NativeField(2, native_tilde_string))
 
 @attributes
 class MudBase(object):
@@ -454,8 +568,21 @@ class RomItem(Item):
 		condition = conditions[letter]
 		return condition
 
-	material = field(default='', type=str)
-	condition = field(default=100, type=int, original_type=Letter, on_read=convert_condition)
+	vnum = field(default=0, type=VNum, read=False, native=NativeField(0, native_number, prefix='#'))
+	name = field(default='', type=str, native=NativeField(1, native_tilde_string))
+	short_desc = field(default='', type=str, native=NativeField(2, native_tilde_string))
+	description = field(default='', type=str, native=NativeField(3, native_tilde_string))
+	material = field(default='', type=str, native=NativeField(4, native_tilde_string))
+	item_type = field(default=-1, type=int, native=NativeField(5, native_word))
+	extra_flags = field(default=0, type=int, native=NativeField(6, native_flag))
+	wear_flags = field(default=0, type=WEAR_FLAGS, converter=WEAR_FLAGS, native=NativeField(7, native_flag))
+	value = field(default=Factory(list), type=List, native=NativeField(8, native_item_values))
+	level = field(default=0, type=int, native=NativeField(9, native_number))
+	weight = field(default=0, type=int, native=NativeField(10, native_number))
+	cost = field(default=0, type=int, native=NativeField(11, native_number))
+	condition = field(default=100, type=int, original_type=Letter, on_read=convert_condition, native=NativeField(12, native_condition))
+	affected = field(default=Factory(list), native=NativeField(13, native_records, suffix=''))
+	extra_descriptions = field(default=Factory(list), type=List[ExtraDescription], native=NativeField(14, native_records, suffix=''))
 
 	@classmethod
 	def read(cls, reader, vnum=None, **kwargs):
@@ -528,16 +655,16 @@ multiply_10 = lambda n: n * 10
 
 @attributes
 class RomArmorClass(object):
-	pierce = field(default=0, type=int, on_read = multiply_10)
-	bash = field(default=0, type=int, on_read=multiply_10)
-	slash = field(default=0, type=int, on_read=multiply_10)
-	exotic = field(default=0, type=int, on_read=multiply_10)
+	pierce = field(default=0, type=int, on_read=multiply_10, native=NativeField(1, native_divide_by_ten))
+	bash = field(default=0, type=int, on_read=multiply_10, native=NativeField(2, native_divide_by_ten))
+	slash = field(default=0, type=int, on_read=multiply_10, native=NativeField(3, native_divide_by_ten))
+	exotic = field(default=0, type=int, on_read=multiply_10, native=NativeField(4, native_divide_by_ten))
 
 @attributes
 class Dice(object):
-	number = attr(default=0, type=int)
-	sides = attr(default=0, type=int)
-	bonus = attr(default=0, type=int)
+	number = field(default=0, type=int, native=NativeField(1, native_number, suffix=''))
+	sides = field(default=0, type=int, native=NativeField(2, native_number, prefix='d', suffix=''))
+	bonus = field(default=0, type=int, native=NativeField(3, native_signed_number))
 
 	@classmethod
 	def read(cls, reader, **kwargs):
@@ -556,9 +683,9 @@ class Dice(object):
 
 @attributes
 class RomMobprog(object):
-	trig_type = attr(default=None, type=Word)
-	vnum = attr(default=-1, type=VNum)
-	trig_phrase = attr(default=None, type=str)
+	trig_type = field(default=None, type=Word, native=NativeField(1, native_word, prefix='M ', suffix=' '))
+	vnum = field(default=-1, type=VNum, native=NativeField(2, native_number, suffix=' '))
+	trig_phrase = field(default=None, type=str, native=NativeField(3, native_tilde_string))
 
 @attributes
 class RomCharacter(MudBase):
@@ -581,21 +708,37 @@ mark_as_npc = lambda act_flags: ROM_ACT_TYPES(act_flags) | ROM_ACT_TYPES.IS_NPC
 
 @attributes
 class RomMob(RomCharacter):
+	vnum = field(default=0, type=VNum, read=False, native=NativeField(0, native_number, prefix='#'))
+	name = field(default='', type=str, native=NativeField(1, native_tilde_string))
+	short_desc = field(default='', type=str, native=NativeField(2, native_tilde_string))
+	long_desc = field(default='', type=str, native=NativeField(3, native_tilde_string))
+	description = field(default='', type=str, native=NativeField(4, native_tilde_string))
+	race = field(default='', type=str, native=NativeField(5, native_tilde_string))
+	act = field(default=0, type=ROM_ACT_TYPES, converter=ROM_ACT_TYPES, native=NativeField(6, native_flag))
+	affected_by = field(default=0, type=AFFECTED_BY, converter=AFFECTED_BY, native=NativeField(7, native_flag))
+	alignment = field(default=0, type=int, native=NativeField(8, native_number))
+	group = field(default=0, type=int, native=NativeField(9, native_number))
+	level = field(default=0, type=int, native=NativeField(10, native_number))
+	hitroll = field(default=0, type=int, native=NativeField(11, native_number))
+	hit = field(default=Factory(Dice), type=Dice, native=NativeField(12, native_nested))
+	mana = field(default=Factory(Dice), type=Dice, native=NativeField(13, native_nested))
+	damage = field(default=Factory(Dice), type=Dice, native=NativeField(14, native_nested))
+	damtype = field(default='', type=Word, native=NativeField(15, native_word))
+	ac = field(default=Factory(RomArmorClass), type=RomArmorClass, native=NativeField(16, native_nested))
 	shop = field(default=None, read=False)
-	act = field(default=0, type=ROM_ACT_TYPES, converter=ROM_ACT_TYPES)
-	alignment = field(default=0, type=int)
-	off_flags = attr(default=0, type=OFFENSE, converter=OFFENSE)
-	imm_flags = attr(default=0, type=IMM_FLAGS, converter=IMM_FLAGS)
-	res_flags = attr(default=0, type=IMM_FLAGS, converter=IMM_FLAGS)
-	vuln_flags = attr(default=0, type=IMM_FLAGS, converter=IMM_FLAGS)
-	start_pos = attr(default=None, type=Word)
-	default_pos = attr(default=None, type=Word)
-	sex = attr(default='', type=Word)
-	wealth = attr(default=0, type=int)
-	form = attr(default=0, type=FORMS, converter=FORMS)
-	parts = attr(default=0, type=PARTS, converter=PARTS)
-	size = attr(default=None, type=Word)
-	mprogs = field(default=Factory(list), type=Optional[List[RomMobprog]])
+	off_flags = field(default=0, type=OFFENSE, converter=OFFENSE, native=NativeField(17, native_flag))
+	imm_flags = field(default=0, type=IMM_FLAGS, converter=IMM_FLAGS, native=NativeField(18, native_flag))
+	res_flags = field(default=0, type=IMM_FLAGS, converter=IMM_FLAGS, native=NativeField(19, native_flag))
+	vuln_flags = field(default=0, type=IMM_FLAGS, converter=IMM_FLAGS, native=NativeField(20, native_flag))
+	start_pos = field(default=None, type=Word, native=NativeField(21, native_word))
+	default_pos = field(default=None, type=Word, native=NativeField(22, native_word))
+	sex = field(default='', type=Word, native=NativeField(23, native_word))
+	wealth = field(default=0, type=int, native=NativeField(24, native_number))
+	form = field(default=0, type=FORMS, converter=FORMS, native=NativeField(25, native_flag))
+	parts = field(default=0, type=PARTS, converter=PARTS, native=NativeField(26, native_flag))
+	size = field(default=None, type=Word, native=NativeField(27, native_word))
+	material = field(default='', type=str, native=NativeField(28, native_word))
+	mprogs = field(default=Factory(list), type=Optional[List[RomMobprog]], native=NativeField(29, native_records))
 
 	@classmethod
 	def read(cls, reader, vnum, **kwargs):
@@ -659,15 +802,42 @@ class RomMob(RomCharacter):
 				break
 		return cls(vnum=vnum, name=name, short_desc=short_desc, long_desc=long_desc, description=description, race=race, act=act, affected_by=affected_by, alignment=alignment, group=group, level=level, hitroll=hitroll, hit=hit, mana=mana, damage=damage, damtype=damtype, ac=ac, off_flags=off_flags, imm_flags=imm_flags, res_flags=res_flags, vuln_flags=vuln_flags, start_pos=start_pos, default_pos=default_pos, sex=sex, wealth=wealth, form=form, parts=parts, size=size, material=material, mprogs=mprogs)
 
+
+def native_affect_prefix(owner):
+	if owner.where == 'TO_OBJECT':
+		return 'A\n'
+	letters = {
+		'TO_AFFECTS': 'A',
+		'TO_IMMUNE': 'I',
+		'TO_RESIST': 'R',
+		'TO_VULN': 'V',
+	}
+	try:
+		return 'F%s ' % letters[owner.where]
+	except KeyError:
+		raise NativeWriteError("ROM affect target %r has no native tag" % owner.where)
+
+
+def native_affect_modifier_suffix(owner):
+	return '\n' if owner.where == 'TO_OBJECT' else ' '
+
+
 @attributes
 class RomAffectData(object):
 	where = attr(default=None)
 	type = attr(default=None)
 	level = attr(default=None)
 	duration = attr(default=None)
-	location = attr(default=None)
-	modifier = attr(default=None)
-	bitvector = attr(default=0)
+	location = field(default=None, native=NativeField(1, native_number, prefix=native_affect_prefix, suffix=' '))
+	modifier = field(default=None, native=NativeField(2, native_number, suffix=native_affect_modifier_suffix))
+	bitvector = field(
+		default=0,
+		native=NativeField(
+			3,
+			native_flag,
+			when=lambda owner: owner.where != 'TO_OBJECT',
+		),
+	)
 
 
 @attributes
@@ -685,23 +855,24 @@ class MercArea(object):
 
 @attributes
 class Help(object):
-	level = attr(default=0, type=int)
-	keyword = attr(default='', type=Word)
-	text = attr(default='', type=str)
+	level = field(default=0, type=int, native=NativeField(1, native_number, suffix=' '))
+	keyword = field(default='', type=Word, native=NativeField(2, native_tilde_string))
+	text = field(default='', type=str, native=NativeField(3, native_tilde_string))
 
 @attributes
 class Exit(object):
-	keyword = attr(default='', type=Word)
-	description = attr(default="", type=str)
-	door = attr(
+	keyword = field(default='', type=Word, native=NativeField(3, native_tilde_string))
+	description = field(default='', type=str, native=NativeField(2, native_tilde_string))
+	door = field(
 		default=None,
 		type=Optional[EXIT_DIRECTIONS],
 		converter=lambda value: None if value is None else EXIT_DIRECTIONS(value),
+		native=NativeField(1, native_number, prefix='D'),
 	)
-	exit_info = attr(default=0, type=EXIT_FLAGS, converter=EXIT_FLAGS)
+	exit_info = field(default=0, type=EXIT_FLAGS, converter=EXIT_FLAGS, native=NativeField(4, native_exit_lock))
 	rs_flags = attr(default=0, type=int)
-	key = attr(default=0, type=int)
-	destination = attr(default=None, type=int)
+	key = field(default=0, type=int, native=NativeField(5, native_number))
+	destination = field(default=None, type=int, native=NativeField(6, native_number))
 
 	@classmethod
 	def read(cls, reader, **kwargs):
@@ -735,14 +906,37 @@ class SmaugExit(Exit):
 
 @attributes
 class Room(MudBase):
-	owner = attr(default=None, type=str)
+	NATIVE_SUFFIX = 'S\n'
+
+	vnum = field(default=0, type=VNum, read=False, native=NativeField(0, native_number, prefix='#'))
+	name = field(default='', type=str, native=NativeField(1, native_tilde_string))
+	description = field(default='', type=str, native=NativeField(2, native_tilde_string))
+	owner = field(
+		default=None,
+		type=str,
+		native=NativeField(10, native_tilde_string, prefix='O ', when=lambda owner: bool(owner.owner)),
+	)
+	clan = field(
+		default='',
+		type=str,
+		native=NativeField(7, native_tilde_string, prefix='C ', when=lambda owner: bool(owner.clan)),
+	)
 	area = attr(default=None)
-	area_number = attr(default=0, type=int)
-	room_flags = attr(default=0, type=ROM_ROOM_FLAGS, converter=ROM_ROOM_FLAGS)
-	sector_type = attr(default=0, type=SECTOR_TYPES, converter=SECTOR_TYPES) #FIXME
-	heal_rate = attr(default=100, type=int)
-	mana_rate = attr(default=100, type=int)
-	exits = attr(default=Factory(list), type=List[Exit])
+	area_number = field(default=0, type=int, native=NativeField(3, native_number))
+	room_flags = field(default=0, type=ROM_ROOM_FLAGS, converter=ROM_ROOM_FLAGS, native=NativeField(4, native_flag))
+	sector_type = field(default=0, type=SECTOR_TYPES, converter=SECTOR_TYPES, native=NativeField(5, native_number)) #FIXME
+	heal_rate = field(
+		default=100,
+		type=int,
+		native=NativeField(6, native_number, prefix='H ', when=lambda owner: owner.heal_rate != 100),
+	)
+	mana_rate = field(
+		default=100,
+		type=int,
+		native=NativeField(7, native_number, prefix='M ', when=lambda owner: owner.mana_rate != 100),
+	)
+	exits = field(default=Factory(list), type=List[Exit], native=NativeField(8, native_records, suffix=''))
+	extra_descriptions = field(default=Factory(list), type=List[ExtraDescription], native=NativeField(9, native_records, suffix=''))
 
 	@classmethod
 	def read(cls, reader, vnum):
@@ -781,17 +975,34 @@ class Room(MudBase):
 
 @attributes
 class Reset(object):
-	command = attr(default=None)
-	arg1 = attr(default=None, type=Letter)
-	arg2 = attr(default=None)
-	arg3 = attr(default=None)
-	arg4 = attr(default=None)
-	comment = attr(default=None, type=str)
+	command = field(default=None, native=NativeField(1, native_reset_command, suffix=native_reset_command_suffix))
+	if_flag = field(
+		default=0,
+		native=NativeField(2, native_number, suffix=' ', when=lambda owner: owner.command is not None),
+	)
+	arg1 = field(
+		default=None,
+		type=Letter,
+		native=NativeField(3, native_number, suffix=' ', when=lambda owner: owner.command is not None),
+	)
+	arg2 = field(
+		default=None,
+		native=NativeField(4, native_number, suffix=native_reset_arg2_suffix, when=lambda owner: owner.command is not None),
+	)
+	arg3 = field(
+		default=None,
+		native=NativeField(5, native_number, suffix=native_reset_arg3_suffix, when=lambda owner: owner.command not in (None, 'G', 'R')),
+	)
+	arg4 = field(
+		default=None,
+		native=NativeField(6, native_number, suffix='', when=lambda owner: owner.command in ('P', 'M')),
+	)
+	comment = field(default=None, type=str, native=NativeField(7, native_comment))
 
 	@classmethod
 	def read(cls, reader, letter):
 		command = letter
-		reader.read_number() #if_flag
+		if_flag = reader.read_number()
 		arg1 = reader.read_number()
 		arg2 = reader.read_number()
 		if letter == 'G' or letter == 'R':
@@ -802,16 +1013,15 @@ class Reset(object):
 			arg4 = reader.read_number()
 		else:
 			arg4 = 0
-		reader.index -= 1
 		comment = reader.read_to_eol()
-		return cls(command=command, arg1=arg1, arg2=arg2, arg3=arg3, arg4=arg4, comment=comment)
+		return cls(command=command, if_flag=if_flag, arg1=arg1, arg2=arg2, arg3=arg3, arg4=arg4, comment=comment)
 
 @attributes
 class Special(object):
-	command = attr(default=None)
-	arg1 = attr(default=None)
-	arg2 = attr(default=None)
-	comment = attr(default=None, type=str)
+	command = field(default=None, native=NativeField(1, native_raw, suffix=' '))
+	arg1 = field(default=None, native=NativeField(2, native_number, suffix=' '))
+	arg2 = field(default=None, native=NativeField(3, native_word, suffix=''))
+	comment = field(default=None, type=str, native=NativeField(4, native_comment))
 
 	@classmethod
 	def read(cls, reader, letter, **kwargs):
@@ -823,11 +1033,22 @@ class Special(object):
 
 @attributes
 class RomArea(object):
-	name = attr(default="")
-	metadata = attr(default="")
-	original_filename = attr(default="")
-	first_vnum = attr(default=-1)
-	last_vnum = attr(default=-1)
+	NATIVE_SECTIONS = (
+		NativeSection('AREA', owner_section='area'),
+		NativeSection('HELPS', collection='helps', end='0 $~\n'),
+		NativeSection('MOBILES', collection='mobs', end='#0\n', mapping=True),
+		NativeSection('OBJECTS', collection='objects', end='#0\n', mapping=True),
+		NativeSection('ROOMS', collection='rooms', end='#0\n', mapping=True),
+		NativeSection('RESETS', collection='resets', end='S\n'),
+		NativeSection('SHOPS', collection='shops', end='0\n'),
+		NativeSection('SPECIALS', collection='specials', end='S\n'),
+	)
+
+	name = field(default='', native=NativeField(2, native_tilde_string, section='area'))
+	metadata = field(default='', native=NativeField(3, native_tilde_string, section='area'))
+	original_filename = field(default='', native=NativeField(1, native_tilde_string, section='area'))
+	first_vnum = field(default=-1, native=NativeField(4, native_number, section='area'))
+	last_vnum = field(default=-1, native=NativeField(5, native_number, section='area'))
 	helps = attr(default=Factory(list), type=List[Help])
 	rooms = attr(default=Factory(OrderedDict), type=Dict[int, Room])
 	mobs = attr(default=Factory(OrderedDict))
@@ -856,12 +1077,13 @@ class MercRoom(Room):
 
 @attributes
 class RomShop(object):
-	keeper = attr(default=0, type=int)
-	buy_type = attr(default=Factory(list), type=list)
-	profit_buy = attr(default=0, type=int)
-	profit_sell = attr(default=0, type=int)
-	open_hour = attr(default=0, type=int)
-	close_hour = attr(default=0, type=int)
+	keeper = field(default=0, type=int, native=NativeField(1, native_number, suffix=' '))
+	buy_type = field(default=Factory(list), type=list, native=NativeField(2, native_trade_types, suffix=' '))
+	profit_buy = field(default=0, type=int, native=NativeField(3, native_number, suffix=' '))
+	profit_sell = field(default=0, type=int, native=NativeField(4, native_number, suffix=' '))
+	open_hour = field(default=0, type=int, native=NativeField(5, native_number, suffix=' '))
+	close_hour = field(default=0, type=int, native=NativeField(6, native_number, suffix=''))
+	comment = field(default='', type=str, native=NativeField(7, native_comment))
 
 @attributes
 class SmaugMob(RomMob):
@@ -1048,6 +1270,7 @@ class SwrRoom(SmaugRoom):
 @attributes
 class MercReset(object):
 	command = attr(default=None)
+	if_flag = attr(default=0)
 	arg1 = attr(default=None)
 	arg2 = attr(default=None)
 	arg3 = attr(default=None)
@@ -1058,7 +1281,7 @@ class MercReset(object):
 	@classmethod
 	def read(cls, reader, letter):
 		command = letter
-		reader.read_number() #if_flag
+		if_flag = reader.read_number()
 		arg1 = reader.read_number()
 		arg2 = reader.read_number()
 		if letter == 'G' or letter == 'R':
@@ -1066,7 +1289,7 @@ class MercReset(object):
 		else:
 			arg3 = reader.read_number()
 		comment = reader.read_to_eol()
-		return cls(command=command, arg1=arg1, arg2=arg2, arg3=arg3, comment=comment)
+		return cls(command=command, if_flag=if_flag, arg1=arg1, arg2=arg2, arg3=arg3, comment=comment)
 
 @attributes
 class MercMob(RomMob):

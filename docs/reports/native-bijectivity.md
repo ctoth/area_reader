@@ -3,9 +3,11 @@
 ## Decision
 
 Add native writers one dialect at a time, beginning with ROM. Keep the current
-readers authoritative. Describe each writer as ordered section and record data
-consumed by one small renderer; do not create mirror-image `write_*` control
-flow and do not rewrite the readers into a bidirectional grammar.
+readers authoritative while putting each native contract on the attrs class
+that owns the data. Field metadata declares native order, phrase encoding,
+conditions, tags, and section membership; one small renderer walks those
+annotations. Do not create mirror-image `write_*` control flow or a second set
+of writer model classes.
 
 The first claimed law is semantic model stability:
 
@@ -69,18 +71,21 @@ the proved surface before a dialect is called bijective.
 
 ## Minimal writer architecture
 
-For one dialect, declare:
+For one dialect, annotate the existing attrs graph with:
 
-1. ordered document sections;
-2. record templates for the dialect's native record types;
+1. ordered document sections on the area model;
+2. native field order on each record model;
 3. scalar encoders for tilde strings, words, numbers, flags, dice, and the few
    explicitly invertible transforms;
 4. repetition, condition, and choice nodes needed to render lists and
    command-dependent record shapes.
 
-One pure traversal renders those declarations. Dialect declarations are named
-module constants, not a service registry. There is no writer class hierarchy,
-pairwise converter table, CST, or shared reader/writer DSL in this phase.
+One pure traversal renders those declarations. The classes already responsible
+for reading are also responsible for their write annotations. There is no
+writer class hierarchy, pairwise converter table, parallel dataclass graph,
+service registry, or CST in this phase. Simple records may use the same attrs
+metadata in both directions; context-sensitive readers remain authoritative
+until a later change proves that replacing them is safe.
 
 The public surface should follow the object the user already loaded:
 
@@ -120,8 +125,9 @@ current dialect is committed or fully reverted.
 
 ## ROM first slice
 
-The ROM slice may add an output-only declarative renderer and tests. Reader
-changes are limited to capture-only fixes required to make the model honest:
+The ROM slice may add attrs-owned native annotations, one generic renderer, and
+tests. Reader changes are limited to capture-only fixes required to make the
+model honest:
 
 - store reset `if_flag`;
 - make room `clan` a real field;
@@ -136,7 +142,7 @@ and exit flag combinations without a ROM lock code.
 Forbidden expansion in this slice:
 
 - no parser rewrite;
-- no shared bidirectional grammar;
+- no separate template DSL or broad parser rewrite;
 - no second dialect;
 - no CST or byte-perfect claim;
 - no sentence algebra, morphisms, or cross-dialect conversion work.
