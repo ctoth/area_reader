@@ -15,7 +15,7 @@ very easy to do things like render the entire tree of objects out as JSON or sim
 | Merc | `MercAreaFile` | `dumps()` / `write()` | single tilde-delimited area file |
 | SMAUG | `SmaugAreaFile` | `dumps()` / `write()` | single tilde-delimited area file |
 | SWR / FUSS | `SwrAreaFile` | `dumps()` / `write()` | single tilde-delimited area file |
-| CircleMUD | `CircleAreaFile` | — | indexed world tree (`wld`/`mob`/`obj`/`zon`/`shp`) directory |
+| CircleMUD | `CircleAreaFile` | `dumps()` / `write()` | indexed world tree (`wld`/`mob`/`obj`/`zon`/`shp`) directory |
 | CoffeeMud | `CoffeeMudAreaFile` | — | `.cmare` XML export (areas, item/mob catalogs, nested boardable areas) |
 
 ## Example usage
@@ -56,7 +56,16 @@ world root directory rather than a single file.
 >>> world = area_reader.CircleAreaFile('/path/to/circlemud')
 >>> world.load_sections()
 >>> world.area
+>>> tree = world.dumps()
+>>> tree['wld/index']
+>>> world.write('/path/to/canonical-circlemud')
 ```
+
+For this multi-file format, `dumps()` returns an ordered mapping from paths
+relative to `lib/world` to canonical native text. `write()` creates that tree,
+including every family index. Index order, record-to-file membership, mobile
+type, and shop version headers are part of the attrs model and survive a
+semantic round trip.
 
 ### CoffeeMud
 

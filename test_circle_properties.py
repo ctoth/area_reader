@@ -130,3 +130,50 @@ def test_circle_zone_reset_arity_matches_db_loader(
 		arg2,
 	)
 	assert reset.arg3 == (arg3 if four_argument_command else None)
+
+
+@given(
+	level=st.integers(min_value=0, max_value=100),
+	hitroll=st.integers(min_value=-100, max_value=100),
+	source_ac=st.integers(min_value=-100, max_value=100),
+	hit_number=st.integers(min_value=0, max_value=100),
+	hit_sides=st.integers(min_value=1, max_value=100),
+	hit_bonus=st.integers(min_value=-1000, max_value=1000),
+	damage_number=st.integers(min_value=0, max_value=100),
+	damage_sides=st.integers(min_value=1, max_value=100),
+	damage_bonus=st.integers(min_value=-1000, max_value=1000),
+)
+@settings(max_examples=40, deadline=None)
+def test_circle_mobile_native_transform_is_bijective(
+	level,
+	hitroll,
+	source_ac,
+	hit_number,
+	hit_sides,
+	hit_bonus,
+	damage_number,
+	damage_sides,
+	damage_bonus,
+):
+	mob = area_reader.CircleMob(
+		vnum=1,
+		name="generated",
+		short_desc="a generated mobile",
+		long_desc="A generated mobile is here.",
+		description="A generated mobile.",
+		act=area_reader.CircleMobFlags.ISNPC,
+		mob_type="S",
+		level=level,
+		hitroll=hitroll,
+		ac=source_ac * 10,
+		hit=area_reader.Dice(number=hit_number, sides=hit_sides, bonus=hit_bonus),
+		damage=area_reader.Dice(
+			number=damage_number,
+			sides=damage_sides,
+			bonus=damage_bonus,
+		),
+	)
+	reader = circle_reader_with_data(area_reader.render_record(mob))
+
+	assert reader.read_record_header() == mob.vnum
+	assert reader.read_mobile(mob.vnum) == mob

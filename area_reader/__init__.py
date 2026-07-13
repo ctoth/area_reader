@@ -2411,6 +2411,120 @@ def circle_asciiflag_conv(flag):
 	return flags
 
 
+def native_circle_numbers(value, owner):
+	del owner
+	if (
+		not isinstance(value, (list, tuple))
+		or len(value) != 4
+		or not all(isinstance(item, int) for item in value)
+	):
+		raise NativeWriteError("Circle object values require exactly four integers")
+	return ' '.join(str(item) for item in value)
+
+
+def native_circle_number_lines(value, owner):
+	del owner
+	if not isinstance(value, (list, tuple)) or not all(isinstance(item, int) for item in value):
+		raise NativeWriteError("Expected a sequence of integers")
+	return ''.join('%d\n' % item for item in value)
+
+
+def native_circle_text_lines(value, owner):
+	del owner
+	if not isinstance(value, (list, tuple)):
+		raise NativeWriteError("Expected a sequence of lines")
+	lines = []
+	for item in value:
+		text = str(item)
+		if '\n' in text or '\r' in text:
+			raise NativeWriteError("A native line cannot contain a newline")
+		lines.append(text + '\n')
+	return ''.join(lines)
+
+
+def native_circle_messages(value, owner):
+	del owner
+	if len(value) != 7:
+		raise NativeWriteError("Circle shops require exactly seven messages")
+	return ''.join(native_tilde_string(message, None) + '\n' for message in value)
+
+
+def native_circle_dice(value, owner):
+	del owner
+	if not isinstance(value, Dice):
+		raise NativeWriteError("Expected Circle dice")
+	return '%dd%d%+d' % (value.number, value.sides, value.bonus)
+
+
+def native_circle_hitroll(value, owner):
+	del owner
+	if not isinstance(value, int):
+		raise NativeWriteError("Expected an integer hitroll")
+	return str(20 - value)
+
+
+def native_circle_armor_class(value, owner):
+	del owner
+	if not isinstance(value, int):
+		raise NativeWriteError("Expected an integer armor class")
+	if value % 10:
+		raise NativeWriteError("Armor class %r is not divisible by ten" % value)
+	return str(value // 10)
+
+
+def native_circle_exit_lock(value, owner):
+	del owner
+	locks = {
+		int(EXIT_FLAGS.NONE): 0,
+		int(EXIT_FLAGS.ISDOOR): 1,
+		int(EXIT_FLAGS.ISDOOR | EXIT_FLAGS.PICKPROOF): 2,
+	}
+	try:
+		return str(locks[int(value)])
+	except (KeyError, TypeError, ValueError):
+		raise NativeWriteError("Exit flags %r have no Circle lock code" % value)
+
+
+def native_circle_mobile_type(value, owner):
+	if value not in ('S', 'E'):
+		raise NativeWriteError("Circle mobile type must be 'S' or 'E'")
+	if value == 'S' and owner.especs:
+		raise NativeWriteError("Simple Circle mobiles cannot contain especs")
+	return value
+
+
+def native_circle_especs(value, owner):
+	del owner
+	lines = []
+	for key, item in value.items():
+		if any(char in str(key) for char in ':\r\n') or any(char in str(item) for char in '\r\n'):
+			raise NativeWriteError("Invalid Circle enhanced-mobile espec")
+		lines.append('%s: %s\n' % (key, item))
+	return ''.join(lines)
+
+
+def native_circle_reset_command(value, owner):
+	if value not in ('M', 'O', 'E', 'P', 'D', 'G', 'R'):
+		raise NativeWriteError("unsupported Circle reset command %r" % value)
+	if value in ('G', 'R') and owner.arg3 is not None:
+		raise NativeWriteError("%s resets must omit arg3" % value)
+	if value not in ('G', 'R') and owner.arg3 is None:
+		raise NativeWriteError("%s resets requires arg3" % value)
+	return value
+
+
+def native_circle_float(value, owner):
+	del owner
+	if not isinstance(value, (int, float)) or isinstance(value, bool):
+		raise NativeWriteError("Expected a number")
+	return str(float(value))
+
+
+def native_circle_mapping_records(value, owner):
+	del owner
+	return ''.join(render_record(record) for record in value.values())
+
+
 class CircleMobFlags(enum.IntFlag):
 	SPEC = 1 << 0
 	SENTINEL = 1 << 1
@@ -2435,97 +2549,153 @@ class CircleMobFlags(enum.IntFlag):
 
 @attributes
 class CircleExit(object):
-	door = attr(default=0)
-	description = attr(default='')
-	keyword = attr(default='')
-	exit_info = attr(default=EXIT_FLAGS.NONE, type=EXIT_FLAGS, converter=EXIT_FLAGS)
-	key = attr(default=-1)
-	destination = attr(default=-1)
+	door = field(default=0, native=NativeField(1, native_number, prefix='D'))
+	description = field(default='', native=NativeField(2, native_tilde_string))
+	keyword = field(default='', native=NativeField(3, native_tilde_string))
+	exit_info = field(default=EXIT_FLAGS.NONE, type=EXIT_FLAGS, converter=EXIT_FLAGS, native=NativeField(4, native_circle_exit_lock, suffix=' '))
+	key = field(default=-1, native=NativeField(5, native_number, suffix=' '))
+	destination = field(default=-1, native=NativeField(6, native_number))
 
 
 @attributes
 class CircleRoom(MudBase):
-	zone_number = attr(default=0)
-	room_flags = attr(default=0)
-	sector_type = attr(default=0)
-	exits = attr(default=Factory(dict))
+	NATIVE_SUFFIX = 'S\n'
+
+	vnum = field(default=0, type=VNum, read=False, native=NativeField(1, native_number, prefix='#'))
+	name = field(default='', type=str, native=NativeField(2, native_tilde_string))
+	description = field(default='', type=str, native=NativeField(3, native_tilde_string))
+	zone_number = field(default=0, native=NativeField(4, native_number, suffix=' '))
+	room_flags = field(default=0, native=NativeField(5, native_flag, suffix=' '))
+	sector_type = field(default=0, native=NativeField(6, native_number))
+	extra_descriptions = field(default=Factory(list), type=List[ExtraDescription], native=NativeField(7, native_records, suffix=''))
+	exits = field(default=Factory(dict), native=NativeField(8, native_circle_mapping_records, suffix=''))
+	source_file = attr(default='', type=str)
 
 
 @attributes
 class CircleMob(RomCharacter):
-	act = field(default=CircleMobFlags.ISNPC.value, type=CircleMobFlags, converter=CircleMobFlags)
-	ac = attr(default=0)
-	alignment = attr(default=0)
-	affected_by = attr(default=0)
-	exp = attr(default=0)
-	wealth = attr(default=0)
-	start_pos = attr(default=0)
-	default_pos = attr(default=0)
-	sex = attr(default=0)
-	especs = attr(default=Factory(dict))
+	vnum = field(default=0, type=VNum, read=False, native=NativeField(1, native_number, prefix='#'))
+	name = field(default='', type=str, native=NativeField(2, native_tilde_string))
+	short_desc = field(default='', type=str, native=NativeField(3, native_tilde_string))
+	long_desc = field(default='', type=str, native=NativeField(4, native_tilde_string))
+	description = field(default='', type=str, native=NativeField(5, native_tilde_string))
+	act = field(default=CircleMobFlags.ISNPC.value, type=CircleMobFlags, converter=CircleMobFlags, native=NativeField(6, native_flag, suffix=' '))
+	affected_by = field(default=0, native=NativeField(7, native_flag, suffix=' '))
+	alignment = field(default=0, native=NativeField(8, native_number, suffix=' '))
+	mob_type = field(default='S', type=str, native=NativeField(9, native_circle_mobile_type))
+	level = field(default=0, type=int, native=NativeField(10, native_number, suffix=' '))
+	hitroll = field(default=0, type=int, native=NativeField(11, native_circle_hitroll, suffix=' '))
+	ac = field(default=0, native=NativeField(12, native_circle_armor_class, suffix=' '))
+	hit = field(default=Factory(Dice), type=Dice, native=NativeField(13, native_circle_dice, suffix=' '))
+	damage = field(default=Factory(Dice), type=Dice, native=NativeField(14, native_circle_dice))
+	wealth = field(default=0, native=NativeField(15, native_number, suffix=' '))
+	exp = field(default=0, native=NativeField(16, native_number))
+	default_pos = field(default=0, native=NativeField(17, native_number, suffix=' '))
+	start_pos = field(default=0, native=NativeField(18, native_number, suffix=' '))
+	sex = field(default=0, native=NativeField(19, native_number))
+	especs = field(default=Factory(dict), native=NativeField(20, native_circle_especs, suffix='E\n', when=lambda owner: owner.mob_type == 'E'))
+	source_file = attr(default='', type=str)
 
 
 @attributes
 class CircleAffectData(object):
-	location = attr(default=0)
-	modifier = attr(default=0)
+	NATIVE_PREFIX = 'A\n'
+
+	location = field(default=0, native=NativeField(1, native_number, suffix=' '))
+	modifier = field(default=0, native=NativeField(2, native_number))
 
 
 @attributes
 class CircleItem(Item):
-	action_description = attr(default='')
-	rent = attr(default=0)
+	vnum = field(default=0, type=VNum, read=False, native=NativeField(1, native_number, prefix='#'))
+	name = field(default='', type=str, native=NativeField(2, native_tilde_string))
+	short_desc = field(default='', type=str, native=NativeField(3, native_tilde_string))
+	description = field(default='', type=str, native=NativeField(4, native_tilde_string))
+	action_description = field(default='', native=NativeField(5, native_tilde_string))
+	item_type = field(default=-1, type=int, native=NativeField(6, native_number, suffix=' '))
+	extra_flags = field(default=0, type=int, native=NativeField(7, native_flag, suffix=' '))
+	wear_flags = field(default=0, type=WEAR_FLAGS, converter=WEAR_FLAGS, native=NativeField(8, native_flag))
+	value = field(default=Factory(list), type=List, native=NativeField(9, native_circle_numbers))
+	weight = field(default=0, type=int, native=NativeField(10, native_number, suffix=' '))
+	cost = field(default=0, type=int, native=NativeField(11, native_number, suffix=' '))
+	rent = field(default=0, native=NativeField(12, native_number))
+	extra_descriptions = field(default=Factory(list), type=List[ExtraDescription], native=NativeField(13, native_records, suffix=''))
+	affected = field(default=Factory(list), native=NativeField(14, native_records, suffix=''))
+	level = attr(default=0, type=int)
+	source_file = attr(default='', type=str)
 
 
 @attributes
 class CircleReset(object):
-	command = attr(default='')
-	if_flag = attr(default=0)
-	arg1 = attr(default=0)
-	arg2 = attr(default=0)
-	arg3 = attr(default=None)
+	command = field(default='', native=NativeField(1, native_circle_reset_command, suffix=' '))
+	if_flag = field(default=0, native=NativeField(2, native_number, suffix=' '))
+	arg1 = field(default=0, native=NativeField(3, native_number, suffix=' '))
+	arg2 = field(default=0, native=NativeField(4, native_number, suffix=lambda owner: '\n' if owner.command in ('G', 'R') else ' '))
+	arg3 = field(default=None, native=NativeField(5, native_number, when=lambda owner: owner.command not in ('G', 'R')))
 
 
 @attributes
 class CircleZone(object):
-	vnum = attr(default=0)
-	name = attr(default='')
-	bot = attr(default=0)
-	top = attr(default=0)
-	lifespan = attr(default=0)
-	reset_mode = attr(default=0)
-	resets = attr(default=Factory(list))
+	NATIVE_SUFFIX = 'S\n'
+
+	vnum = field(default=0, native=NativeField(1, native_number, prefix='#'))
+	name = field(default='', native=NativeField(2, native_tilde_string))
+	bot = field(default=0, native=NativeField(3, native_number, suffix=' '))
+	top = field(default=0, native=NativeField(4, native_number, suffix=' '))
+	lifespan = field(default=0, native=NativeField(5, native_number, suffix=' '))
+	reset_mode = field(default=0, native=NativeField(6, native_number))
+	resets = field(default=Factory(list), native=NativeField(7, native_records, suffix=''))
+	source_file = attr(default='', type=str)
 
 
 @attributes
 class CircleShop(object):
-	vnum = attr(default=0)
-	products = attr(default=Factory(list))
-	profit_buy = attr(default=0.0)
-	profit_sell = attr(default=0.0)
-	buy_type = attr(default=Factory(list))
-	messages = attr(default=Factory(list))
-	temper = attr(default=0)
-	bitvector = attr(default=0)
-	keeper = attr(default=0)
-	with_who = attr(default=0)
-	rooms = attr(default=Factory(list))
-	open_hour = attr(default=0)
-	close_hour = attr(default=0)
-	open_hour_2 = attr(default=0)
-	close_hour_2 = attr(default=0)
+	vnum = field(default=0, native=NativeField(1, native_number, prefix='#', suffix='~\n'))
+	products = field(default=Factory(list), native=NativeField(2, native_circle_number_lines, suffix='-1\n'))
+	profit_buy = field(default=0.0, native=NativeField(3, native_circle_float))
+	profit_sell = field(default=0.0, native=NativeField(4, native_circle_float))
+	buy_type = field(default=Factory(list), native=NativeField(5, native_circle_text_lines, suffix='-1\n'))
+	messages = field(default=Factory(list), native=NativeField(6, native_circle_messages, suffix=''))
+	temper = field(default=0, native=NativeField(7, native_number))
+	bitvector = field(default=0, native=NativeField(8, native_number))
+	keeper = field(default=0, native=NativeField(9, native_number))
+	with_who = field(default=0, native=NativeField(10, native_number))
+	rooms = field(default=Factory(list), native=NativeField(11, native_circle_number_lines, suffix='-1\n'))
+	open_hour = field(default=0, native=NativeField(12, native_number))
+	close_hour = field(default=0, native=NativeField(13, native_number))
+	open_hour_2 = field(default=0, native=NativeField(14, native_number))
+	close_hour_2 = field(default=0, native=NativeField(15, native_number))
+	source_file = attr(default='', type=str)
 
 
 @attributes
 class CircleArea(object):
+	NATIVE_COLLECTIONS = (
+		('zon', 'zones', '$\n'),
+		('wld', 'rooms', '$\n'),
+		('mob', 'mobs', '$\n'),
+		('obj', 'objects', '$\n'),
+		('shp', 'shops', '$~\n'),
+	)
+
 	zones = attr(default=Factory(OrderedDict))
 	rooms = attr(default=Factory(OrderedDict))
 	mobs = attr(default=Factory(OrderedDict))
 	objects = attr(default=Factory(OrderedDict))
 	shops = attr(default=Factory(OrderedDict))
+	indexes = attr(default=Factory(OrderedDict))
+	shop_headers = attr(default=Factory(OrderedDict))
 
 
 class CircleAreaFile(object):
+	NATIVE_NORMALIZATIONS = (
+		'comments',
+		'whitespace-and-line-endings',
+		'numeric-versus-alphabetic-flags',
+		'room-and-object-metadata-order',
+		'optional-second-shop-window',
+		'dice-zero-bonus-spelling',
+	)
 
 	def __init__(self, root):
 		self.root = os.fspath(root)
@@ -2536,6 +2706,45 @@ class CircleAreaFile(object):
 		self.filename = ''
 		self.data = ''
 		self.index = 0
+
+	def dumps(self):
+		tree = OrderedDict()
+		for family, collection_name, file_end in self.area.NATIVE_COLLECTIONS:
+			names = self.area.indexes.get(family, [])
+			tree['%s/index' % family] = ''.join('%s\n' % name for name in names) + '$\n'
+			records = getattr(self.area, collection_name).values()
+			for record in records:
+				if not record.source_file:
+					raise NativeWriteError(
+						'%s %r has no indexed source file' % (record.__class__.__name__, record.vnum)
+					)
+				if record.source_file not in names:
+					raise NativeWriteError(
+						'%s is not present in the %s index' % (record.source_file, family)
+					)
+			for name in names:
+				prefix = ''
+				if family == 'shp':
+					try:
+						prefix = native_tilde_string(self.area.shop_headers[name], None) + '\n'
+					except KeyError:
+						raise NativeWriteError('Shop file %s has no version header' % name)
+				body = ''.join(
+					render_record(record)
+					for record in records
+					if record.source_file == name
+				)
+				tree['%s/%s' % (family, name)] = prefix + body + file_end
+		return tree
+
+	def write(self, root):
+		root = os.fspath(root)
+		world_root = root if os.path.basename(root) == 'world' else os.path.join(root, 'lib', 'world')
+		for relative_path, text in self.dumps().items():
+			path = os.path.join(world_root, *relative_path.split('/'))
+			os.makedirs(os.path.dirname(path), exist_ok=True)
+			with io.open(path, mode='wt', encoding='latin-1', newline='\n') as circle_file:
+				circle_file.write(text)
 
 	def load_sections(self):
 		self.load_zones()
@@ -2567,11 +2776,14 @@ class CircleAreaFile(object):
 	def indexed_paths(self, family):
 		index_path = os.path.join(self.world_root, family, 'index')
 		if not os.path.exists(index_path):
+			self.area.indexes[family] = []
 			return []
 		base = os.path.dirname(index_path)
 		with io.open(index_path, mode='rt', encoding='latin-1') as index_file:
 			names = [line.strip() for line in index_file]
-		return [os.path.join(base, name) for name in names if name and name != '$']
+		names = [name for name in names if name and name != '$']
+		self.area.indexes[family] = names
+		return [os.path.join(base, name) for name in names]
 
 	def open_circle_file(self, filename):
 		self.filename = filename
@@ -2666,7 +2878,7 @@ class CircleAreaFile(object):
 				return
 			name = self.read_string()
 			bot, top, lifespan, reset_mode = self.read_int_list()
-			zone = CircleZone(vnum=vnum, name=name, bot=bot, top=top, lifespan=lifespan, reset_mode=reset_mode)
+			zone = CircleZone(vnum=vnum, name=name, bot=bot, top=top, lifespan=lifespan, reset_mode=reset_mode, source_file=os.path.basename(path))
 			while True:
 				line = self.read_line().strip()
 				if not line and self.current_char == '\0':
@@ -2692,6 +2904,7 @@ class CircleAreaFile(object):
 			if vnum is None:
 				return
 			room = self.read_room(vnum)
+			room.source_file = os.path.basename(path)
 			self.area.rooms[vnum] = room
 
 	def read_room(self, vnum):
@@ -2729,7 +2942,9 @@ class CircleAreaFile(object):
 			vnum = self.read_record_header()
 			if vnum is None:
 				return
-			self.area.mobs[vnum] = self.read_mobile(vnum)
+			mob = self.read_mobile(vnum)
+			mob.source_file = os.path.basename(path)
+			self.area.mobs[vnum] = mob
 
 	def read_mobile(self, vnum):
 		name = self.read_string()
@@ -2760,6 +2975,7 @@ class CircleAreaFile(object):
 			act=act,
 			affected_by=affected_by,
 			alignment=int(alignment),
+			mob_type=mob_type.upper(),
 			level=int(level),
 			hitroll=20 - int(source_hitroll),
 			ac=int(source_ac) * 10,
@@ -2779,7 +2995,9 @@ class CircleAreaFile(object):
 			vnum = self.read_record_header()
 			if vnum is None:
 				return
-			self.area.objects[vnum] = self.read_item(vnum)
+			item = self.read_item(vnum)
+			item.source_file = os.path.basename(path)
+			self.area.objects[vnum] = item
 
 	def read_item(self, vnum):
 		name = self.read_string()
@@ -2823,11 +3041,14 @@ class CircleAreaFile(object):
 	def load_shop_file(self, path):
 		self.open_circle_file(path)
 		header = self.read_string()
+		self.area.shop_headers[os.path.basename(path)] = header
 		while True:
 			vnum = self.read_record_header()
 			if vnum is None:
 				return
-			self.area.shops[vnum] = self.read_shop(vnum, header)
+			shop = self.read_shop(vnum, header)
+			shop.source_file = os.path.basename(path)
+			self.area.shops[vnum] = shop
 
 	def read_number_list_until_minus_one(self):
 		values = []

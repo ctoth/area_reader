@@ -61,8 +61,11 @@ The following are verified blockers to stronger source fidelity:
   contain multiple discard paths.
 - SWR/FUSS skips many keyed values and reuses non-FUSS model classes for records
   with different native signatures.
-- Circle flattens index order and file partitioning into aggregate mappings and
-  discards comments and some source discriminators.
+- Circle now retains index order, file partitioning, mobile `S`/`E` type, and
+  per-file shop headers. Its remaining intentional normalizations are comments,
+  whitespace, flag spelling, mixed metadata order, optional second shop-window
+  presence, and zero-bonus dice spelling; these are executable in
+  `CircleAreaFile.NATIVE_NORMALIZATIONS`.
 - CoffeeMud repairs XML before parsing and preserves raw payloads unevenly;
   typed fields and `raw_text`/`raw_data` can also diverge after mutation.
 
@@ -122,6 +125,21 @@ Every dialect slice must include all of the following before it is kept:
 
 The exact-convergence rule applies: do not begin the next dialect until the
 current dialect is committed or fully reverted.
+
+## CircleMUD result
+
+Circle records declare their native lines on the owning attrs fields. The area
+model declares the five indexed collections, while `CircleAreaFile.dumps()`
+returns an ordered `lib/world`-relative path-to-text mapping and `write()` emits
+that tree. This is the only dialect-specific aggregation control flow; there is
+no writer class graph or mirror `write_*` parser hierarchy.
+
+The complete upstream CircleMUD 3.1 world has semantic and canonical fixed
+points. A property test covers the inverse hitroll and armor-class transforms,
+and invalid native lock, reset, armor, and object-value shapes are rejected.
+The generated complete world was also built and booted by the upstream engine,
+which reached its game loop and remained live for the five-second oracle
+window.
 
 ## ROM first slice
 
