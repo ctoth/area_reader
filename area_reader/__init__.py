@@ -81,7 +81,7 @@ class AreaFile(object):
 			word = self.read_until(end)
 			self.advance()
 			return word
-		while not self.current_char.isspace():
+		while self.current_char != '\0' and not self.current_char.isspace():
 			word += self.current_char
 			self.advance()
 		return word
@@ -469,7 +469,7 @@ class RomItem(Item):
 			letter = reader.read_letter()
 			if letter == 'A':
 				af = RomAffectData()
-				af.where = 'TO_OBJECT',
+				af.where = 'TO_OBJECT'
 				af.type = -1
 				af.level = level
 				af.duration = -1
@@ -488,7 +488,7 @@ class RomItem(Item):
 				elif letter == 'V':
 					af.where = 'TO_VULN'
 				else:
-					self.parse_fail("Bad where on flag set")
+					reader.parse_fail("Bad where on flag set")
 				af.type = -1
 				af.level = level
 				af.duration = -1
