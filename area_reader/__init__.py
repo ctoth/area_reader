@@ -109,6 +109,8 @@ class AreaFile(object):
 		elif self.current_char == '-':
 			sign = True
 			self.advance()
+		if not self.current_char.isdigit():
+			self.parse_fail("Expected number")
 		while self.current_char.isdigit():
 			number = number * 10 + int(self.current_char)
 			self.advance()
@@ -1144,6 +1146,7 @@ class MercAreaFile(AreaFile):
 
 class SmaugAreaFile(RomAreaFile):
 	area_type = SmaugArea
+	MAX_FIX = 3
 
 	def load_sections(self):
 		readers = {
@@ -1251,7 +1254,7 @@ class SmaugAreaFile(RomAreaFile):
 			keeper = self.read_number()
 			if keeper == 0:
 				break
-			for _ in range(self.MAX_TRADES):
+			for _ in range(self.MAX_FIX):
 				self.read_number()
 			self.read_number()
 			self.read_number()

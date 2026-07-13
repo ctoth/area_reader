@@ -521,6 +521,34 @@ A plain mobile.
 
 
 @given(
+	fix_types=st.sampled_from(
+		([0, 0, 0], [5, 9, 15], [98, 99, 100]),
+	),
+)
+@settings(max_examples=3, deadline=None)
+def test_smaug_repairs_consume_exactly_three_fix_types(fix_types):
+	keeper = 21_002
+	with tempfile.TemporaryDirectory() as directory:
+		path = write_area(directory, f"""#AREA
+Repair Test~
+#REPAIRS
+{keeper} {' '.join(map(str, fix_types))} 100 1 0 23 ; repair shop
+0
+#SPECIALS
+M {keeper} spec_repair
+S
+#$
+""")
+
+		af = area_reader.SmaugAreaFile(path)
+		af.load_sections()
+
+		assert len(af.area.specials) == 1
+		assert af.area.specials[0].arg1 == keeper
+		assert af.area.specials[0].arg2 == "spec_repair"
+
+
+@given(
 	sector_type=st.integers(min_value=0, max_value=10),
 	tele_delay=st.integers(min_value=0, max_value=100),
 	tele_vnum=st.integers(min_value=0, max_value=50000),

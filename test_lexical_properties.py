@@ -101,3 +101,37 @@ def test_fread_word_rejects_eof_inside_quotes(payload):
 
 	with pytest.raises(area_reader.ParseError, match="Unterminated quoted word"):
 		reader.read_word()
+
+
+invalid_number_token = st.one_of(
+	st.sampled_from(("", "+", "-")),
+	st.text(
+		alphabet=string.ascii_letters + "!@#$%^&*()_=[]{};:',.<>/?",
+		min_size=1,
+		max_size=20,
+	),
+)
+
+
+@given(
+	token=invalid_number_token,
+	leading_whitespace=st.sampled_from(("", " ", "\t", "\n")),
+)
+@settings(max_examples=40, deadline=None)
+def test_fread_number_rejects_tokens_without_digits(token, leading_whitespace):
+	reader = reader_for(leading_whitespace + token)
+
+	with pytest.raises(area_reader.ParseError, match="Expected number"):
+		reader.read_number()
+
+
+@given(
+	left=st.integers(min_value=-2_000_000, max_value=2_000_000),
+	invalid_right=invalid_number_token,
+)
+@settings(max_examples=40, deadline=None)
+def test_fread_number_rejects_invalid_composed_terms(left, invalid_right):
+	reader = reader_for(f"{left}|{invalid_right}")
+
+	with pytest.raises(area_reader.ParseError, match="Expected number"):
+		reader.read_number()
