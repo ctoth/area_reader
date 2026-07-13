@@ -1,4 +1,5 @@
 import area_reader
+import json
 import os
 import pytest
 from pathlib import Path
@@ -10,6 +11,11 @@ def write_area(directory, text):
 	path = Path(directory) / "area.are"
 	path.write_text(text, encoding="ascii")
 	return path
+
+
+def assert_jsonifies(area_file):
+	as_dict = area_file.as_dict()
+	assert json.loads(area_file.as_json()) == json.loads(json.dumps(as_dict))
 
 
 reset_command = st.sampled_from(["M", "O", "P", "G", "E", "D", "R"])
@@ -70,11 +76,13 @@ def test_loading_rom_area(rom_path):
 	af.load_sections()
 	assert af.area
 	assert af.as_dict()
+	assert_jsonifies(af)
 
 def test_loading_merc_area(merc_path):
 	af = area_reader.MercAreaFile(merc_path)
 	af.load_sections()
 	assert af.area
+	assert_jsonifies(af)
 
 
 def test_coffeemud_top_level_mobs_parse_as_dict_and_json():
@@ -89,6 +97,7 @@ def test_coffeemud_top_level_mobs_parse_as_dict_and_json():
 		assert af.area.mobs[0].class_id == "GenMob"
 		assert af.as_dict()["mobs"][0]["class_id"] == "GenMob"
 		assert "GenMob" in af.as_json()
+		assert_jsonifies(af)
 
 
 def test_coffeemud_top_level_items_parse():
@@ -577,6 +586,7 @@ Reset M 0 {mob_vnum} 1 {room_vnum}
 
 		af = area_reader.SwrAreaFile(path)
 		af.load_sections()
+		assert_jsonifies(af)
 
 		assert af.area.name == "SWR Test"
 		assert af.area.version == version
@@ -616,6 +626,7 @@ $
 
 		af = area_reader.CircleAreaFile(root)
 		af.load_sections()
+		assert_jsonifies(af)
 
 		room = af.area.rooms[3001]
 		assert room.name == "Temple"
@@ -974,6 +985,7 @@ def test_loading_smaug_map1_source_area_when_available():
 
 	af = area_reader.SmaugAreaFile(path)
 	af.load_sections()
+	assert_jsonifies(af)
 
 	assert af.area.name == "Continent 1"
 	assert 30000 in af.area.mobs

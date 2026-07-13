@@ -658,7 +658,11 @@ class Help(object):
 class Exit(object):
 	keyword = attr(default='', type=Word)
 	description = attr(default="", type=str)
-	door = attr(default=None, type=EXIT_DIRECTIONS, converter=EXIT_DIRECTIONS)
+	door = attr(
+		default=None,
+		type=Optional[EXIT_DIRECTIONS],
+		converter=lambda value: None if value is None else EXIT_DIRECTIONS(value),
+	)
 	exit_info = attr(default=0, type=EXIT_FLAGS, converter=EXIT_FLAGS)
 	rs_flags = attr(default=0, type=int)
 	key = attr(default=0, type=int)
@@ -825,6 +829,7 @@ class RomShop(object):
 
 @attributes
 class SmaugMob(RomMob):
+	ac = attr(default=0, type=int)
 	affected_by = attr(default=0, type=SMAUG_AFFECTED_BY, converter=SMAUG_AFFECTED_BY)
 
 	@classmethod
@@ -921,6 +926,7 @@ class SmaugItem(Item):
 
 @attributes
 class SmaugArea(RomArea):
+	rooms = attr(default=Factory(OrderedDict))
 	author = attr(default='', type=str)
 	credits = attr(default='', type=str)
 	flags = attr(default=0, type=int)
@@ -936,6 +942,7 @@ class SmaugArea(RomArea):
 @attributes
 class SmaugRoom(Room):
 	sector_type = attr(default=0, type=int)
+	exits = attr(default=Factory(list), type=List[SmaugExit])
 	tele_delay = attr(default=0)
 	tele_vnum = attr(default=0)
 	tunnel = attr(default=None)
@@ -995,7 +1002,6 @@ class SmaugRoom(Room):
 			exit_info = locks
 		return SmaugExit(door=door, description=description, keyword=keyword, exit_info=exit_info, key=key, destination=destination, distance=distance, pulltype=pulltype, pull=pull)
 
-
 @attributes
 class SwrRoom(SmaugRoom):
 	sector = attr(default='', type=str)
@@ -1027,6 +1033,7 @@ class MercReset(object):
 
 @attributes
 class MercMob(RomMob):
+	ac = attr(default=0, type=int)
 	act = field(default=MERC_ACT_TYPES.IS_NPC.value, type=MERC_ACT_TYPES, converter=MERC_ACT_TYPES)
 
 	@classmethod
@@ -2562,8 +2569,19 @@ class CoffeeMudAreaFile(object):
 
 
 class EnumNameConverter(converters.Converter):
+	def __init__(self, *args, **kwargs):
+		super().__init__(*args, **kwargs)
+		self.register_unstructure_hook_func(
+			lambda field_type: (
+				isinstance(field_type, type)
+				and issubclass(field_type, enum.Enum)
+			),
+			self._unstructure_enum,
+		)
+
 	def _unstructure_enum(self, obj):
-		return obj.__class__.__name__ + "." + obj.name
+		name = obj.name if obj.name is not None else str(obj.value)
+		return obj.__class__.__name__ + "." + name
 
 
 def print_area(area_file_path, area_type=RomAreaFile):
