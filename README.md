@@ -14,7 +14,7 @@ very easy to do things like render the entire tree of objects out as JSON or sim
 | ROM | `RomAreaFile` | `dumps()` / `write()` | single tilde-delimited `.are` file |
 | Merc | `MercAreaFile` | `dumps()` / `write()` | single tilde-delimited area file |
 | SMAUG | `SmaugAreaFile` | `dumps()` / `write()` | single tilde-delimited area file |
-| SWR / FUSS | `SwrAreaFile` | — | single tilde-delimited area file |
+| SWR / FUSS | `SwrAreaFile` | `dumps()` / `write()` | single tilde-delimited area file |
 | CircleMUD | `CircleAreaFile` | — | indexed world tree (`wld`/`mob`/`obj`/`zon`/`shp`) directory |
 | CoffeeMud | `CoffeeMudAreaFile` | — | `.cmare` XML export (areas, item/mob catalogs, nested boardable areas) |
 
@@ -33,7 +33,7 @@ Every reader exposes the same shape: construct it with a path, call
 RomArea(name='Midgaard', metadata='{ All } Diku    Midgaard', original_filename='midgaard.are', first_vnum=3000, last_vnum=3399, ... )
 ```
 
-ROM, Merc, and SMAUG areas can be rendered to a canonical native form or written directly:
+ROM, Merc, SMAUG, and SWR/FUSS areas can be rendered to a canonical native form or written directly:
 
 ```python
 text = area_file.dumps()

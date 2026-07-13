@@ -31,6 +31,7 @@ class NativeSection(object):
 	owner_section = attr(default=None, type=Optional[str])
 	mapping = attr(default=False, type=bool)
 	when = attr(default=None, type=Optional[Condition])
+	emit_header = attr(default=True, type=bool)
 
 
 def _decoration(value, owner):
@@ -111,7 +112,7 @@ def render_record(instance, section=None):
 		annotated.append((native.order, attribute, native))
 	annotated.sort(key=lambda item: item[0])
 
-	chunks = []
+	chunks = [getattr(instance.__class__, 'NATIVE_PREFIX', '')]
 	for _, attribute, native in annotated:
 		if native.when is not None and not native.when(instance):
 			continue
@@ -128,12 +129,13 @@ def render_record(instance, section=None):
 	return ''.join(chunks)
 
 
-def render_document(area, sections, native_sections=()):
+def render_document(area, sections, native_sections=(), document_end=None):
 	chunks = []
 	for section in sections:
 		if section.when is not None and not section.when(area):
 			continue
-		chunks.append('#%s\n' % section.name)
+		if section.emit_header:
+			chunks.append('#%s\n' % section.name)
 		if section.owner_section is not None:
 			chunks.append(render_record(area, section=section.owner_section))
 		else:
@@ -144,5 +146,7 @@ def render_document(area, sections, native_sections=()):
 		chunks.append(section.end)
 	for name, body in native_sections:
 		chunks.append('#%s%s' % (name.upper(), body))
-	chunks.append('#$\n')
+	if document_end is None:
+		document_end = getattr(area.__class__, 'NATIVE_END', '#$\n')
+	chunks.append(document_end)
 	return ''.join(chunks)

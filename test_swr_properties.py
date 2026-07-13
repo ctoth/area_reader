@@ -113,9 +113,16 @@ Comlist say taken~
 	assert item.level == (stats[3] if len(stats) > 3 else 0)
 	assert item.layers == (stats[4] if len(stats) > 4 else 0)
 	assert item.extra_descriptions == [
-		area_reader.ExtraDescription(
+		area_reader.SwrExtraDescription(
 			keyword="object detail",
 			description="Generated detail text.",
+			unknown=[
+				area_reader.SwrUnknown(
+					key="UnknownExDesc",
+					value="ignored",
+					tilde=True,
+				),
+			],
 		),
 	]
 
@@ -162,17 +169,25 @@ Reset M 0 400 1 300
 	assert room.tele_vnum == (stats[1] if len(stats) > 1 else 0)
 	assert room.tunnel == (stats[2] if len(stats) > 2 else 0)
 	assert room.exits == [
-		area_reader.SmaugExit(
+		area_reader.SwrExit(
 			door="north",
 			description="A northern exit.",
 			keyword="gate",
 			key=301,
 			destination=302,
 			distance=4,
+			flags="isdoor",
+			unknown=[
+				area_reader.SwrUnknown(
+					key="UnknownExit",
+					value="ignored",
+					tilde=True,
+				),
+			],
 		),
 	]
 	assert room.extra_descriptions == [
-		area_reader.ExtraDescription(
+		area_reader.SwrExtraDescription(
 			keyword="mural",
 			description="A generated mural.",
 		),

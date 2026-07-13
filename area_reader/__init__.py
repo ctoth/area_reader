@@ -557,6 +557,29 @@ def native_dice_inline(value, owner):
 	return '%dd%d%+d' % (value.number, value.sides, value.bonus)
 
 
+def native_swr_unknown_value(value, owner):
+	if owner.tilde:
+		return native_tilde_string(value, owner)
+	return native_raw(value, owner)
+
+
+def native_swr_reset_arg2_suffix(owner):
+	return '' if owner.command in ('G', 'R') else ' '
+
+
+def native_swr_armor_class(value, owner):
+	del owner
+	classes = (value.pierce, value.bash, value.slash, value.exotic)
+	if len(set(classes)) != 1:
+		raise NativeWriteError("SWR mobiles require one armor class value")
+	return native_number(value.pierce, None)
+
+
+def native_swr_dice(value, owner):
+	del owner
+	return '%d %d %d' % (value.number, value.sides, value.bonus)
+
+
 def native_reset_command(value, owner):
 	del owner
 	return '*' if value is None else str(value)
@@ -1497,9 +1520,197 @@ class SmaugRoom(Room):
 		return SmaugExit(door=door, description=description, keyword=keyword, locks=locks, exit_info=exit_info, key=key, destination=destination, distance=distance, pulltype=pulltype, pull=pull)
 
 @attributes
-class SwrRoom(SmaugRoom):
-	sector = attr(default='', type=str)
-	resets = attr(default=Factory(list))
+class SwrUnknown(object):
+	key = field(default='', type=Word, native=NativeField(1, native_word, suffix=' '))
+	value = field(default='', type=str, native=NativeField(2, native_swr_unknown_value))
+	tilde = attr(default=False, type=bool)
+
+
+@attributes
+class SwrProgram(object):
+	NATIVE_PREFIX = '#MUDPROG\n'
+	NATIVE_SUFFIX = '#ENDPROG\n\n'
+
+	progtype = field(default='', type=str, native=NativeField(1, native_tilde_string, prefix='Progtype  '))
+	argument = field(default='', type=str, native=NativeField(2, native_tilde_string, prefix='Arglist   '))
+	commands = field(default='', type=str, native=NativeField(3, native_tilde_string, prefix='Comlist   ', when=lambda owner: bool(owner.commands)))
+	unknown = field(default=Factory(list), type=List[SwrUnknown], native=NativeField(4, native_records, suffix=''))
+
+
+@attributes
+class SwrExtraDescription(object):
+	NATIVE_PREFIX = '#EXDESC\n'
+	NATIVE_SUFFIX = '#ENDEXDESC\n\n'
+
+	keyword = field(default='', type=str, native=NativeField(1, native_tilde_string, prefix='ExDescKey '))
+	description = field(default='', type=str, native=NativeField(2, native_tilde_string, prefix='ExDesc    ', when=lambda owner: bool(owner.description)))
+	unknown = field(default=Factory(list), type=List[SwrUnknown], native=NativeField(3, native_records, suffix=''))
+
+
+@attributes
+class SwrExit(object):
+	NATIVE_PREFIX = '#EXIT\n'
+	NATIVE_SUFFIX = '#ENDEXIT\n\n'
+
+	door = field(default='', type=str, native=NativeField(1, native_tilde_string, prefix='Direction '))
+	destination = field(default=0, type=int, native=NativeField(2, native_number, prefix='ToRoom    '))
+	key = field(default=0, type=int, native=NativeField(3, native_number, prefix='Key       ', when=lambda owner: owner.key > 0))
+	distance = field(default=0, type=int, native=NativeField(4, native_number, prefix='Distance  ', when=lambda owner: owner.distance != 0))
+	description = field(default='', type=str, native=NativeField(5, native_tilde_string, prefix='Desc      ', when=lambda owner: bool(owner.description)))
+	keyword = field(default='', type=str, native=NativeField(6, native_tilde_string, prefix='Keywords  ', when=lambda owner: bool(owner.keyword)))
+	flags = field(default='', type=str, native=NativeField(7, native_tilde_string, prefix='Flags     ', when=lambda owner: bool(owner.flags)))
+	unknown = field(default=Factory(list), type=List[SwrUnknown], native=NativeField(8, native_records, suffix=''))
+
+
+@attributes
+class SwrReset(object):
+	NATIVE_PREFIX = 'Reset '
+
+	command = field(default='', type=Letter, native=NativeField(1, native_word, suffix=' '))
+	if_flag = field(default=0, type=int, native=NativeField(2, native_number, suffix=' '))
+	arg1 = field(default=0, type=int, native=NativeField(3, native_number, suffix=' '))
+	arg2 = field(default=0, type=int, native=NativeField(4, native_number, suffix=native_swr_reset_arg2_suffix))
+	arg3 = field(default=0, type=int, native=NativeField(5, native_number, suffix='', when=lambda owner: owner.command not in ('G', 'R')))
+	comment = field(default='', type=str, native=NativeField(6, native_comment))
+
+	@classmethod
+	def read(cls, reader, letter):
+		if_flag = reader.read_number()
+		arg1 = reader.read_number()
+		arg2 = reader.read_number()
+		arg3 = 0 if letter in ('G', 'R') else reader.read_number()
+		return cls(command=letter, if_flag=if_flag, arg1=arg1, arg2=arg2, arg3=arg3, comment=reader.read_to_eol())
+
+
+@attributes
+class SwrMobile(RomCharacter):
+	NATIVE_PREFIX = '#MOBILE\n'
+	NATIVE_SUFFIX = '#ENDMOBILE\n\n'
+
+	vnum = field(default=0, type=VNum, read=False, native=NativeField(1, native_number, prefix='Vnum       '))
+	name = field(default='', type=str, native=NativeField(2, native_tilde_string, prefix='Keywords   '))
+	short_desc = field(default='', type=str, native=NativeField(3, native_tilde_string, prefix='Short      '))
+	long_desc = field(default='', type=str, native=NativeField(4, native_tilde_string, prefix='Long       ', when=lambda owner: bool(owner.long_desc)))
+	description = field(default='', type=str, native=NativeField(5, native_tilde_string, prefix='Desc       ', when=lambda owner: bool(owner.description)))
+	race = field(default='', type=str, native=NativeField(6, native_tilde_string, prefix='Race       '))
+	position = field(default='', type=str, native=NativeField(7, native_tilde_string, prefix='Position   '))
+	default_position = field(default='', type=str, native=NativeField(8, native_tilde_string, prefix='DefPos     '))
+	specfun = field(default='', type=str, native=NativeField(9, native_tilde_string, prefix='Specfun    ', when=lambda owner: bool(owner.specfun)))
+	specfun2 = field(default='', type=str, native=NativeField(10, native_tilde_string, prefix='Specfun2   ', when=lambda owner: bool(owner.specfun2)))
+	gender = field(default='', type=str, native=NativeField(11, native_tilde_string, prefix='Gender     '))
+	actflags = field(default='', type=str, native=NativeField(12, native_tilde_string, prefix='Actflags   '))
+	affected = field(default='', type=str, native=NativeField(13, native_tilde_string, prefix='Affected   ', when=lambda owner: bool(owner.affected)))
+	stats1 = attr(default=Factory(list), type=list, eq=False)
+	stats2 = attr(default=Factory(list), type=list, eq=False)
+	stats3 = attr(default=Factory(list), type=list, eq=False)
+	stats4 = attr(default=Factory(list), type=list, eq=False)
+	alignment = field(default=0, type=int, native=NativeField(14, native_number, prefix='Stats1     ', suffix=' '))
+	level = field(default=0, type=int, native=NativeField(15, native_number, suffix=' '))
+	thac0 = field(default=0, type=int, native=NativeField(16, native_number, suffix=' '))
+	ac = field(default=Factory(RomArmorClass), type=RomArmorClass, native=NativeField(17, native_swr_armor_class, suffix=' '))
+	wealth = field(default=0, type=int, native=NativeField(18, native_number, suffix=' '))
+	experience = field(default=0, type=int, native=NativeField(19, native_number))
+	hit = field(default=Factory(Dice), type=Dice, native=NativeField(20, native_swr_dice, prefix='Stats2     '))
+	damage = field(default=Factory(Dice), type=Dice, native=NativeField(21, native_swr_dice, prefix='Stats3     '))
+	height = field(default=0, type=int, native=NativeField(22, native_number, prefix='Stats4     ', suffix=' '))
+	weight = field(default=0, type=int, native=NativeField(23, native_number, suffix=' '))
+	numattacks = field(default=0, type=int, native=NativeField(24, native_number, suffix=' '))
+	hitroll = field(default=0, type=int, native=NativeField(25, native_number, suffix=' '))
+	damroll = field(default=0, type=int, native=NativeField(26, native_number))
+	attribs = field(default=Factory(list), type=list, native=NativeField(27, native_numbers, prefix='Attribs    ', when=lambda owner: bool(owner.attribs)))
+	saves = field(default=Factory(list), type=list, native=NativeField(28, native_numbers, prefix='Saves      ', when=lambda owner: bool(owner.saves)))
+	speaks = field(default='', type=str, native=NativeField(29, native_tilde_string, prefix='Speaks     ', when=lambda owner: bool(owner.speaks)))
+	speaking = field(default='', type=str, native=NativeField(30, native_tilde_string, prefix='Speaking   ', when=lambda owner: bool(owner.speaking)))
+	bodyparts = field(default='', type=str, native=NativeField(31, native_tilde_string, prefix='Bodyparts  ', when=lambda owner: bool(owner.bodyparts)))
+	resist = field(default='', type=str, native=NativeField(32, native_tilde_string, prefix='Resist     ', when=lambda owner: bool(owner.resist)))
+	immune = field(default='', type=str, native=NativeField(33, native_tilde_string, prefix='Immune     ', when=lambda owner: bool(owner.immune)))
+	suscept = field(default='', type=str, native=NativeField(34, native_tilde_string, prefix='Suscept    ', when=lambda owner: bool(owner.suscept)))
+	attacks = field(default='', type=str, native=NativeField(35, native_tilde_string, prefix='Attacks    ', when=lambda owner: bool(owner.attacks)))
+	defenses = field(default='', type=str, native=NativeField(36, native_tilde_string, prefix='Defenses   ', when=lambda owner: bool(owner.defenses)))
+	vip_flags = field(default='', type=str, native=NativeField(37, native_tilde_string, prefix='VIPFlags   ', when=lambda owner: bool(owner.vip_flags)))
+	shop_data = field(default=Factory(list), type=list, native=NativeField(38, native_numbers, prefix='ShopData   ', when=lambda owner: bool(owner.shop_data)))
+	repair_data = field(default=Factory(list), type=list, native=NativeField(39, native_numbers, prefix='RepairData ', when=lambda owner: bool(owner.repair_data)))
+	programs = field(default=Factory(list), type=List[SwrProgram], native=NativeField(40, native_records, suffix=''))
+	unknown = field(default=Factory(list), type=List[SwrUnknown], native=NativeField(41, native_records, suffix=''))
+	start_pos = attr(default='', type=str)
+	default_pos = attr(default='', type=str)
+	sex = attr(default='', type=str)
+
+
+@attributes
+class SwrObject(Item):
+	NATIVE_PREFIX = '#OBJECT\n'
+	NATIVE_SUFFIX = '#ENDOBJECT\n\n'
+
+	vnum = field(default=0, type=VNum, read=False, native=NativeField(1, native_number, prefix='Vnum     '))
+	name = field(default='', type=str, native=NativeField(2, native_tilde_string, prefix='Keywords '))
+	type_name = field(default='', type=str, native=NativeField(3, native_tilde_string, prefix='Type     ', when=lambda owner: bool(owner.type_name)))
+	short_desc = field(default='', type=str, native=NativeField(4, native_tilde_string, prefix='Short    '))
+	description = field(default='', type=str, native=NativeField(5, native_tilde_string, prefix='Long     ', when=lambda owner: bool(owner.description)))
+	action_description = field(default='', type=str, native=NativeField(6, native_tilde_string, prefix='Action   ', when=lambda owner: bool(owner.action_description)))
+	flags = field(default='', type=str, native=NativeField(7, native_tilde_string, prefix='Flags    ', when=lambda owner: bool(owner.flags)))
+	wflags = field(default='', type=str, native=NativeField(8, native_tilde_string, prefix='WFlags   ', when=lambda owner: bool(owner.wflags)))
+	value = field(default=Factory(list), type=List, native=NativeField(9, native_numbers, prefix='Values   '))
+	stats = attr(default=Factory(list), type=list, eq=False)
+	weight = field(default=0, type=int, native=NativeField(10, native_number, prefix='Stats    ', suffix=' '))
+	cost = field(default=0, type=int, native=NativeField(11, native_number, suffix=' '))
+	rent = field(default=0, type=int, native=NativeField(12, native_number, suffix=' '))
+	level = field(default=0, type=int, native=NativeField(13, native_number, suffix=' '))
+	layers = field(default=0, type=int, native=NativeField(14, native_number))
+	spells = field(default='', type=str, native=NativeField(15, native_raw, prefix='Spells   ', when=lambda owner: bool(owner.spells)))
+	extra_descriptions = field(default=Factory(list), type=List[SwrExtraDescription], native=NativeField(16, native_records, suffix=''))
+	programs = field(default=Factory(list), type=List[SwrProgram], native=NativeField(17, native_records, suffix=''))
+	unknown = field(default=Factory(list), type=List[SwrUnknown], native=NativeField(18, native_records, suffix=''))
+
+
+@attributes
+class SwrRoom(MudBase):
+	NATIVE_PREFIX = '#ROOM\n'
+	NATIVE_SUFFIX = '#ENDROOM\n\n'
+
+	vnum = field(default=0, type=VNum, read=False, native=NativeField(1, native_number, prefix='Vnum     '))
+	name = field(default='', type=str, native=NativeField(2, native_tilde_string, prefix='Name     '))
+	sector = field(default='', type=str, native=NativeField(3, native_tilde_string, prefix='Sector   '))
+	flags = field(default='', type=str, native=NativeField(4, native_tilde_string, prefix='Flags    ', when=lambda owner: bool(owner.flags)))
+	stats = attr(default=Factory(list), type=list, eq=False)
+	tele_delay = field(default=0, type=int, native=NativeField(5, native_number, prefix='Stats    ', suffix=' ', when=lambda owner: any((owner.tele_delay, owner.tele_vnum, owner.tunnel))))
+	tele_vnum = field(default=0, type=int, native=NativeField(6, native_number, suffix=' ', when=lambda owner: any((owner.tele_delay, owner.tele_vnum, owner.tunnel))))
+	tunnel = field(default=0, type=int, native=NativeField(7, native_number, when=lambda owner: any((owner.tele_delay, owner.tele_vnum, owner.tunnel))))
+	description = field(default='', type=str, native=NativeField(8, native_tilde_string, prefix='Desc     ', when=lambda owner: bool(owner.description)))
+	exits = field(default=Factory(list), type=List[SwrExit], native=NativeField(9, native_records, suffix=''))
+	resets = field(default=Factory(list), type=List[SwrReset], native=NativeField(10, native_records, suffix=''))
+	extra_descriptions = field(default=Factory(list), type=List[SwrExtraDescription], native=NativeField(11, native_records, suffix=''))
+	programs = field(default=Factory(list), type=List[SwrProgram], native=NativeField(12, native_records, suffix=''))
+	unknown = field(default=Factory(list), type=List[SwrUnknown], native=NativeField(13, native_records, suffix=''))
+
+
+@attributes
+class SwrArea(SmaugArea):
+	NATIVE_END = '#ENDAREA\n'
+	NATIVE_SECTIONS = (
+		NativeSection('FUSSAREA', owner_section='fuss_header'),
+		NativeSection('AREADATA', owner_section='area', end='#ENDAREADATA\n\n'),
+		NativeSection('MOBILE', collection='mobs', mapping=True, emit_header=False),
+		NativeSection('OBJECT', collection='objects', mapping=True, emit_header=False),
+		NativeSection('ROOM', collection='rooms', mapping=True, emit_header=False),
+	)
+
+	version = field(default=0, type=int, native=NativeField(1, native_number, prefix='Version    ', section='area'))
+	name = field(default='', type=str, native=NativeField(2, native_tilde_string, prefix='Name       ', section='area'))
+	author = field(default='', type=str, native=NativeField(3, native_tilde_string, prefix='Author     ', section='area'))
+	low_soft_range = field(default=0, type=int, native=NativeField(4, native_number, prefix='Ranges     ', suffix=' ', section='area'))
+	high_soft_range = field(default=0, type=int, native=NativeField(5, native_number, suffix=' ', section='area'))
+	low_hard_range = field(default=0, type=int, native=NativeField(6, native_number, suffix=' ', section='area'))
+	high_hard_range = field(default=0, type=int, native=NativeField(7, native_number, section='area'))
+	high_economy = field(default=0, type=int, native=NativeField(8, native_number, prefix='Economy    ', suffix=' ', section='area'))
+	low_economy = field(default=0, type=int, native=NativeField(9, native_number, section='area'))
+	resetmsg = field(default='', type=str, native=NativeField(10, native_tilde_string, prefix='ResetMsg   ', section='area', when=lambda owner: bool(owner.resetmsg)))
+	reset_frequency = field(default=0, type=int, native=NativeField(11, native_number, prefix='ResetFreq  ', section='area', when=lambda owner: owner.reset_frequency != 0))
+	flags = field(default='', native=NativeField(12, native_tilde_string, prefix='Flags      ', section='area', when=lambda owner: bool(owner.flags)))
+	unknown = field(default=Factory(list), type=List[SwrUnknown], native=NativeField(13, native_records, section='area', suffix=''))
+	mobs = attr(default=Factory(OrderedDict), type=Dict[int, SwrMobile])
+	objects = attr(default=Factory(OrderedDict), type=Dict[int, SwrObject])
+	rooms = attr(default=Factory(OrderedDict), type=Dict[int, SwrRoom])
 
 
 def native_merc_reset_arg2_suffix(owner):
@@ -1831,6 +2042,19 @@ class SmaugAreaFile(RomAreaFile):
 
 
 class SwrAreaFile(SmaugAreaFile):
+	area_type = SwrArea
+
+	def __init__(self, filename):
+		super().__init__(filename)
+		if not self.data.lstrip().startswith('#FUSSAREA'):
+			self.area = SmaugArea()
+
+	def dumps(self):
+		return render_document(self.area, self.area.NATIVE_SECTIONS, self.skipped_sections)
+
+	def write(self, path):
+		with io.open(path, mode='wt', encoding='latin-1', newline='\n') as area_file:
+			area_file.write(self.dumps())
 
 	def load_sections(self):
 		self.skip_whitespace()
@@ -1901,18 +2125,34 @@ class SwrAreaFile(SmaugAreaFile):
 			else:
 				self.skip_fuss_value()
 
-	def skip_fuss_value(self):
+	def read_fuss_unknown(self, key):
 		line_end = self.data.find('\n', self.index)
 		if line_end == -1:
-			self.index = len(self.data)
-			return
+			line_end = len(self.data)
 		if '~' in self.data[self.index:line_end]:
-			self.read_string()
-		else:
-			self.read_to_eol()
+			return SwrUnknown(key=key, value=self.read_string(), tilde=True)
+		return SwrUnknown(key=key, value=self.read_to_eol().strip(), tilde=False)
+
+	def skip_fuss_value(self):
+		return self.read_fuss_unknown('')
 
 	def read_fuss_numbers(self):
 		return [int(value) for value in self.read_to_eol().split()]
+
+	def read_fuss_program(self):
+		program = SwrProgram()
+		while True:
+			word = self.read_word()
+			if word == '#ENDPROG':
+				return program
+			if word == 'Progtype':
+				program.progtype = self.read_string()
+			elif word == 'Arglist':
+				program.argument = self.read_string()
+			elif word == 'Comlist':
+				program.commands = self.read_string()
+			else:
+				program.unknown.append(self.read_fuss_unknown(word))
 
 	def load_fuss_areadata(self):
 		while True:
@@ -1925,8 +2165,7 @@ class SwrAreaFile(SmaugAreaFile):
 				self.area.high_economy = self.read_number()
 				self.area.low_economy = self.read_number()
 			elif word == "Flags":
-				self.area.flags = 0
-				self.read_string()
+				self.area.flags = self.read_string()
 			elif word == "Name":
 				self.area.name = self.read_string()
 			elif word == "Ranges":
@@ -1939,62 +2178,77 @@ class SwrAreaFile(SmaugAreaFile):
 			elif word == "ResetMsg":
 				self.area.resetmsg = self.read_string()
 			elif word == "ResetFreq":
-				self.read_number()
+				self.area.reset_frequency = self.read_number()
 			elif word == "Version":
 				self.area.version = self.read_number()
 			else:
-				self.skip_fuss_value()
+				self.area.unknown.append(self.read_fuss_unknown(word))
 
 	def read_fuss_mobile(self):
-		vnum = 0
-		name = ''
-		short_desc = ''
-		long_desc = ''
-		description = ''
-		race = ''
-		position = ''
-		default_position = ''
-		sex = ''
-		stats1 = [0, 0, 0, 0, 0, 0]
-		stats2 = [0, 0, 0]
-		stats3 = [0, 0, 0]
-		stats4 = [0, 0, 0, 0, 0]
+		mob = SwrMobile()
 		while True:
 			word = self.read_word()
 			if word == "#ENDMOBILE":
 				break
 			if word == "#MUDPROG":
-				self.skip_fuss_program()
+				mob.programs.append(self.read_fuss_program())
 			elif word == "Vnum":
-				vnum = self.read_number()
+				mob.vnum = self.read_number()
 			elif word == "Keywords":
-				name = self.read_string()
+				mob.name = self.read_string()
 			elif word == "Short":
-				short_desc = self.read_string()
+				mob.short_desc = self.read_string()
 			elif word == "Long":
-				long_desc = self.read_string()
+				mob.long_desc = self.read_string()
 			elif word == "Desc":
-				description = self.read_string()
+				mob.description = self.read_string()
 			elif word == "Race":
-				race = self.read_string()
+				mob.race = self.read_string()
 			elif word == "Position":
-				position = self.read_string()
+				mob.position = self.read_string()
 			elif word == "DefPos":
-				default_position = self.read_string()
+				mob.default_position = self.read_string()
 			elif word == "Gender":
-				sex = self.read_string()
+				mob.gender = self.read_string()
 			elif word == "Stats1":
-				stats1 = self.read_fuss_numbers()
+				mob.stats1 = self.read_fuss_numbers()
 			elif word == "Stats2":
-				stats2 = self.read_fuss_numbers()
+				mob.stats2 = self.read_fuss_numbers()
 			elif word == "Stats3":
-				stats3 = self.read_fuss_numbers()
+				mob.stats3 = self.read_fuss_numbers()
 			elif word == "Stats4":
-				stats4 = self.read_fuss_numbers()
-			elif word in ("Actflags", "Affected", "Attacks", "Attribs", "Bodyparts", "Defenses", "Immune", "RepairData", "Resist", "Saves", "ShopData", "Speaks", "Speaking", "Specfun", "Specfun2", "Suscept", "VIPFlags"):
-				self.skip_fuss_value()
+				mob.stats4 = self.read_fuss_numbers()
+			elif word == 'Attribs':
+				mob.attribs = self.read_fuss_numbers()
+			elif word == 'Saves':
+				mob.saves = self.read_fuss_numbers()
+			elif word == 'ShopData':
+				mob.shop_data = self.read_fuss_numbers()
+			elif word == 'RepairData':
+				mob.repair_data = self.read_fuss_numbers()
+			elif word in ('Specfun', 'Specfun2', 'Actflags', 'Affected', 'Speaks', 'Speaking', 'Bodyparts', 'Resist', 'Immune', 'Suscept', 'Attacks', 'Defenses', 'VIPFlags'):
+				attribute = {
+					'Specfun': 'specfun',
+					'Specfun2': 'specfun2',
+					'Actflags': 'actflags',
+					'Affected': 'affected',
+					'Speaks': 'speaks',
+					'Speaking': 'speaking',
+					'Bodyparts': 'bodyparts',
+					'Resist': 'resist',
+					'Immune': 'immune',
+					'Suscept': 'suscept',
+					'Attacks': 'attacks',
+					'Defenses': 'defenses',
+					'VIPFlags': 'vip_flags',
+				}[word]
+				setattr(mob, attribute, self.read_string())
 			else:
-				self.skip_fuss_value()
+				mob.unknown.append(self.read_fuss_unknown(word))
+		stats1 = list(mob.stats1)
+		stats2 = list(mob.stats2)
+		stats3 = list(mob.stats3)
+		stats4 = list(mob.stats4)
 		while len(stats1) < 6:
 			stats1.append(0)
 		while len(stats2) < 3:
@@ -2003,167 +2257,145 @@ class SwrAreaFile(SmaugAreaFile):
 			stats3.append(0)
 		while len(stats4) < 5:
 			stats4.append(0)
-		return RomMob(
-			vnum=vnum,
-			name=name,
-			short_desc=short_desc,
-			long_desc=long_desc,
-			description=description,
-			race=race,
-			alignment=stats1[0],
-			level=stats1[1],
-			hitroll=stats4[3],
-			hit=Dice(number=stats2[0], sides=stats2[1], bonus=stats2[2]),
-			damage=Dice(number=stats3[0], sides=stats3[1], bonus=stats3[2]),
-			ac=RomArmorClass(pierce=stats1[3], bash=stats1[3], slash=stats1[3], exotic=stats1[3]),
-			wealth=stats1[4],
-			start_pos=position,
-			default_pos=default_position,
-			sex=sex,
-		)
+		mob.alignment = stats1[0]
+		mob.level = stats1[1]
+		mob.thac0 = stats1[2]
+		mob.ac = RomArmorClass(pierce=stats1[3], bash=stats1[3], slash=stats1[3], exotic=stats1[3])
+		mob.wealth = stats1[4]
+		mob.experience = stats1[5]
+		mob.hit = Dice(number=stats2[0], sides=stats2[1], bonus=stats2[2])
+		mob.damage = Dice(number=stats3[0], sides=stats3[1], bonus=stats3[2])
+		mob.height = stats4[0]
+		mob.weight = stats4[1]
+		mob.numattacks = stats4[2]
+		mob.hitroll = stats4[3]
+		mob.damroll = stats4[4]
+		mob.start_pos = mob.position
+		mob.default_pos = mob.default_position
+		mob.sex = mob.gender
+		return mob
 
 	def read_fuss_object(self):
-		vnum = 0
-		name = ''
-		short_desc = ''
-		description = ''
-		value = []
-		weight = 0
-		cost = 0
-		level = 0
-		layers = 0
-		extra_descriptions = []
+		item = SwrObject()
 		while True:
 			word = self.read_word()
 			if word == "#ENDOBJECT":
 				break
 			if word == "#EXDESC":
-				extra_descriptions.append(self.read_fuss_extra_description())
+				item.extra_descriptions.append(self.read_fuss_extra_description())
 			elif word == "#MUDPROG":
-				self.skip_fuss_program()
+				item.programs.append(self.read_fuss_program())
 			elif word == "Vnum":
-				vnum = self.read_number()
+				item.vnum = self.read_number()
 			elif word == "Keywords":
-				name = self.read_string()
+				item.name = self.read_string()
 			elif word == "Short":
-				short_desc = self.read_string()
+				item.short_desc = self.read_string()
 			elif word == "Long":
-				description = self.read_string()
+				item.description = self.read_string()
+			elif word == 'Type':
+				item.type_name = self.read_string()
+			elif word == 'Action':
+				item.action_description = self.read_string()
+			elif word == 'Flags':
+				item.flags = self.read_string()
+			elif word == 'WFlags':
+				item.wflags = self.read_string()
 			elif word == "Values":
-				value = self.read_fuss_numbers()
+				item.value = self.read_fuss_numbers()
 			elif word == "Stats":
-				stats = self.read_fuss_numbers()
-				if len(stats) > 0:
-					weight = stats[0]
-				if len(stats) > 1:
-					cost = stats[1]
-				if len(stats) > 3:
-					level = stats[3]
-				if len(stats) > 4:
-					layers = stats[4]
-			elif word in ("Action", "Affect", "AffectData", "Flags", "Spells", "Type", "WFlags"):
-				self.skip_fuss_value()
+				item.stats = self.read_fuss_numbers()
+			elif word == 'Spells':
+				item.spells = self.read_to_eol().strip()
 			else:
-				self.skip_fuss_value()
-		return SmaugItem(vnum=vnum, name=name, short_desc=short_desc, description=description, value=value, weight=weight, cost=cost, level=level, layers=layers, extra_descriptions=extra_descriptions)
+				item.unknown.append(self.read_fuss_unknown(word))
+		if len(item.stats) > 0:
+			item.weight = item.stats[0]
+		if len(item.stats) > 1:
+			item.cost = item.stats[1]
+		if len(item.stats) > 2:
+			item.rent = item.stats[2]
+		if len(item.stats) > 3:
+			item.level = item.stats[3]
+		if len(item.stats) > 4:
+			item.layers = item.stats[4]
+		return item
 
 	def read_fuss_room(self):
-		vnum = 0
-		name = ''
-		description = ''
-		sector = ''
-		tele_delay = 0
-		tele_vnum = 0
-		tunnel = 0
-		exits = []
-		extra_descriptions = []
-		resets = []
+		room = SwrRoom()
 		while True:
 			word = self.read_word()
 			if word == "#ENDROOM":
 				break
 			if word == "#EXIT":
-				exits.append(self.read_fuss_exit())
+				room.exits.append(self.read_fuss_exit())
 			elif word == "#EXDESC":
-				extra_descriptions.append(self.read_fuss_extra_description())
+				room.extra_descriptions.append(self.read_fuss_extra_description())
 			elif word == "#MUDPROG":
-				self.skip_fuss_program()
+				room.programs.append(self.read_fuss_program())
 			elif word == "Vnum":
-				vnum = self.read_number()
+				room.vnum = self.read_number()
 			elif word == "Name":
-				name = self.read_string()
+				room.name = self.read_string()
 			elif word == "Desc":
-				description = self.read_string()
+				room.description = self.read_string()
 			elif word == "Sector":
-				sector = self.read_string()
+				room.sector = self.read_string()
 			elif word == "Stats":
-				stats = self.read_fuss_numbers()
-				if len(stats) > 0:
-					tele_delay = stats[0]
-				if len(stats) > 1:
-					tele_vnum = stats[1]
-				if len(stats) > 2:
-					tunnel = stats[2]
+				room.stats = self.read_fuss_numbers()
 			elif word == "Reset":
 				letter = self.read_letter()
-				resets.append(MercReset.read(reader=self, letter=letter))
+				room.resets.append(SwrReset.read(reader=self, letter=letter))
 			elif word == "Flags":
-				self.skip_fuss_value()
+				room.flags = self.read_string()
 			else:
-				self.skip_fuss_value()
-		return SwrRoom(vnum=vnum, name=name, description=description, sector=sector, tele_delay=tele_delay, tele_vnum=tele_vnum, tunnel=tunnel, exits=exits, extra_descriptions=extra_descriptions, resets=resets)
+				room.unknown.append(self.read_fuss_unknown(word))
+		if len(room.stats) > 0:
+			room.tele_delay = room.stats[0]
+		if len(room.stats) > 1:
+			room.tele_vnum = room.stats[1]
+		if len(room.stats) > 2:
+			room.tunnel = room.stats[2]
+		return room
 
 	def read_fuss_exit(self):
-		door = None
-		description = ''
-		keyword = ''
-		key = 0
-		destination = 0
-		distance = 0
+		exit = SwrExit()
 		while True:
 			word = self.read_word()
 			if word == "#ENDEXIT":
-				return SmaugExit(door=door, description=description, keyword=keyword, key=key, destination=destination, distance=distance)
+				return exit
 			if word == "Desc":
-				description = self.read_string()
+				exit.description = self.read_string()
 			elif word == "Direction":
-				door = self.read_string()
+				exit.door = self.read_string()
 			elif word == "Distance":
-				distance = self.read_number()
+				exit.distance = self.read_number()
 			elif word == "Key":
-				key = self.read_number()
+				exit.key = self.read_number()
 			elif word == "Keywords":
-				keyword = self.read_string()
+				exit.keyword = self.read_string()
 			elif word == "ToRoom":
-				destination = self.read_number()
+				exit.destination = self.read_number()
 			elif word == "Flags":
-				self.skip_fuss_value()
+				exit.flags = self.read_string()
 			else:
-				self.skip_fuss_value()
+				exit.unknown.append(self.read_fuss_unknown(word))
 
 	def read_fuss_extra_description(self):
-		keyword = ''
-		description = ''
+		extra = SwrExtraDescription()
 		while True:
 			word = self.read_word()
 			if word == "#ENDEXDESC":
-				return ExtraDescription(keyword=keyword, description=description)
+				return extra
 			if word == "ExDescKey":
-				keyword = self.read_string()
+				extra.keyword = self.read_string()
 			elif word == "ExDesc":
-				description = self.read_string()
+				extra.description = self.read_string()
 			else:
-				self.skip_fuss_value()
+				extra.unknown.append(self.read_fuss_unknown(word))
 
 	def skip_fuss_program(self):
-		while True:
-			word = self.read_word()
-			if word == "#ENDPROG":
-				return
-			if word in ("Arglist", "Comlist", "Progtype"):
-				self.read_string()
-			else:
-				self.skip_fuss_value()
+		self.read_fuss_program()
 
 
 def circle_asciiflag_conv(flag):
