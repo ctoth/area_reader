@@ -18,6 +18,17 @@ def assert_jsonifies(area_file):
 	assert json.loads(area_file.as_json()) == json.loads(json.dumps(as_dict))
 
 
+def test_dice_roll_includes_the_maximum_face(monkeypatch):
+	monkeypatch.setattr(
+		area_reader.random,
+		"randrange",
+		lambda start, stop: stop - 1,
+	)
+
+	assert area_reader.Dice(number=2, sides=6, bonus=3).roll() == 15
+	assert area_reader.Dice(number=2, sides=1, bonus=3).roll() == 5
+
+
 reset_command = st.sampled_from(["M", "O", "P", "G", "E", "D", "R"])
 small_int = st.integers(min_value=0, max_value=9999)
 rom_source_dir = Path(r"C:\Users\Q\src\Rom24b6\area")

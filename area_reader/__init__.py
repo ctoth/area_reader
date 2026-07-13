@@ -530,7 +530,7 @@ class Dice(object):
 	def roll(self):
 		score = 0
 		for roll in range(self.number):
-			score += random.randrange(1, self.sides)
+			score += random.randrange(1, self.sides + 1)
 		score += self.bonus
 		return score
 
