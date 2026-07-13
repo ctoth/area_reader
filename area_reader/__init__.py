@@ -163,7 +163,7 @@ class AreaFile(object):
 	def read_flag(self):
 		words = []
 		while True:
-			word = 0
+			components = []
 			while True:
 				negative = False
 				self.skip_whitespace()
@@ -180,12 +180,15 @@ class AreaFile(object):
 				while self.current_char.isdigit():
 					number = number * 10 + int(self.current_char)
 					self.advance()
-				if negative:
-					number *= -1
-				word += number
+				components.append((negative, number))
 				if self.current_char != '|':
 					break
 				self.advance()
+			word = 0
+			for negative, number in reversed(components):
+				word += number
+				if negative:
+					word *= -1
 			words.append(word)
 			if self.current_char != '&':
 				break
