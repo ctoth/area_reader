@@ -66,8 +66,12 @@ The following are verified blockers to stronger source fidelity:
   whitespace, flag spelling, mixed metadata order, optional second shop-window
   presence, and zero-bonus dice spelling; these are executable in
   `CircleAreaFile.NATIVE_NORMALIZATIONS`.
-- CoffeeMud repairs XML before parsing and preserves raw payloads unevenly;
-  typed fields and `raw_text`/`raw_data` can also diverge after mutation.
+- CoffeeMud intentionally canonicalizes XML declarations, whitespace,
+  empty-element spelling, repaired attributes/entities, and the alternate mob
+  rejuvenation tag. These are executable in
+  `CoffeeMudAreaFile.NATIVE_NORMALIZATIONS`; unknown XML is retained as ordered
+  residuals, while typed attrs fields are authoritative over the read-side
+  `raw_text` and `raw_data` views.
 
 These gaps must be removed, preserved as native residuals, or declared outside
 the proved surface before a dialect is called bijective.
@@ -140,6 +144,29 @@ and invalid native lock, reset, armor, and object-value shapes are rejected.
 The generated complete world was also built and booted by the upstream engine,
 which reached its game loop and remained live for the five-second oracle
 window.
+
+## CoffeeMud result
+
+CoffeeMud records declare outer and payload XML on the owning attrs fields.
+Modeled tags, nested records, and ordered residual XML are rendered by the same
+native-field traversal used by the other dialects. One XML document-boundary
+pass collapses `MTEXT`, `ITEXT`, `RTEXT`, and `EXDAT` child XML into escaped
+text exactly once; there is no writer hierarchy, parallel XML model, or
+mirror-image `write_*` parser flow.
+
+The six upstream `.cmare` catalogs have semantic and canonical fixed points,
+including mobs, deities, items, ships, caravans, castles, nested rooms, exits,
+room contents, behaviors, affects, abilities, and ordered unknown XML. A
+mutation witness proves typed fields override stale `raw_text` and `raw_data`,
+and a nested-payload witness proves child XML is retained rather than hidden by
+a vacuous default-value round trip.
+
+The real CoffeeMud `addMOBsFromXML` and `addItemsFromXML` loaders were run in an
+isolated compiled upstream tree against both original and canonical files. The
+loaded record counts matched exactly: monsters 10, deities 9, junk 20,
+shipbuilding 63, caravanbuilding 94, and clancastles 1. Canonical output added
+no loader diagnostics relative to baseline; the monsters output removed one
+baseline diagnostic.
 
 ## ROM first slice
 

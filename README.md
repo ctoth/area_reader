@@ -16,7 +16,7 @@ very easy to do things like render the entire tree of objects out as JSON or sim
 | SMAUG | `SmaugAreaFile` | `dumps()` / `write()` | single tilde-delimited area file |
 | SWR / FUSS | `SwrAreaFile` | `dumps()` / `write()` | single tilde-delimited area file |
 | CircleMUD | `CircleAreaFile` | `dumps()` / `write()` | indexed world tree (`wld`/`mob`/`obj`/`zon`/`shp`) directory |
-| CoffeeMud | `CoffeeMudAreaFile` | — | `.cmare` XML export (areas, item/mob catalogs, nested boardable areas) |
+| CoffeeMud | `CoffeeMudAreaFile` | `dumps()` / `write()` | `.cmare` XML export (areas, item/mob catalogs, nested boardable areas) |
 
 ## Example usage
 
@@ -72,7 +72,8 @@ semantic round trip.
 CoffeeMud `.cmare` files are XML exports. They may be full areas, item or mob
 catalogs, or items (ships, caravans, castles) that embed nested boardable areas.
 Native CoffeeMud identifiers (string room IDs such as `Coffee Grounds#73`, class
-IDs such as `GenMob`) are preserved, and unknown tags are kept as raw payloads.
+IDs such as `GenMob`) are preserved. Modeled tags live on typed attrs fields;
+unknown or repeated tags remain ordered XML residuals on the owning object.
 
 ```python
 >>> import area_reader
@@ -82,7 +83,15 @@ IDs such as `GenMob`) are preserved, and unknown tags are kept as raw payloads.
 'MOBS'
 >>> coffee.area.mobs[0].class_id
 'GenMob'
+>>> canonical = coffee.dumps()
+>>> coffee.write('monsters-canonical.cmare')
 ```
+
+CoffeeMud payload boundaries (`MTEXT`, `ITEXT`, `RTEXT`, and `EXDAT`) are
+escaped once at the document boundary, including nested boardable areas. Typed
+field edits are authoritative over the read-side `raw_text` and `raw_data`
+views. The six upstream example and skill catalogs have semantic and canonical
+fixed points and are accepted by CoffeeMud's native MOB/item loaders.
 
 ## Documentation
 

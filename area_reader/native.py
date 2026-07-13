@@ -112,7 +112,9 @@ def render_record(instance, section=None):
 		annotated.append((native.order, attribute, native))
 	annotated.sort(key=lambda item: item[0])
 
-	chunks = [getattr(instance.__class__, 'NATIVE_PREFIX', '')]
+	chunks = []
+	if section is None:
+		chunks.append(_decoration(getattr(instance.__class__, 'NATIVE_PREFIX', ''), instance))
 	for _, attribute, native in annotated:
 		if native.when is not None and not native.when(instance):
 			continue
@@ -125,7 +127,8 @@ def render_record(instance, section=None):
 				"%s.%s: %s" % (instance.__class__.__name__, attribute.name, error)
 			) from error
 		chunks.append(_decoration(native.suffix, instance))
-	chunks.append(getattr(instance.__class__, 'NATIVE_SUFFIX', ''))
+	if section is None:
+		chunks.append(_decoration(getattr(instance.__class__, 'NATIVE_SUFFIX', ''), instance))
 	return ''.join(chunks)
 
 
