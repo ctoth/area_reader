@@ -168,6 +168,22 @@ shipbuilding 63, caravanbuilding 94, and clancastles 1. Canonical output added
 no loader diagnostics relative to baseline; the monsters output removed one
 baseline diagnostic.
 
+## Cross-dialect convergence result
+
+ROM, Merc, SMAUG, SWR/FUSS, CircleMUD, and CoffeeMud now expose the same
+object-owned public surface: `dumps()` produces canonical native output and
+`write(path)` persists it. CircleMUD's `dumps()` result is an ordered path-to-
+text mapping because its native artifact is an indexed file tree; the other
+five dialects return one native text document.
+
+The six writer suites pass together (215 tests), covering each dialect's
+semantic round trip, canonical fixed point, non-vacuity checks, declared
+normalizations, and representability failures. The repository-wide suite also
+passes (938 tests). The final implementation uses attrs-owned native field
+declarations and the shared pure renderer, with only the native document
+aggregation required by CircleMUD and CoffeeMud; no writer class hierarchy or
+parallel writer model was introduced.
+
 ## ROM first slice
 
 The ROM slice may add attrs-owned native annotations, one generic renderer, and
