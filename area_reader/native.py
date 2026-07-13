@@ -30,6 +30,7 @@ class NativeSection(object):
 	end = attr(default='', type=str)
 	owner_section = attr(default=None, type=Optional[str])
 	mapping = attr(default=False, type=bool)
+	when = attr(default=None, type=Optional[Condition])
 
 
 def _decoration(value, owner):
@@ -130,6 +131,8 @@ def render_record(instance, section=None):
 def render_document(area, sections, native_sections=()):
 	chunks = []
 	for section in sections:
+		if section.when is not None and not section.when(area):
+			continue
 		chunks.append('#%s\n' % section.name)
 		if section.owner_section is not None:
 			chunks.append(render_record(area, section=section.owner_section))

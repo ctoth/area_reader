@@ -30,6 +30,7 @@ from area_reader.native import (
 	raw as native_raw,
 	records as native_records,
 	render_document,
+	render_record,
 	signed_number as native_signed_number,
 	tilde_string as native_tilde_string,
 	word as native_word,
@@ -158,6 +159,22 @@ class AreaFile(object):
 				self.index = len(self.data) - 1
 				return
 			self.index = next_record + 1
+
+	def read_smaug_programs(self):
+		programs = []
+		self.skip_whitespace()
+		while self.current_char == '>':
+			self.read_and_verify_letter('>')
+			programs.append(
+				SmaugProgram(
+					trigger=self.read_word(),
+					argument=self.read_string(),
+					commands=self.read_string(),
+				)
+			)
+			self.skip_whitespace()
+		self.read_and_verify_letter('|')
+		return programs
 
 	def read_number_line(self):
 		self.skip_whitespace()
@@ -511,6 +528,33 @@ def native_trade_types(value, owner):
 	if len(value) != AreaFile.MAX_TRADES:
 		raise NativeWriteError("ROM shops require exactly five trade types")
 	return ' '.join(str(item) for item in value)
+
+
+def native_numbers(value, owner):
+	del owner
+	return ' '.join(native_number(item, None) for item in value)
+
+
+def native_words(value, owner):
+	del owner
+	return ' '.join(native_word(item, None) for item in value)
+
+
+def native_number_lines(value, owner):
+	del owner
+	return '\n'.join(native_numbers(line, None) for line in value)
+
+
+def native_smaug_programs(value, owner):
+	del owner
+	if not value:
+		return ''
+	return ''.join(render_record(program) for program in value) + '|\n'
+
+
+def native_dice_inline(value, owner):
+	del owner
+	return '%dd%d%+d' % (value.number, value.sides, value.bonus)
 
 
 def native_reset_command(value, owner):
@@ -937,13 +981,45 @@ class MercExit(Exit):
 
 
 @attributes
+class SmaugProgram(object):
+	trigger = field(default='', type=Word, native=NativeField(1, native_word, prefix='> ', suffix=' '))
+	argument = field(default='', type=str, native=NativeField(2, native_tilde_string))
+	commands = field(default='', type=str, native=NativeField(3, native_tilde_string))
+
+
+@attributes
+class SmaugMap(object):
+	vnum = field(default=0, type=int, native=NativeField(1, native_number, prefix='M ', suffix=' '))
+	x = field(default=0, type=int, native=NativeField(2, native_number, suffix=' '))
+	y = field(default=0, type=int, native=NativeField(3, native_number, suffix=' '))
+	entry = field(default='', type=Letter, native=NativeField(4, native_word))
+
+
+@attributes
+class SmaugRepair(object):
+	keeper = field(default=0, type=int, native=NativeField(1, native_number, suffix=' '))
+	fix_type = field(default=Factory(list), type=list, native=NativeField(2, native_numbers, suffix=' '))
+	profit_fix = field(default=0, type=int, native=NativeField(3, native_number, suffix=' '))
+	shop_type = field(default=0, type=int, native=NativeField(4, native_number, suffix=' '))
+	open_hour = field(default=0, type=int, native=NativeField(5, native_number, suffix=' '))
+	close_hour = field(default=0, type=int, native=NativeField(6, native_number, suffix=''))
+	comment = field(default='', type=str, native=NativeField(7, native_comment))
+
+
+@attributes
 class SmaugExit(Exit):
-	door = attr(default=None, type=int)
-	distance = attr(default=0, type=int)
-	pulltype = attr(default=0, type=int)
-	pull = attr(default=0, type=int)
+	door = field(default=None, type=int, native=NativeField(1, native_number, prefix='D'))
+	description = field(default='', type=str, native=NativeField(2, native_tilde_string))
+	keyword = field(default='', type=Word, native=NativeField(3, native_tilde_string))
+	locks = field(default=0, type=int, native=NativeField(4, native_number, suffix=' '))
+	exit_info = attr(default=0, type=EXIT_FLAGS, converter=EXIT_FLAGS)
+	key = field(default=0, type=int, native=NativeField(5, native_number, suffix=' '))
+	destination = field(default=None, type=int, native=NativeField(6, native_number, suffix=' '))
+	distance = field(default=0, type=int, native=NativeField(7, native_number, suffix=' '))
 	x = attr(default=0, type=int)
 	y = attr(default=0, type=int)
+	pulltype = field(default=0, type=int, native=NativeField(8, native_number, suffix=' '))
+	pull = field(default=0, type=int, native=NativeField(9, native_number))
 
 @attributes
 class Room(MudBase):
@@ -1144,9 +1220,41 @@ class RomShop(object):
 
 @attributes
 class SmaugMob(RomMob):
-	ac = attr(default=0, type=int)
-	act = field(default=SMAUG_ACT_TYPES.IS_NPC.value, type=SMAUG_ACT_TYPES, converter=SMAUG_ACT_TYPES)
-	affected_by = attr(default=0, type=SMAUG_AFFECTED_BY, converter=SMAUG_AFFECTED_BY)
+	vnum = field(default=0, type=VNum, read=False, native=NativeField(0, native_number, prefix='#'))
+	name = field(default='', type=str, native=NativeField(1, native_tilde_string))
+	short_desc = field(default='', type=str, native=NativeField(2, native_tilde_string))
+	long_desc = field(default='', type=str, native=NativeField(3, native_tilde_string))
+	description = field(default='', type=str, native=NativeField(4, native_tilde_string))
+	race = attr(default='', type=str)
+	act = field(default=SMAUG_ACT_TYPES.IS_NPC.value, type=SMAUG_ACT_TYPES, converter=SMAUG_ACT_TYPES, native=NativeField(5, native_flag, suffix=' '))
+	affected_by = field(default=0, type=SMAUG_AFFECTED_BY, converter=SMAUG_AFFECTED_BY, native=NativeField(6, native_flag, suffix=' '))
+	alignment = field(default=0, type=int, native=NativeField(7, native_number, suffix=' '))
+	native_type = field(default='S', type=Letter, native=NativeField(8, native_word))
+	group = attr(default=0, type=int)
+	level = field(default=0, type=int, native=NativeField(9, native_number, suffix=' '))
+	hitroll = field(default=0, type=int, native=NativeField(10, native_number, suffix=' '))
+	ac = field(default=0, type=int, native=NativeField(11, native_number, suffix=' '))
+	hit = field(default=Factory(Dice), type=Dice, native=NativeField(12, native_dice_inline, suffix=' '))
+	mana = attr(default=Factory(Dice), type=Dice)
+	damage = field(default=Factory(Dice), type=Dice, native=NativeField(13, native_dice_inline))
+	damtype = attr(default='', type=Word)
+	economy_lines = field(default=Factory(list), type=list, native=NativeField(14, native_number_lines, when=lambda owner: bool(owner.economy_lines)))
+	position_line = field(default=Factory(list), type=list, native=NativeField(15, native_numbers))
+	complex_lines = field(default=Factory(list), type=list, native=NativeField(16, native_number_lines, when=lambda owner: bool(owner.complex_lines)))
+	wealth = attr(default=0, type=int)
+	start_pos = attr(default=0, type=int)
+	default_pos = attr(default=0, type=int)
+	sex = attr(default=0, type=int)
+	off_flags = attr(default=0, type=OFFENSE, converter=OFFENSE)
+	imm_flags = attr(default=0, type=IMM_FLAGS, converter=IMM_FLAGS)
+	res_flags = attr(default=0, type=IMM_FLAGS, converter=IMM_FLAGS)
+	vuln_flags = attr(default=0, type=IMM_FLAGS, converter=IMM_FLAGS)
+	form = attr(default=0, type=FORMS, converter=FORMS)
+	parts = attr(default=0, type=PARTS, converter=PARTS)
+	size = attr(default=None, type=Word)
+	material = attr(default='', type=str)
+	mprogs = attr(default=Factory(list), type=Optional[List[RomMobprog]])
+	programs = field(default=Factory(list), type=List[SmaugProgram], native=NativeField(17, native_smaug_programs, suffix=''))
 
 	@classmethod
 	def read(cls, reader, vnum):
@@ -1190,12 +1298,32 @@ class SmaugMob(RomMob):
 		start_pos = position_line[0]
 		default_pos = position_line[1]
 		sex = position_line[2]
-		reader.skip_smaug_programs()
-		return cls(vnum=vnum, name=name, short_desc=short_desc, long_desc=long_desc, description=description, act=act, affected_by=affected_by, alignment=alignment, level=level, hitroll=hitroll, ac=ac, hit=hit, damage=damage, wealth=wealth, start_pos=start_pos, default_pos=default_pos, sex=sex)
+		economy_lines = numeric_lines[:position_index]
+		complex_lines = numeric_lines[position_index + 1:]
+		programs = reader.read_smaug_programs() if reader.current_char == '>' else []
+		return cls(vnum=vnum, name=name, short_desc=short_desc, long_desc=long_desc, description=description, act=act, affected_by=affected_by, alignment=alignment, native_type=letter, level=level, hitroll=hitroll, ac=ac, hit=hit, damage=damage, economy_lines=economy_lines, position_line=position_line, complex_lines=complex_lines, wealth=wealth, start_pos=start_pos, default_pos=default_pos, sex=sex, programs=programs)
 
 @attributes
 class SmaugItem(Item):
+	vnum = field(default=0, type=VNum, read=False, native=NativeField(0, native_number, prefix='#'))
+	name = field(default='', type=str, native=NativeField(1, native_tilde_string))
+	short_desc = field(default='', type=str, native=NativeField(2, native_tilde_string))
+	description = field(default='', type=str, native=NativeField(3, native_tilde_string))
+	action_description = field(default='', type=str, native=NativeField(4, native_tilde_string))
+	item_type = field(default=-1, type=int, native=NativeField(5, native_number, suffix=' '))
+	extra_flags = field(default=0, type=int, native=NativeField(6, native_flag, suffix=' '))
+	wear_flags = field(default=0, type=WEAR_FLAGS, converter=WEAR_FLAGS, native=NativeField(7, native_flag, suffix=' '))
+	header_tail = field(default=Factory(list), type=list, native=NativeField(8, native_numbers))
 	layers = attr(default=0, type=int)
+	level = attr(default=0, type=int)
+	value = field(default=Factory(list), type=List, native=NativeField(9, native_numbers))
+	weight = field(default=0, type=int, native=NativeField(10, native_number, suffix=' '))
+	cost = field(default=0, type=int, native=NativeField(11, native_number, suffix=' '))
+	cost_tail = field(default=Factory(list), type=list, native=NativeField(12, native_numbers))
+	spell_words = field(default=Factory(list), type=list, native=NativeField(13, native_words, when=lambda owner: bool(owner.spell_words)))
+	affected = field(default=Factory(list), native=NativeField(14, native_records, suffix=''))
+	extra_descriptions = field(default=Factory(list), type=List[ExtraDescription], native=NativeField(15, native_records, suffix=''))
+	programs = field(default=Factory(list), type=List[SmaugProgram], native=NativeField(16, native_smaug_programs, suffix=''))
 
 	@classmethod
 	def read(cls, reader, vnum):
@@ -1203,7 +1331,7 @@ class SmaugItem(Item):
 		name = reader.read_string()
 		short_desc = reader.read_string()
 		description = reader.read_string()
-		reader.read_string() # action description
+		action_description = reader.read_string()
 		item_type = reader.read_number()
 		extra_flags = reader.read_flag()
 		wear_flags = reader.read_flag()
@@ -1216,11 +1344,14 @@ class SmaugItem(Item):
 		cost_line = [int(value) for value in reader.read_to_eol().split()]
 		weight = cost_line[0] if len(cost_line) > 0 else 0
 		cost = cost_line[1] if len(cost_line) > 1 else 0
+		cost_tail = cost_line[2:]
 		reader.skip_whitespace()
+		spell_words = []
 		if reader.current_char not in ('A', 'E', '>', '#'):
-			reader.read_to_eol()
+			spell_words = reader.read_to_eol().split()
 		affected = []
 		extra_descriptions = []
+		programs = []
 		while True:
 			letter = reader.read_letter()
 			if letter == 'A':
@@ -1234,35 +1365,85 @@ class SmaugItem(Item):
 				extra_descriptions.append(reader.read_object(ExtraDescription))
 			elif letter == '>':
 				reader.index -= 1
-				reader.skip_smaug_programs()
+				programs = reader.read_smaug_programs()
 			else:
 				reader.index -= 1
 				break
-		return cls(vnum=vnum, name=name, short_desc=short_desc, description=description, item_type=item_type, extra_flags=extra_flags, wear_flags=wear_flags, value=value, level=level, weight=weight, cost=cost, affected=affected, extra_descriptions=extra_descriptions, layers=layers)
+		return cls(vnum=vnum, name=name, short_desc=short_desc, description=description, action_description=action_description, item_type=item_type, extra_flags=extra_flags, wear_flags=wear_flags, header_tail=header, value=value, level=level, weight=weight, cost=cost, cost_tail=cost_tail, spell_words=spell_words, affected=affected, extra_descriptions=extra_descriptions, layers=layers, programs=programs)
 
 @attributes
 class SmaugArea(RomArea):
+	NATIVE_SECTIONS = (
+		NativeSection('AREA', owner_section='area'),
+		NativeSection('VERSION', owner_section='version', when=lambda area: area.version != 0),
+		NativeSection('AUTHOR', owner_section='author', when=lambda area: bool(area.author)),
+		NativeSection('CREDITS', owner_section='credits', when=lambda area: bool(area.credits)),
+		NativeSection('RANGES', owner_section='ranges'),
+		NativeSection('RESETMSG', owner_section='resetmsg', when=lambda area: bool(area.resetmsg)),
+		NativeSection('FLAGS', owner_section='flags'),
+		NativeSection('ECONOMY', owner_section='economy'),
+		NativeSection('CONTINENT', owner_section='continent', when=lambda area: bool(area.continent)),
+		NativeSection('CLIMATE', owner_section='climate', when=lambda area: bool(area.climate)),
+		NativeSection('SPELLLIMIT', owner_section='spelllimit', when=lambda area: area.spelllimit != 0),
+		NativeSection('HELPS', collection='helps', end='0 $~\n'),
+		NativeSection('MOBILES', collection='mobs', end='#0\n', mapping=True),
+		NativeSection('OBJECTS', collection='objects', end='#0\n', mapping=True),
+		NativeSection('ROOMS', collection='rooms', end='#0\n', mapping=True),
+		NativeSection('RESETS', collection='resets', end='S\n'),
+		NativeSection('SHOPS', collection='shops', end='0\n'),
+		NativeSection('REPAIRS', collection='repairs', end='0\n'),
+		NativeSection('SPECIALS', collection='specials', end='S\n'),
+	)
+
+	name = field(default='', type=str, native=NativeField(1, native_tilde_string, section='area'))
+	metadata = attr(default='', type=str)
+	original_filename = attr(default='', type=str)
+	first_vnum = attr(default=-1, type=int)
+	last_vnum = attr(default=-1, type=int)
+	version = field(default=0, type=int, native=NativeField(1, native_number, section='version'))
+	author = field(default='', type=str, native=NativeField(1, native_tilde_string, section='author'))
+	credits = field(default='', type=str, native=NativeField(1, native_tilde_string, section='credits'))
+	low_soft_range = field(default=0, type=int, native=NativeField(1, native_number, suffix=' ', section='ranges'))
+	high_soft_range = field(default=0, type=int, native=NativeField(2, native_number, suffix=' ', section='ranges'))
+	low_hard_range = field(default=0, type=int, native=NativeField(3, native_number, suffix=' ', section='ranges'))
+	high_hard_range = field(default=0, type=int, native=NativeField(4, native_number, suffix='\n$\n', section='ranges'))
+	resetmsg = field(default='', type=str, native=NativeField(1, native_tilde_string, section='resetmsg'))
+	flags = field(default=0, type=int, native=NativeField(1, native_number, suffix=' ', section='flags'))
+	reset_frequency = field(default=0, type=int, native=NativeField(2, native_number, section='flags'))
+	high_economy = field(default=0, type=int, native=NativeField(1, native_number, suffix=' ', section='economy'))
+	low_economy = field(default=0, type=int, native=NativeField(2, native_number, section='economy'))
+	continent = field(default='', type=str, native=NativeField(1, native_tilde_string, section='continent'))
+	climate = field(default=Factory(list), type=list, native=NativeField(1, native_numbers, section='climate'))
+	spelllimit = field(default=0, type=int, native=NativeField(1, native_number, section='spelllimit'))
+	helps = attr(default=Factory(list), type=List[Help])
 	rooms = attr(default=Factory(OrderedDict))
-	author = attr(default='', type=str)
-	credits = attr(default='', type=str)
-	flags = attr(default=0, type=int)
-	version = attr(default=0, type=int)
-	low_soft_range = attr(default=0, type=int)
-	high_soft_range = attr(default=0, type=int)
-	low_hard_range = attr(default=0, type=int)
-	high_hard_range = attr(default=0, type=int)
-	resetmsg = attr(default='', type=str)
-	high_economy = attr(default=0)
-	low_economy = attr(default=0)
+	mobs = attr(default=Factory(OrderedDict))
+	objects = attr(default=Factory(OrderedDict))
+	resets = attr(default=Factory(list))
+	specials = attr(default=Factory(list))
+	shops = attr(default=Factory(list))
+	repairs = attr(default=Factory(list), type=List[SmaugRepair])
 
 @attributes
 class SmaugRoom(Room):
-	sector_type = attr(default=0, type=int)
-	exits = attr(default=Factory(list), type=List[SmaugExit])
-	tele_delay = attr(default=0)
-	tele_vnum = attr(default=0)
-	tunnel = attr(default=None)
-	max_weight = attr(default=None)
+	vnum = field(default=0, type=VNum, read=False, native=NativeField(0, native_number, prefix='#'))
+	name = field(default='', type=str, native=NativeField(1, native_tilde_string))
+	description = field(default='', type=str, native=NativeField(2, native_tilde_string))
+	owner = attr(default=None, type=str)
+	clan = attr(default='', type=str)
+	area_number = field(default=0, type=int, native=NativeField(3, native_number, suffix=' '))
+	room_flags = field(default=0, type=int, native=NativeField(4, native_flag, suffix=' '))
+	sector_type = field(default=0, type=int, native=NativeField(5, native_number, suffix=' '))
+	heal_rate = attr(default=100, type=int)
+	mana_rate = attr(default=100, type=int)
+	tele_delay = field(default=0, type=int, native=NativeField(6, native_number, suffix=' '))
+	tele_vnum = field(default=0, type=int, native=NativeField(7, native_number, suffix=' '))
+	tunnel = field(default=0, type=int, native=NativeField(8, native_number, suffix=' '))
+	max_weight = field(default=0, type=int, native=NativeField(9, native_number))
+	exits = field(default=Factory(list), type=List[SmaugExit], native=NativeField(10, native_records, suffix=''))
+	extra_descriptions = field(default=Factory(list), type=List[ExtraDescription], native=NativeField(11, native_records, suffix=''))
+	maps = field(default=Factory(list), type=List[SmaugMap], native=NativeField(12, native_records, suffix=''))
+	programs = field(default=Factory(list), type=List[SmaugProgram], native=NativeField(13, native_smaug_programs, suffix=''))
 	light = attr(default=0)
 
 	@classmethod
@@ -1290,13 +1471,10 @@ class SmaugRoom(Room):
 			elif letter == 'E':
 				self.extra_descriptions.append(reader.read_object(ExtraDescription))
 			elif letter == 'M':
-				reader.read_number()
-				reader.read_number()
-				reader.read_number()
-				reader.read_letter()
+				self.maps.append(SmaugMap(vnum=reader.read_number(), x=reader.read_number(), y=reader.read_number(), entry=reader.read_letter()))
 			elif letter == '>':
 				reader.index -= 1
-				reader.skip_smaug_programs()
+				self.programs = reader.read_smaug_programs()
 			else:
 				reader.parse_fail("SMAUG room %d has unknown flag %s" % (self.vnum, letter))
 
@@ -1316,7 +1494,7 @@ class SmaugRoom(Room):
 			exit_info = EXIT_FLAGS.ISDOOR | EXIT_FLAGS.PICKPROOF
 		else:
 			exit_info = locks
-		return SmaugExit(door=door, description=description, keyword=keyword, exit_info=exit_info, key=key, destination=destination, distance=distance, pulltype=pulltype, pull=pull)
+		return SmaugExit(door=door, description=description, keyword=keyword, locks=locks, exit_info=exit_info, key=key, destination=destination, distance=distance, pulltype=pulltype, pull=pull)
 
 @attributes
 class SwrRoom(SmaugRoom):
@@ -1530,10 +1708,9 @@ class SmaugAreaFile(RomAreaFile):
 			'shops': self.load_shops,
 			'specials': self.load_specials,
 			'repairs': self.load_repairs,
-			'continent': self.load_ignored_string,
-			'climate': self.load_ignored_line,
-			'neighbor': self.load_ignored_line,
-			'spelllimit': self.load_ignored_line,
+			'continent': self.load_continent,
+			'climate': self.load_climate,
+			'spelllimit': self.load_spelllimit,
 		}
 		while True:
 			self.skip_whitespace()
@@ -1564,7 +1741,8 @@ class SmaugAreaFile(RomAreaFile):
 
 	def load_flags(self):
 		self.area.flags = self.read_number()
-		self.read_to_eol()
+		line = self.read_to_eol().strip()
+		self.area.reset_frequency = int(line.split()[0]) if line else 0
 
 	def load_ranges(self):
 		self.area.low_soft_range = self.read_number()
@@ -1576,11 +1754,14 @@ class SmaugAreaFile(RomAreaFile):
 	def load_version(self):
 		self.area.version = self.read_number()
 
-	def load_ignored_string(self):
-		self.read_string()
+	def load_continent(self):
+		self.area.continent = self.read_string()
 
-	def load_ignored_line(self):
-		self.read_to_eol()
+	def load_climate(self):
+		self.area.climate = self.read_number_line()
+
+	def load_spelllimit(self):
+		self.area.spelllimit = self.read_number()
 
 	def load_mobiles(self):
 		for mob in self.load_smaug_vnum_section(SmaugMob):
@@ -1618,13 +1799,13 @@ class SmaugAreaFile(RomAreaFile):
 			keeper = self.read_number()
 			if keeper == 0:
 				break
-			for _ in range(self.MAX_FIX):
-				self.read_number()
-			self.read_number()
-			self.read_number()
-			self.read_number()
-			self.read_number()
-			self.read_to_eol()
+			fix_type = [self.read_number() for _ in range(self.MAX_FIX)]
+			profit_fix = self.read_number()
+			shop_type = self.read_number()
+			open_hour = self.read_number()
+			close_hour = self.read_number()
+			comment = self.read_to_eol()
+			self.area.repairs.append(SmaugRepair(keeper=keeper, fix_type=fix_type, profit_fix=profit_fix, shop_type=shop_type, open_hour=open_hour, close_hour=close_hour, comment=comment))
 
 	def load_resetmsg(self):
 		self.area.resetmsg = self.read_string()
