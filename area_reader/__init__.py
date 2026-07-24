@@ -61,6 +61,7 @@ class AreaFile(object):
 			Letter: self.read_letter,
 			str: self.read_string,
 			int: self.read_number,
+			VNum: self.read_number,
 			enum.IntFlag: self.read_flag,
 			RomArmorClass: lambda: self.read_object_from_fields(RomArmorClass),
 		}
