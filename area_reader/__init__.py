@@ -286,6 +286,7 @@ class AreaFile(object):
 			'shops': self.load_shops,
 			'specials': self.load_specials,
 			'economy': self.load_economy,
+			'mobprogs': self.load_mobprogs,
 		}
 		while True:
 			section_name = self.read_section_name()
@@ -302,6 +303,13 @@ class AreaFile(object):
 				except Exception:
 					self.parse_fail("Error reading section %r" % section_name)
 
+	def load_mobprogs(self):
+		while True:
+			vnum = self.read_vnum()
+			if vnum == 0:
+				break
+			self.area.mobprogs[vnum] = self.read_string()
+	
 	def skip_section(self, section_name):
 		logger.debug("Skipping section %s", section_name)
 		self.read_until('#')
@@ -672,6 +680,7 @@ class MercArea(object):
 	resets = attr(default=Factory(list))
 	specials = attr(default=Factory(list))
 	shops = attr(default=Factory(list))
+	mobprogs = attr(default=Factory(OrderedDict))
 
 
 @attributes
@@ -826,6 +835,7 @@ class RomArea(object):
 	resets = attr(default=Factory(list), type=List[Reset])
 	specials = attr(default=Factory(list), type=List[Special])
 	shops = attr(default=Factory(list))
+	mobprogs = attr(default=Factory(OrderedDict))
 
 @attributes
 class MercRoom(Room):
