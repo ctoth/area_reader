@@ -101,14 +101,21 @@ def test_every_int_flag_type_jsonifies_zero(flag_type):
 	ids=lambda flag_type: flag_type.__name__,
 )
 def test_every_int_flag_type_jsonifies_named_combinations(flag_type):
-	members = list(flag_type)
-	if len(members) < 2:
-		pytest.skip("flag type has fewer than two iterable members")
-	value = members[0] | members[1]
+	bits = sorted(
+		{
+			member.value: member
+			for member in flag_type.__members__.values()
+			if member.value and not member.value & (member.value - 1)
+		}.values(),
+		key=lambda member: member.value,
+	)
+	if len(bits) < 2:
+		pytest.skip("flag type has fewer than two single-bit members")
+	value = bits[0] | bits[1]
 
 	result = area_reader.EnumNameConverter().unstructure(value)
 
-	assert result == f"{flag_type.__name__}.{value.name}"
+	assert result == f"{flag_type.__name__}.{bits[0].name}|{bits[1].name}"
 	assert json.loads(json.dumps(result)) == result
 
 
