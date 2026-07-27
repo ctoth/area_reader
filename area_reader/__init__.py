@@ -761,9 +761,15 @@ class Dice(object):
 		return cls(number=number, sides=sides, bonus=bonus, **kwargs)
 
 	def roll(self):
+		# ROM's dice() (src/db.c) returns 0 for size 0, and its
+		# number_range() clamps a degenerate range to the low bound,
+		# so negative sides roll 1 per die.
+		if self.sides == 0:
+			return self.bonus
 		score = 0
+		sides = max(self.sides, 1)
 		for roll in range(self.number):
-			score += random.randrange(1, self.sides + 1)
+			score += random.randrange(1, sides + 1)
 		score += self.bonus
 		return score
 
