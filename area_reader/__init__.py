@@ -630,7 +630,7 @@ class Item(MudBase):
 
 @attributes
 class MercAffectData(object):
-	type = attr(default=--1)
+	type = attr(default=-1)
 	duration = attr(default=-1)
 	location = field(default=-1, native=NativeField(1, native_number, prefix='A\n'))
 	modifier = field(default=-1, native=NativeField(2, native_number))
