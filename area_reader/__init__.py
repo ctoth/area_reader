@@ -430,7 +430,7 @@ class Item(MudBase):
 
 @attributes
 class MercAffectData(object):
-	type = attr(default=--1)
+	type = attr(default=-1)
 	duration = attr(default=-1)
 	location = attr(default=-1)
 	modifier = attr(default=-1)
