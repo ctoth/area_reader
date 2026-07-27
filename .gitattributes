@@ -1,0 +1,5 @@
+# All text files are stored and checked out with LF endings.
+* text=auto eol=lf
+
+# MUD area fixtures are byte-exact test data; never touch their endings.
+*.are -text
