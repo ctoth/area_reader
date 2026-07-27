@@ -3901,7 +3901,25 @@ class EnumNameConverter(converters.Converter):
 		)
 
 	def _unstructure_enum(self, obj):
-		name = obj.name if obj.name is not None else str(obj.value)
+		# Composite Flag values have no .name before Python 3.11; decompose
+		# into single-bit member names in ascending bit order, matching the
+		# names 3.11+ produces, so JSON output is identical on every version.
+		name = obj.name
+		if name is None and isinstance(obj, enum.Flag):
+			bits = {
+				member.value: member.name
+				for member in type(obj).__members__.values()
+				if member.value and not member.value & (member.value - 1)
+			}
+			names = [bits[bit] for bit in sorted(bits) if obj.value & bit]
+			covered = 0
+			for bit in bits:
+				if obj.value & bit:
+					covered |= bit
+			if names and covered == obj.value:
+				name = "|".join(names)
+		if name is None:
+			name = str(obj.value)
 		return obj.__class__.__name__ + "." + name
 
 

@@ -96,6 +96,8 @@ def test_swr_write_uses_the_canonical_rendering(tmp_path: Path) -> None:
 
 
 def test_fuss_fields_are_editable_declaratively(tmp_path: Path) -> None:
+	if not swr_paths():
+		pytest.skip("upstream SWR/FUSS corpus is unavailable")
 	source = load_swr(UPSTREAM_SWR / "area" / "kashyyyk")
 	mob = next(iter(source.area.mobs.values()))
 	room = next(iter(source.area.rooms.values()))
