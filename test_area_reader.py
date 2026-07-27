@@ -39,6 +39,22 @@ def test_dice_roll_negative_sides_rolls_one_per_die():
 	assert area_reader.Dice(number=3, sides=-4, bonus=2).roll() == 5
 
 
+def test_forms_instant_decay_is_bit_d():
+	from area_reader.constants import FORMS
+
+	assert FORMS.INSTANT_DECAY.value == 8
+	assert FORMS(8) is FORMS.INSTANT_DECAY
+	assert FORMS(12) == FORMS.MAGICAL | FORMS.INSTANT_DECAY
+	assert FORMS.OTHER.value == 16
+
+
+def test_wear_location_wrist_l_named_with_alias():
+	from area_reader.constants import WEAR_LOCATIONS
+
+	assert WEAR_LOCATIONS(14) is WEAR_LOCATIONS.WRIST_L
+	assert WEAR_LOCATIONS.RIST_L is WEAR_LOCATIONS.WRIST_L
+
+
 reset_command = st.sampled_from(["M", "O", "P", "G", "E", "D", "R"])
 small_int = st.integers(min_value=0, max_value=9999)
 rom_source_dir = Path(r"C:\Users\Q\src\Rom24b6\area")

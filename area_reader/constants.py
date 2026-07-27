@@ -213,6 +213,7 @@ class FORMS(enum.IntFlag):
 	EDIBLE = BITFLAGS['A']
 	POISON = BITFLAGS['B']
 	MAGICAL = BITFLAGS['C']
+	INSTANT_DECAY = BITFLAGS['D']
 	OTHER = BITFLAGS['E'] # defined by material bit
 	UNUSED1 = enum.auto()
 	# actual form
@@ -284,7 +285,8 @@ class WEAR_LOCATIONS(enum.Enum):
 	SHIELD = 11
 	ABOUT = 12
 	WAIST = 13
-	RIST_L = 14
+	WRIST_L = 14
+	RIST_L = 14  # deprecated alias for WRIST_L (historical typo)
 	WRIST_R = 15
 	WIELD = 16
 	HOLD = 17
