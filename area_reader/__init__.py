@@ -335,8 +335,10 @@ class AreaFile(object):
 				logger.info("Processing section %s" % section_name)
 				try:
 					readers[section_name]()
-				except Exception:
-					self.parse_fail("Error reading section %r" % section_name)
+				except ParseError:
+					raise
+				except Exception as error:
+					self.parse_fail("Error reading section %r: %r" % (section_name, error))
 
 	def load_mobprogs(self):
 		while True:
@@ -1944,8 +1946,10 @@ class SmaugAreaFile(RomAreaFile):
 				logger.info("Processing section %s" % section_name)
 				try:
 					reader()
-				except Exception:
-					self.parse_fail("Error reading section %r" % section_name)
+				except ParseError:
+					raise
+				except Exception as error:
+					self.parse_fail("Error reading section %r: %r" % (section_name, error))
 
 	def read_area_metadata(self):
 		self.area.name = self.read_string()
@@ -1999,7 +2003,7 @@ class SmaugAreaFile(RomAreaFile):
 				break
 			if self.current_char != '#':
 				self.parse_fail("Expected # got %s" % self.current_char)
-			next_char = self.data[self.index + 1]
+			next_char = self.data[self.index + 1:self.index + 2]
 			if not (next_char.isdigit() or next_char == '-'):
 				break
 			vnum = self.read_vnum()
@@ -2098,7 +2102,7 @@ class SwrAreaFile(SmaugAreaFile):
 				break
 			if self.current_char != '#':
 				self.parse_fail("Expected # got %s" % self.current_char)
-			next_char = self.data[self.index + 1]
+			next_char = self.data[self.index + 1:self.index + 2]
 			if not (next_char.isdigit() or next_char == '-'):
 				break
 			vnum = self.read_vnum()
@@ -2843,7 +2847,10 @@ class CircleAreaFile(object):
 			self.index += 1
 		if self.current_char == '~':
 			self.index += 1
-		return int(token)
+		try:
+			return int(token)
+		except ValueError:
+			self.parse_fail("Expected numeric record header, got %r" % token)
 
 	def read_int_list(self):
 		line = self.read_line().strip()
