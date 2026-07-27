@@ -29,6 +29,16 @@ def test_dice_roll_includes_the_maximum_face(monkeypatch):
 	assert area_reader.Dice(number=2, sides=1, bonus=3).roll() == 5
 
 
+def test_dice_roll_zero_sides_contributes_zero():
+	assert area_reader.Dice(number=2, sides=0, bonus=0).roll() == 0
+	assert area_reader.Dice(number=5, sides=0, bonus=7).roll() == 7
+	assert area_reader.Dice().roll() == 0
+
+
+def test_dice_roll_negative_sides_rolls_one_per_die():
+	assert area_reader.Dice(number=3, sides=-4, bonus=2).roll() == 5
+
+
 reset_command = st.sampled_from(["M", "O", "P", "G", "E", "D", "R"])
 small_int = st.integers(min_value=0, max_value=9999)
 rom_source_dir = Path(r"C:\Users\Q\src\Rom24b6\area")
