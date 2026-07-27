@@ -29,6 +29,12 @@ test = [
     "pytest-cov",
 ]
 
+[tool.ruff]
+line-length = 120
+
+[tool.ruff.format]
+line-ending = "lf"
+
 [tool.pytest.ini_options]
 addopts = "--cov=area_reader --cov-branch --cov-report=term-missing"
 
