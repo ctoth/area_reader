@@ -7,6 +7,7 @@ from hypothesis import given, settings
 from hypothesis import strategies as st
 
 import area_reader.dialects.merc
+import area_reader.dialects.smaug
 import area_reader.model
 
 
@@ -606,7 +607,7 @@ S
 		af.load_sections()
 
 		room = af.area.rooms[1]
-		assert isinstance(room, area_reader.SmaugRoom)
+		assert isinstance(room, area_reader.dialects.smaug.SmaugRoom)
 		assert room.sector_type == sector_type
 		assert room.tele_delay == tele_delay
 		assert room.tele_vnum == tele_vnum
@@ -646,7 +647,7 @@ An object is here.~
 		af.load_sections()
 
 		item = af.area.objects[1]
-		assert isinstance(item, area_reader.SmaugItem)
+		assert isinstance(item, area_reader.dialects.smaug.SmaugItem)
 		assert item.wear_flags == left_flag | right_flag
 		assert item.weight == weight
 		assert item.cost == cost

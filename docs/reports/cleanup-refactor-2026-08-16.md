@@ -199,3 +199,34 @@ Commit:
 
 Next slice:
 - SMAUG semantic owner, then SWR/FUSS semantic owner.
+
+## Iteration 6 - `SMAUG semantic owner`
+
+Slice read:
+- Former SMAUG model and codec definitions in `area_reader/__init__.py`
+- SMAUG writer, parser characterization, and JSONification callers
+
+Surfaces:
+- SMAUG semantic models and native codecs
+  - Disposition: move
+  - Owner after cleanup: `area_reader.dialects.smaug`
+  - Action: moved `SmaugArea`, `SmaugRoom`, `SmaugItem`, `SmaugMob`, `SmaugExit`, `SmaugRepair`, `SmaugMap`, `SmaugProgram`, and five SMAUG-native codecs with Rope.
+  - Evidence: the resulting owner imports Merc/ROM ancestry and common owners directly, with explicit constants and no package-root dependency.
+- JSONification attrs-class discovery
+  - Disposition: consolidate
+  - Owner after cleanup: the actual model and dialect modules under test.
+  - Action: added the SMAUG owner to the discovery module tuple.
+  - Evidence: the contract continues to collect `524 tests` after SMAUG classes leave the root.
+
+Gate results:
+- Pass: SMAUG owner import smoke -> `area_reader.dialects.smaug` for `SmaugArea` and `SmaugItem`.
+- Pass: locked SMAUG/parser/JSON/error tests -> `718 passed in 8.18s`.
+- Pass: Ruff on the changed owner and callers -> `All checks passed!`.
+- Pass: ownership search finds SMAUG semantic classes and codecs only in `area_reader.dialects.smaug`.
+- Pass: `git diff --check` -> no output.
+
+Commit:
+- `Extract SMAUG semantic models` (this iteration's commit).
+
+Next slice:
+- SWR/FUSS semantic owner.

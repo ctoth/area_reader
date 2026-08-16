@@ -7,6 +7,7 @@ from attr import fields, has
 
 import area_reader.dialects.merc
 import area_reader.dialects.rom
+import area_reader.dialects.smaug
 import area_reader.model
 import area_reader.serialization
 from area_reader import constants
@@ -52,6 +53,7 @@ def attrs_enum_fields():
             area_reader.model,
             area_reader.dialects.rom,
             area_reader.dialects.merc,
+            area_reader.dialects.smaug,
         )
         for value in vars(module).values()
         if isinstance(value, type) and has(value)
@@ -175,7 +177,7 @@ def test_enums_jsonify_recursively_in_mixed_containers_and_mapping_keys():
     assert json.loads(json.dumps(result)) == result
 
 
-@pytest.mark.parametrize("mob_type", [area_reader.dialects.merc.MercMob, area_reader.SmaugMob])
+@pytest.mark.parametrize("mob_type", [area_reader.dialects.merc.MercMob, area_reader.dialects.smaug.SmaugMob])
 def test_scalar_armor_class_jsonifies_through_its_attrs_model(mob_type):
     mob = mob_type(ac=-37)
 
@@ -186,11 +188,11 @@ def test_scalar_armor_class_jsonifies_through_its_attrs_model(mob_type):
 
 
 def test_smaug_area_uses_smaug_room_and_exit_json_shapes():
-    area = area_reader.SmaugArea(
+    area = area_reader.dialects.smaug.SmaugArea(
         rooms={
-            1: area_reader.SmaugRoom(
+            1: area_reader.dialects.smaug.SmaugRoom(
                 sector_type=7,
-                exits=[area_reader.SmaugExit(door=5)],
+                exits=[area_reader.dialects.smaug.SmaugExit(door=5)],
             ),
         },
     )
