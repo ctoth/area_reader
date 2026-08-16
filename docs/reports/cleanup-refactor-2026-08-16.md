@@ -230,3 +230,34 @@ Commit:
 
 Next slice:
 - SWR/FUSS semantic owner.
+
+## Iteration 7 - `SWR/FUSS semantic owner`
+
+Slice read:
+- Former SWR/FUSS model and codec definitions in `area_reader/__init__.py`
+- SWR writer/property/parser and JSONification callers
+
+Surfaces:
+- SWR/FUSS semantic models and native codecs
+  - Disposition: move
+  - Owner after cleanup: `area_reader.dialects.swr`
+  - Action: moved `SwrArea`, `SwrRoom`, `SwrObject`, `SwrMobile`, `SwrReset`, `SwrExit`, `SwrExtraDescription`, `SwrProgram`, `SwrUnknown`, and four SWR-native codecs with Rope.
+  - Evidence: the resulting owner imports ROM/SMAUG ancestry and common owners directly, with no package-root dependency.
+- JSONification attrs-class discovery
+  - Disposition: consolidate
+  - Owner after cleanup: the actual model and dialect modules under test.
+  - Action: added the SWR owner to the discovery module tuple.
+  - Evidence: the contract continues to collect `524 tests` after SWR classes leave the root.
+
+Gate results:
+- Pass: SWR owner import smoke -> `area_reader.dialects.swr` for `SwrArea` and `SwrObject`.
+- Pass: locked SWR/parser/JSON/error tests -> `728 passed in 9.37s`.
+- Pass: Ruff on the changed owner and callers -> `All checks passed!`.
+- Pass: ownership search finds SWR semantic classes and codecs only in `area_reader.dialects.swr`.
+- Pass: `git diff --check` -> no output.
+
+Commit:
+- `Extract SWR semantic models` (this iteration's commit).
+
+Next slice:
+- CircleMUD owner, then CoffeeMud XML owner.

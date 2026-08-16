@@ -5,6 +5,7 @@ from hypothesis import given, settings
 from hypothesis import strategies as st
 
 import area_reader.dialects.rom
+import area_reader.dialects.swr
 import area_reader.model
 
 small_stat = st.integers(min_value=-10_000, max_value=10_000)
@@ -114,11 +115,11 @@ Comlist say taken~
     assert item.level == (stats[3] if len(stats) > 3 else 0)
     assert item.layers == (stats[4] if len(stats) > 4 else 0)
     assert item.extra_descriptions == [
-        area_reader.SwrExtraDescription(
+        area_reader.dialects.swr.SwrExtraDescription(
             keyword="object detail",
             description="Generated detail text.",
             unknown=[
-                area_reader.SwrUnknown(
+                area_reader.dialects.swr.SwrUnknown(
                     key="UnknownExDesc",
                     value="ignored",
                     tilde=True,
@@ -170,7 +171,7 @@ Reset M 0 400 1 300
     assert room.tele_vnum == (stats[1] if len(stats) > 1 else 0)
     assert room.tunnel == (stats[2] if len(stats) > 2 else 0)
     assert room.exits == [
-        area_reader.SwrExit(
+        area_reader.dialects.swr.SwrExit(
             door="north",
             description="A northern exit.",
             keyword="gate",
@@ -179,7 +180,7 @@ Reset M 0 400 1 300
             distance=4,
             flags="isdoor",
             unknown=[
-                area_reader.SwrUnknown(
+                area_reader.dialects.swr.SwrUnknown(
                     key="UnknownExit",
                     value="ignored",
                     tilde=True,
@@ -188,7 +189,7 @@ Reset M 0 400 1 300
         ),
     ]
     assert room.extra_descriptions == [
-        area_reader.SwrExtraDescription(
+        area_reader.dialects.swr.SwrExtraDescription(
             keyword="mural",
             description="A generated mural.",
         ),

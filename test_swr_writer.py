@@ -3,6 +3,7 @@ from pathlib import Path
 import pytest
 
 import area_reader.dialects.rom
+import area_reader.dialects.swr
 from area_reader.native import NativeWriteError, render_record
 
 UPSTREAM_SWR = Path(r"C:\Users\Q\src\swrfuss")
@@ -55,10 +56,10 @@ def test_fuss_records_have_native_identities_and_non_vacuous_residuals() -> None
     ]
 
     assert areas
-    assert all(isinstance(area, area_reader.SwrArea) for area in areas)
-    assert all(isinstance(mob, area_reader.SwrMobile) for area in areas for mob in area.mobs.values())
-    assert all(isinstance(item, area_reader.SwrObject) for area in areas for item in area.objects.values())
-    assert all(isinstance(room, area_reader.SwrRoom) for area in areas for room in area.rooms.values())
+    assert all(isinstance(area, area_reader.dialects.swr.SwrArea) for area in areas)
+    assert all(isinstance(mob, area_reader.dialects.swr.SwrMobile) for area in areas for mob in area.mobs.values())
+    assert all(isinstance(item, area_reader.dialects.swr.SwrObject) for area in areas for item in area.objects.values())
+    assert all(isinstance(room, area_reader.dialects.swr.SwrRoom) for area in areas for room in area.rooms.values())
     assert any(mob.programs for area in areas for mob in area.mobs.values())
     assert any(mob.shop_data for area in areas for mob in area.mobs.values())
     assert any(item.unknown for area in areas for item in area.objects.values())
@@ -100,7 +101,7 @@ def test_fuss_fields_are_editable_declaratively(tmp_path: Path) -> None:
 
 
 def test_swr_mobile_rejects_non_uniform_armor_class() -> None:
-    mob = area_reader.SwrMobile(
+    mob = area_reader.dialects.swr.SwrMobile(
         ac=area_reader.dialects.rom.RomArmorClass(pierce=1, bash=2, slash=1, exotic=1),
     )
 
