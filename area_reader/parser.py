@@ -21,7 +21,6 @@ class ParseError(Exception):
 
 
 class AreaFile:
-    area_type = None
     MAX_TRADES = 5
 
     def __init__(self, filename):
@@ -30,7 +29,7 @@ class AreaFile:
             self.data = area_file.read()
         self.index = 0
         self.filename = filename
-        self.area = self.area_type() if self.area_type is not None else None
+        self.area = self.create_area()
         self.skipped_sections = []
         self.current_section_name = "N/A"
         self.readers = {
@@ -42,6 +41,9 @@ class AreaFile:
             area_reader.values.VNum: self.read_number,
             enum.IntFlag: self.read_flag,
         }
+
+    def create_area(self):
+        return None
 
     def read_letter(self):
         self.skip_whitespace()
@@ -191,8 +193,13 @@ class AreaFile:
     def read_object_by_fields(self, object_type, **kwargs):
         f = fields(object_type)
         read = {}
-        always_read = lambda context: True
-        unchanged = lambda value: value
+
+        def always_read(**_context):
+            return True
+
+        def unchanged(value):
+            return value
+
         for field in f:
             field_type = field.metadata.get("original_type", field.type)
             if field.metadata.get("read") == False:

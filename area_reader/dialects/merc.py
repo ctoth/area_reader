@@ -2,12 +2,15 @@
 
 import logging
 from collections import OrderedDict
+from operator import setitem
 
 from attr import Factory, attr, attributes
 
 import area_reader.dialects.rom
 import area_reader.model
+import area_reader.parser
 import area_reader.schema
+import area_reader.serialization
 import area_reader.values
 from area_reader.constants import (
     AFFECTED_BY,
@@ -20,12 +23,44 @@ from area_reader.constants import (
     PARTS,
     WEAR_FLAGS,
 )
-from area_reader.native import NativeField, NativeSection, NativeWriteError
+from area_reader.native import NativeField, NativeSection, NativeWriteError, render_document
 from area_reader.native import flag as native_flag
 from area_reader.native import nested as native_nested
 from area_reader.native import number as native_number
 from area_reader.native import records as native_records
 from area_reader.native import tilde_string as native_tilde_string
+
+
+class MercAreaFile(area_reader.parser.AreaFile):
+    def create_area(self):
+        return MercArea()
+
+    def dumps(self):
+        return render_document(self.area, self.area.NATIVE_SECTIONS, self.skipped_sections)
+
+    def write(self, path):
+        with open(path, mode="wt", encoding="latin-1", newline="\n") as area_file:
+            area_file.write(self.dumps())
+
+    def load_mobiles(self):
+        for mob in self.load_vnum_section(MercMob):
+            setitem(self.area.mobs, mob.vnum, mob)
+
+    def load_objects(self):
+        for item in self.load_vnum_section(MercItem):
+            setitem(self.area.objects, item.vnum, item)
+
+    def load_rooms(self):
+        for room in self.load_vnum_section(MercRoom):
+            setitem(self.area.rooms, room.vnum, room)
+
+    def load_resets(self):
+        for reset in self.read_flat_section(MercReset):
+            self.area.resets.append(reset)
+
+    def read_area_metadata(self):
+        self.area.metadata = self.read_string()
+
 
 logger = logging.getLogger("area_reader")
 

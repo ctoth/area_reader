@@ -1,6 +1,7 @@
 """SWR/FUSS area models, codecs, and reader."""
 
 from collections import OrderedDict
+from operator import setitem
 
 from attr import Factory, attr, attributes
 
@@ -8,13 +9,388 @@ import area_reader.dialects.rom
 import area_reader.dialects.smaug
 import area_reader.model
 import area_reader.schema
+import area_reader.serialization
 import area_reader.values
-from area_reader.native import NativeField, NativeSection, NativeWriteError
+from area_reader.native import NativeField, NativeSection, NativeWriteError, render_document
 from area_reader.native import number as native_number
 from area_reader.native import raw as native_raw
 from area_reader.native import records as native_records
 from area_reader.native import tilde_string as native_tilde_string
 from area_reader.native import word as native_word
+
+
+class SwrAreaFile(area_reader.dialects.smaug.SmaugAreaFile):
+    def create_area(self):
+        return SwrArea()
+
+    def __init__(self, filename):
+        super().__init__(filename)
+        if not self.data.lstrip().startswith("#FUSSAREA"):
+            self.area = area_reader.dialects.smaug.SmaugArea()
+
+    def dumps(self):
+        return render_document(self.area, self.area.NATIVE_SECTIONS, self.skipped_sections)
+
+    def write(self, path):
+        with open(path, mode="wt", encoding="latin-1", newline="\n") as area_file:
+            area_file.write(self.dumps())
+
+    def load_sections(self):
+        self.skip_whitespace()
+        if self.data.startswith("#FUSSAREA", self.index):
+            self.read_section_name()
+            self.load_fuss_area()
+            return
+        if self.current_char == "#":
+            start = self.index
+            self.advance()
+            word = self.read_word()
+            self.index = start
+            if word.isdigit():
+                for mob in self.load_smaug_vnum_section(area_reader.dialects.smaug.SmaugMob):
+                    setitem(self.area.mobs, mob.vnum, mob)
+                return
+        super().load_sections()
+
+    def load_mobiles(self):
+        for mob in self.load_swr_vnum_section(area_reader.dialects.smaug.SmaugMob):
+            setitem(self.area.mobs, mob.vnum, mob)
+
+    def load_objects(self):
+        for item in self.load_swr_vnum_section(area_reader.dialects.smaug.SmaugItem):
+            setitem(self.area.objects, item.vnum, item)
+
+    def load_rooms(self):
+        for room in self.load_swr_vnum_section(area_reader.dialects.smaug.SmaugRoom):
+            setitem(self.area.rooms, room.vnum, room)
+
+    def load_swr_vnum_section(self, section_object_type):
+        while True:
+            self.skip_whitespace()
+            if self.index >= len(self.data):
+                break
+            if self.current_char != "#":
+                self.parse_fail(f"Expected # got {self.current_char}")
+            next_char = self.data[self.index + 1 : self.index + 2]
+            if not (next_char.isdigit() or next_char == "-"):
+                break
+            vnum = self.read_vnum()
+            self.skip_whitespace()
+            if vnum == 0 and (self.index >= len(self.data) or self.current_char == "#"):
+                break
+            yield self.read_object(section_object_type, vnum=vnum)
+
+    def load_fuss_area(self):
+        while True:
+            self.skip_whitespace()
+            if self.index >= len(self.data):
+                return
+            section_name = self.read_section_name()
+            self.current_section_name = section_name
+            if section_name == "areadata":
+                self.load_fuss_areadata()
+            elif section_name == "mobile":
+                mob = self.read_fuss_mobile()
+                setitem(self.area.mobs, mob.vnum, mob)
+            elif section_name == "object":
+                item = self.read_fuss_object()
+                setitem(self.area.objects, item.vnum, item)
+            elif section_name == "room":
+                room = self.read_fuss_room()
+                setitem(self.area.rooms, room.vnum, room)
+                self.area.resets.extend(room.resets)
+            elif section_name == "endarea":
+                return
+            else:
+                self.skip_fuss_value()
+
+    def read_fuss_unknown(self, key):
+        line_end = self.data.find("\n", self.index)
+        if line_end == -1:
+            line_end = len(self.data)
+        if "~" in self.data[self.index : line_end]:
+            return SwrUnknown(key=key, value=self.read_string(), tilde=True)
+        return SwrUnknown(key=key, value=self.read_to_eol().strip(), tilde=False)
+
+    def skip_fuss_value(self):
+        return self.read_fuss_unknown("")
+
+    def read_fuss_numbers(self):
+        return [int(value) for value in self.read_to_eol().split()]
+
+    def read_fuss_program(self):
+        program = SwrProgram()
+        while True:
+            word = self.read_word()
+            if word == "#ENDPROG":
+                return program
+            if word == "Progtype":
+                program.progtype = self.read_string()
+            elif word == "Arglist":
+                program.argument = self.read_string()
+            elif word == "Comlist":
+                program.commands = self.read_string()
+            else:
+                program.unknown.append(self.read_fuss_unknown(word))
+
+    def load_fuss_areadata(self):
+        while True:
+            word = self.read_word()
+            if word == "#ENDAREADATA":
+                return
+            if word == "Author":
+                self.area.author = self.read_string()
+            elif word == "Economy":
+                self.area.high_economy = self.read_number()
+                self.area.low_economy = self.read_number()
+            elif word == "Flags":
+                self.area.flags = self.read_string()
+            elif word == "Name":
+                self.area.name = self.read_string()
+            elif word == "Ranges":
+                values = self.read_fuss_numbers()
+                if len(values) >= 4:
+                    self.area.low_soft_range = values[0]
+                    self.area.high_soft_range = values[1]
+                    self.area.low_hard_range = values[2]
+                    self.area.high_hard_range = values[3]
+            elif word == "ResetMsg":
+                self.area.resetmsg = self.read_string()
+            elif word == "ResetFreq":
+                self.area.reset_frequency = self.read_number()
+            elif word == "Version":
+                self.area.version = self.read_number()
+            else:
+                self.area.unknown.append(self.read_fuss_unknown(word))
+
+    def read_fuss_mobile(self):
+        mob = SwrMobile()
+        while True:
+            word = self.read_word()
+            if word == "#ENDMOBILE":
+                break
+            if word == "#MUDPROG":
+                mob.programs.append(self.read_fuss_program())
+            elif word == "Vnum":
+                mob.vnum = self.read_number()
+            elif word == "Keywords":
+                mob.name = self.read_string()
+            elif word == "Short":
+                mob.short_desc = self.read_string()
+            elif word == "Long":
+                mob.long_desc = self.read_string()
+            elif word == "Desc":
+                mob.description = self.read_string()
+            elif word == "Race":
+                mob.race = self.read_string()
+            elif word == "Position":
+                mob.position = self.read_string()
+            elif word == "DefPos":
+                mob.default_position = self.read_string()
+            elif word == "Gender":
+                mob.gender = self.read_string()
+            elif word == "Stats1":
+                mob.stats1 = self.read_fuss_numbers()
+            elif word == "Stats2":
+                mob.stats2 = self.read_fuss_numbers()
+            elif word == "Stats3":
+                mob.stats3 = self.read_fuss_numbers()
+            elif word == "Stats4":
+                mob.stats4 = self.read_fuss_numbers()
+            elif word == "Attribs":
+                mob.attribs = self.read_fuss_numbers()
+            elif word == "Saves":
+                mob.saves = self.read_fuss_numbers()
+            elif word == "ShopData":
+                mob.shop_data = self.read_fuss_numbers()
+            elif word == "RepairData":
+                mob.repair_data = self.read_fuss_numbers()
+            elif word in (
+                "Specfun",
+                "Specfun2",
+                "Actflags",
+                "Affected",
+                "Speaks",
+                "Speaking",
+                "Bodyparts",
+                "Resist",
+                "Immune",
+                "Suscept",
+                "Attacks",
+                "Defenses",
+                "VIPFlags",
+            ):
+                attribute = {
+                    "Specfun": "specfun",
+                    "Specfun2": "specfun2",
+                    "Actflags": "actflags",
+                    "Affected": "affected",
+                    "Speaks": "speaks",
+                    "Speaking": "speaking",
+                    "Bodyparts": "bodyparts",
+                    "Resist": "resist",
+                    "Immune": "immune",
+                    "Suscept": "suscept",
+                    "Attacks": "attacks",
+                    "Defenses": "defenses",
+                    "VIPFlags": "vip_flags",
+                }[word]
+                setattr(mob, attribute, self.read_string())
+            else:
+                mob.unknown.append(self.read_fuss_unknown(word))
+        stats1 = list(mob.stats1)
+        stats2 = list(mob.stats2)
+        stats3 = list(mob.stats3)
+        stats4 = list(mob.stats4)
+        while len(stats1) < 6:
+            stats1.append(0)
+        while len(stats2) < 3:
+            stats2.append(0)
+        while len(stats3) < 3:
+            stats3.append(0)
+        while len(stats4) < 5:
+            stats4.append(0)
+        mob.alignment = stats1[0]
+        mob.level = stats1[1]
+        mob.thac0 = stats1[2]
+        mob.ac = area_reader.dialects.rom.RomArmorClass(
+            pierce=stats1[3], bash=stats1[3], slash=stats1[3], exotic=stats1[3]
+        )
+        mob.wealth = stats1[4]
+        mob.experience = stats1[5]
+        mob.hit = area_reader.model.Dice(number=stats2[0], sides=stats2[1], bonus=stats2[2])
+        mob.damage = area_reader.model.Dice(number=stats3[0], sides=stats3[1], bonus=stats3[2])
+        mob.height = stats4[0]
+        mob.weight = stats4[1]
+        mob.numattacks = stats4[2]
+        mob.hitroll = stats4[3]
+        mob.damroll = stats4[4]
+        mob.start_pos = mob.position
+        mob.default_pos = mob.default_position
+        mob.sex = mob.gender
+        return mob
+
+    def read_fuss_object(self):
+        item = SwrObject()
+        while True:
+            word = self.read_word()
+            if word == "#ENDOBJECT":
+                break
+            if word == "#EXDESC":
+                item.extra_descriptions.append(self.read_fuss_extra_description())
+            elif word == "#MUDPROG":
+                item.programs.append(self.read_fuss_program())
+            elif word == "Vnum":
+                item.vnum = self.read_number()
+            elif word == "Keywords":
+                item.name = self.read_string()
+            elif word == "Short":
+                item.short_desc = self.read_string()
+            elif word == "Long":
+                item.description = self.read_string()
+            elif word == "Type":
+                item.type_name = self.read_string()
+            elif word == "Action":
+                item.action_description = self.read_string()
+            elif word == "Flags":
+                item.flags = self.read_string()
+            elif word == "WFlags":
+                item.wflags = self.read_string()
+            elif word == "Values":
+                item.value = self.read_fuss_numbers()
+            elif word == "Stats":
+                item.stats = self.read_fuss_numbers()
+            elif word == "Spells":
+                item.spells = self.read_to_eol().strip()
+            else:
+                item.unknown.append(self.read_fuss_unknown(word))
+        if len(item.stats) > 0:
+            item.weight = item.stats[0]
+        if len(item.stats) > 1:
+            item.cost = item.stats[1]
+        if len(item.stats) > 2:
+            item.rent = item.stats[2]
+        if len(item.stats) > 3:
+            item.level = item.stats[3]
+        if len(item.stats) > 4:
+            item.layers = item.stats[4]
+        return item
+
+    def read_fuss_room(self):
+        room = SwrRoom()
+        while True:
+            word = self.read_word()
+            if word == "#ENDROOM":
+                break
+            if word == "#EXIT":
+                room.exits.append(self.read_fuss_exit())
+            elif word == "#EXDESC":
+                room.extra_descriptions.append(self.read_fuss_extra_description())
+            elif word == "#MUDPROG":
+                room.programs.append(self.read_fuss_program())
+            elif word == "Vnum":
+                room.vnum = self.read_number()
+            elif word == "Name":
+                room.name = self.read_string()
+            elif word == "Desc":
+                room.description = self.read_string()
+            elif word == "Sector":
+                room.sector = self.read_string()
+            elif word == "Stats":
+                room.stats = self.read_fuss_numbers()
+            elif word == "Reset":
+                letter = self.read_letter()
+                room.resets.append(SwrReset.read(reader=self, letter=letter))
+            elif word == "Flags":
+                room.flags = self.read_string()
+            else:
+                room.unknown.append(self.read_fuss_unknown(word))
+        if len(room.stats) > 0:
+            room.tele_delay = room.stats[0]
+        if len(room.stats) > 1:
+            room.tele_vnum = room.stats[1]
+        if len(room.stats) > 2:
+            room.tunnel = room.stats[2]
+        return room
+
+    def read_fuss_exit(self):
+        exit = SwrExit()
+        while True:
+            word = self.read_word()
+            if word == "#ENDEXIT":
+                return exit
+            if word == "Desc":
+                exit.description = self.read_string()
+            elif word == "Direction":
+                exit.door = self.read_string()
+            elif word == "Distance":
+                exit.distance = self.read_number()
+            elif word == "Key":
+                exit.key = self.read_number()
+            elif word == "Keywords":
+                exit.keyword = self.read_string()
+            elif word == "ToRoom":
+                exit.destination = self.read_number()
+            elif word == "Flags":
+                exit.flags = self.read_string()
+            else:
+                exit.unknown.append(self.read_fuss_unknown(word))
+
+    def read_fuss_extra_description(self):
+        extra = SwrExtraDescription()
+        while True:
+            word = self.read_word()
+            if word == "#ENDEXDESC":
+                return extra
+            if word == "ExDescKey":
+                extra.keyword = self.read_string()
+            elif word == "ExDesc":
+                extra.description = self.read_string()
+            else:
+                extra.unknown.append(self.read_fuss_unknown(word))
+
+    def skip_fuss_program(self):
+        self.read_fuss_program()
 
 
 def native_swr_unknown_value(value, owner):

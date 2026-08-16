@@ -20,13 +20,13 @@ def swr_paths() -> tuple[Path, ...]:
     )
 
 
-def load_swr(path: Path) -> area_reader.SwrAreaFile:
-    area_file = area_reader.SwrAreaFile(path)
+def load_swr(path: Path) -> area_reader.dialects.swr.SwrAreaFile:
+    area_file = area_reader.dialects.swr.SwrAreaFile(path)
     area_file.load_sections()
     return area_file
 
 
-def parse_rendered_swr(tmp_path: Path, text: str) -> area_reader.SwrAreaFile:
+def parse_rendered_swr(tmp_path: Path, text: str) -> area_reader.dialects.swr.SwrAreaFile:
     path = tmp_path / "rendered.are"
     path.write_text(text, encoding="latin-1")
     return load_swr(path)

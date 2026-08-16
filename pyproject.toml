@@ -20,7 +20,7 @@ Homepage = "https://github.com/ctoth/area_reader"
 Repository = "https://github.com/ctoth/area_reader"
 
 [project.scripts]
-area-reader = "area_reader:main"
+area-reader = "area_reader.cli:main"
 
 [project.optional-dependencies]
 test = [
@@ -34,6 +34,9 @@ line-length = 120
 
 [tool.ruff.format]
 line-ending = "lf"
+
+[tool.ruff.lint.per-file-ignores]
+"area_reader/constants.py" = ["PIE796"]
 
 [tool.pytest.ini_options]
 addopts = "--cov=area_reader --cov-branch --cov-report=term-missing"
@@ -50,6 +53,23 @@ packages = ["area_reader"]
 
 [tool.hatch.build.targets.sdist]
 include = ["area_reader", "README.md", "test", "conftest.py"]
+
+[tool.importlinter]
+root_packages = ["area_reader"]
+
+[[tool.importlinter.contracts]]
+name = "Shared foundations do not depend on dialects"
+type = "forbidden"
+source_modules = [
+    "area_reader.constants",
+    "area_reader.model",
+    "area_reader.native",
+    "area_reader.parser",
+    "area_reader.schema",
+    "area_reader.serialization",
+    "area_reader.values",
+]
+forbidden_modules = ["area_reader.dialects"]
 
 [dependency-groups]
 refactor = [

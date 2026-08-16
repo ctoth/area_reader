@@ -21,8 +21,7 @@ def symbol_offset(source: Path, symbol: str) -> int:
         (
             candidate
             for candidate in tree.body
-            if isinstance(candidate, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef))
-            and candidate.name == symbol
+            if isinstance(candidate, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)) and candidate.name == symbol
         ),
         None,
     )

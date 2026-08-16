@@ -5,19 +5,20 @@ import pytest
 import area_reader.dialects.rom
 import area_reader.model
 import area_reader.parser
+from area_reader import constants
 from area_reader.native import NativeWriteError, render_record
 
 ROM_CORPUS = tuple(sorted(Path("test/rom").glob("*.are")))
 UPSTREAM_ROM_CORPUS = Path(r"C:\Users\Q\src\Rom24b6\area")
 
 
-def load_rom(path: Path) -> area_reader.RomAreaFile:
-    area_file = area_reader.RomAreaFile(path)
+def load_rom(path: Path) -> area_reader.dialects.rom.RomAreaFile:
+    area_file = area_reader.dialects.rom.RomAreaFile(path)
     area_file.load_sections()
     return area_file
 
 
-def parse_rendered_rom(tmp_path: Path, text: str) -> area_reader.RomAreaFile:
+def parse_rendered_rom(tmp_path: Path, text: str) -> area_reader.dialects.rom.RomAreaFile:
     path = tmp_path / "rendered.are"
     path.write_text(text, encoding="latin-1")
     return load_rom(path)
@@ -199,7 +200,7 @@ def test_rom_mobprog_annotations_are_bidirectional(tmp_path: Path) -> None:
     [
         area_reader.dialects.rom.RomItem(item_type="trash", value=[0, 0, 0, 0, 0], condition=57),
         area_reader.dialects.rom.RomArmorClass(pierce=7, bash=0, slash=0, exotic=0),
-        area_reader.model.Exit(door=0, exit_info=area_reader.EXIT_FLAGS.CLOSED),
+        area_reader.model.Exit(door=0, exit_info=constants.EXIT_FLAGS.CLOSED),
     ],
 )
 def test_rom_annotations_reject_unrepresentable_models(record: object) -> None:

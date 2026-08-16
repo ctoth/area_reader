@@ -356,3 +356,91 @@ Commit:
 
 Next slice:
 - Move all six reader classes to their dialect owners.
+
+## Iteration 11 - `dialect readers, CLI, and package surface`
+
+Slice read:
+- Six reader classes remaining in `area_reader/__init__.py`
+- `print_area`, `main`, console entry point, and accidental root constant/native callers
+
+Surfaces:
+- Dialect readers
+  - Disposition: move
+  - Owner after cleanup: their corresponding `area_reader.dialects.*` modules.
+  - Action: moved all six reader classes with Rope and replaced transitional package-root/wildcard imports with direct parser, model, native, serialization, and ancestry imports.
+  - Evidence: all reader `__module__` values identify their dialect owners; production root/wildcard dependency searches return zero matches.
+- Area model construction
+  - Disposition: rewrite
+  - Owner after cleanup: each dialect reader's `create_area()` override.
+  - Action: replaced forward class-body references with runtime model construction methods.
+  - Evidence: readers may remain before their models in Rope-generated files without undefined-name imports or a shared-parser dialect dependency.
+- Package and command-line surfaces
+  - Disposition: consolidate
+  - Owner after cleanup: reader-only `area_reader.__init__` and `area_reader.cli`.
+  - Action: reduced `__init__.py` to explicit reader imports/`__all__`, moved CLI functions with Rope, and changed the console target to `area_reader.cli:main`.
+  - Evidence: `init_lines=17`, `init_defs=0`, CLI smoke prints `cli_area_name=In the Air`.
+- Import architecture
+  - Disposition: enforce
+  - Owner after cleanup: Import Linter configuration in `pyproject.toml`.
+  - Action: forbade constants/model/native/parser/schema/serialization/values from importing dialects.
+  - Evidence: `Contracts: 1 kept, 0 broken` across 16 files and 59 dependencies.
+- Accidental root constants/native helpers
+  - Disposition: delete
+  - Owner after cleanup: `area_reader.constants` and `area_reader.native`.
+  - Action: changed tests to use real owners and did not restore aliases.
+
+Gate results:
+- Pass: locked complete no-coverage suite -> `950 passed in 22.75s` before adding CLI characterization.
+- Pass: exact configured coverage suite -> `950 passed in 71.92s`, total coverage `93%` before CLI characterization.
+- Pass: CLI characterization -> `3 passed in 0.41s`.
+- Pass: final exact configured suite with CLI characterization -> `953 passed in 81.87s`, total coverage `94%`.
+- Pass: global Ruff -> `All checks passed!`.
+- Pass: Vulture at 90% confidence -> no output.
+- Pass: Import Linter -> `Contracts: 1 kept, 0 broken`.
+- Pass: structural searches -> `init_defs=0`, `production_wildcards=0`, `production_root_imports=0`.
+- Pass: `uv lock --check` -> `Resolved 27 packages in 1ms`.
+
+Commit:
+- `Move readers and CLI to explicit owners` (this iteration's commit).
+
+Next slice:
+- Final configured suite, build, writer-oracle availability checks, and fixed-point audit.
+
+## Iteration 12 - `final fixed point`
+
+Runtime oracle results:
+- Pass: ROM accepted canonical `test/rom/air.are` and remained live through the boot window.
+- Pass: Merc accepted canonical `test/merc/air.are` and remained live through the boot window.
+- Not run: SMAUG upstream `C:/Users/Q/src/smaugfuss` is unavailable.
+- Pass: SWR/FUSS accepted canonical upstream `area/limbo.are` and remained live through the boot window.
+- Pass: CircleMUD accepted the canonical indexed world and remained live through the boot window.
+- Pass: CoffeeMud canonical catalogs match their original loader baselines across six catalog families.
+
+Final gates:
+- Pass: exact configured suite -> `953 passed in 81.87s`, total coverage `94%`.
+- Pass: CLI module coverage -> `100%`.
+- Pass: root surface -> `17` lines, `0` definitions, `0` production wildcard imports, `0` production root imports.
+- Pass: console smoke -> `cli_area_name=In the Air`.
+- Pass: `uv lock --check` -> `Resolved 27 packages in 1ms`.
+
+Distribution gates:
+- Pass: `uv build` produced `area_reader-0.1.0.tar.gz` and `area_reader-0.1.0-py3-none-any.whl`.
+- Pass: wheel inspection -> `wheel_required_modules_missing=0`.
+- Pass: wheel console metadata -> `area-reader = area_reader.cli:main`.
+
+Remaining gates before retention:
+- None.
+
+Final fixed-point results:
+- Pass: global Ruff -> `All checks passed!`.
+- Pass: Vulture at 90% confidence -> `vulture_findings=0`.
+- Pass: Import Linter -> `Contracts: 1 kept, 0 broken` across 16 files and 59 dependencies.
+- Pass: bytecode compilation -> no output.
+- Pass: structural searches -> `init_defs=0 production_wildcards=0 production_root_imports=0`.
+- Pass: `git diff --check` -> no output.
+
+Fixed point:
+- Every production definition has one real owner.
+- Shared foundations cannot depend on dialects.
+- The root contains reader exports only.
+- No compatibility modules, forwarding wrappers, aliases, or duplicate model/parser paths were added.

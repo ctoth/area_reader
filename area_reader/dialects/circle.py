@@ -1,13 +1,17 @@
 """CircleMUD area models, codecs, and reader."""
 
 import enum
+import json
+import os
 from collections import OrderedDict
 
 from attr import Factory, attr, attributes
 
 import area_reader.dialects.rom
 import area_reader.model
+import area_reader.parser
 import area_reader.schema
+import area_reader.serialization
 import area_reader.values
 from area_reader.constants import EXIT_FLAGS, WEAR_FLAGS
 from area_reader.native import NativeField, NativeWriteError, render_record
@@ -15,6 +19,453 @@ from area_reader.native import flag as native_flag
 from area_reader.native import number as native_number
 from area_reader.native import records as native_records
 from area_reader.native import tilde_string as native_tilde_string
+
+
+class CircleAreaFile:
+    NATIVE_NORMALIZATIONS = (
+        "comments",
+        "whitespace-and-line-endings",
+        "numeric-versus-alphabetic-flags",
+        "room-and-object-metadata-order",
+        "optional-second-shop-window",
+        "dice-zero-bonus-spelling",
+    )
+
+    def __init__(self, root):
+        self.root = os.fspath(root)
+        self.world_root = self.root
+        if not os.path.exists(os.path.join(self.world_root, "zon", "index")):
+            self.world_root = os.path.join(self.root, "lib", "world")
+        self.area = CircleArea()
+        self.filename = ""
+        self.data = ""
+        self.index = 0
+
+    def dumps(self):
+        tree = OrderedDict()
+        for family, collection_name, file_end in self.area.NATIVE_COLLECTIONS:
+            names = self.area.indexes.get(family, [])
+            tree[f"{family}/index"] = "".join(f"{name}\n" for name in names) + "$\n"
+            records = getattr(self.area, collection_name).values()
+            for record in records:
+                if not record.source_file:
+                    raise NativeWriteError(f"{record.__class__.__name__} {record.vnum!r} has no indexed source file")
+                if record.source_file not in names:
+                    raise NativeWriteError(f"{record.source_file} is not present in the {family} index")
+            for name in names:
+                prefix = ""
+                if family == "shp":
+                    try:
+                        prefix = native_tilde_string(self.area.shop_headers[name], None) + "\n"
+                    except KeyError:
+                        raise NativeWriteError(f"Shop file {name} has no version header")
+                body = "".join(render_record(record) for record in records if record.source_file == name)
+                tree[f"{family}/{name}"] = prefix + body + file_end
+        return tree
+
+    def write(self, root):
+        root = os.fspath(root)
+        world_root = root if os.path.basename(root) == "world" else os.path.join(root, "lib", "world")
+        for relative_path, text in self.dumps().items():
+            path = os.path.join(world_root, *relative_path.split("/"))
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, mode="wt", encoding="latin-1", newline="\n") as circle_file:
+                circle_file.write(text)
+
+    def load_sections(self):
+        self.load_zones()
+        self.load_rooms()
+        self.load_mobiles()
+        self.load_objects()
+        self.load_shops()
+
+    def load_zones(self):
+        for path in self.indexed_paths("zon"):
+            self.load_zone_file(path)
+
+    def load_rooms(self):
+        for path in self.indexed_paths("wld"):
+            self.load_room_file(path)
+
+    def load_mobiles(self):
+        for path in self.indexed_paths("mob"):
+            self.load_mobile_file(path)
+
+    def load_objects(self):
+        for path in self.indexed_paths("obj"):
+            self.load_object_file(path)
+
+    def load_shops(self):
+        for path in self.indexed_paths("shp"):
+            self.load_shop_file(path)
+
+    def indexed_paths(self, family):
+        index_path = os.path.join(self.world_root, family, "index")
+        if not os.path.exists(index_path):
+            self.area.indexes[family] = []
+            return []
+        base = os.path.dirname(index_path)
+        with open(index_path, mode="rt", encoding="latin-1") as index_file:
+            names = [line.strip() for line in index_file]
+        names = [name for name in names if name and name != "$"]
+        self.area.indexes[family] = names
+        return [os.path.join(base, name) for name in names]
+
+    def open_circle_file(self, filename):
+        self.filename = filename
+        with open(filename, mode="rt", encoding="latin-1") as circle_file:
+            self.data = circle_file.read()
+        self.index = 0
+
+    @property
+    def current_char(self):
+        if self.index >= len(self.data):
+            return "\0"
+        return self.data[self.index]
+
+    def skip_whitespace(self):
+        while self.index < len(self.data) and self.current_char.isspace():
+            self.index += 1
+
+    def read_line(self):
+        while self.current_char in ("\r", "\n"):
+            self.index += 1
+        if self.index >= len(self.data):
+            return ""
+        end = self.data.find("\n", self.index)
+        if end == -1:
+            line = self.data[self.index :]
+            self.index = len(self.data)
+        else:
+            line = self.data[self.index : end]
+            self.index = end + 1
+        return line.rstrip("\r")
+
+    def read_string(self):
+        self.skip_whitespace()
+        end = self.data.find("~", self.index)
+        if end == -1:
+            self.parse_fail("Unterminated string")
+        result = self.data[self.index : end]
+        self.index = end + 1
+        return result
+
+    def read_record_header(self):
+        self.skip_whitespace()
+        if self.current_char == "$":
+            return None
+        if self.current_char != "#":
+            self.parse_fail("Expected record header")
+        self.index += 1
+        token = ""
+        while self.current_char not in ("\0", "\n", "\r", "~") and not self.current_char.isspace():
+            token += self.current_char
+            self.index += 1
+        if self.current_char == "~":
+            self.index += 1
+        try:
+            return int(token)
+        except ValueError:
+            self.parse_fail(f"Expected numeric record header, got {token!r}")
+
+    def read_int_list(self):
+        line = self.read_line().strip()
+        if not line:
+            return []
+        return [int(value) for value in line.split()]
+
+    def read_tilde_or_line(self):
+        self.skip_whitespace()
+        if (
+            "~"
+            in self.data[
+                self.index : self.data.find("\n", self.index)
+                if self.data.find("\n", self.index) != -1
+                else len(self.data)
+            ]
+        ):
+            return self.read_string()
+        return self.read_line().strip()
+
+    def parse_fail(self, message):
+        backwards = self.data[: self.index]
+        lineno = backwards.count("\n") + 1
+        col = backwards[::-1].find("\n")
+        raise area_reader.parser.ParseError(f"{self.filename} line {lineno} col {col}: {message}")
+
+    def parse_dice_token(self, token):
+        number, rest = token.lower().split("d", 1)
+        if "+" in rest:
+            sides, bonus = rest.split("+", 1)
+            bonus = int(bonus)
+        elif "-" in rest:
+            sides, bonus = rest.split("-", 1)
+            bonus = -int(bonus)
+        else:
+            sides = rest
+            bonus = 0
+        return area_reader.model.Dice(number=int(number), sides=int(sides), bonus=bonus)
+
+    def load_zone_file(self, path):
+        self.open_circle_file(path)
+        while True:
+            vnum = self.read_record_header()
+            if vnum is None:
+                return
+            name = self.read_string()
+            bot, top, lifespan, reset_mode = self.read_int_list()
+            zone = CircleZone(
+                vnum=vnum,
+                name=name,
+                bot=bot,
+                top=top,
+                lifespan=lifespan,
+                reset_mode=reset_mode,
+                source_file=os.path.basename(path),
+            )
+            while True:
+                line = self.read_line().strip()
+                if not line and self.current_char == "\0":
+                    self.parse_fail("premature end of file")
+                if not line or line.startswith("*"):
+                    continue
+                command = line[0]
+                if command in ("S", "$"):
+                    break
+                parts = line[1:].split()
+                if command in ("M", "O", "E", "P", "D"):
+                    if_flag, arg1, arg2, arg3 = [int(part) for part in parts[:4]]
+                else:
+                    if_flag, arg1, arg2 = [int(part) for part in parts[:3]]
+                    arg3 = None
+                zone.resets.append(CircleReset(command=command, if_flag=if_flag, arg1=arg1, arg2=arg2, arg3=arg3))
+            self.area.zones[vnum] = zone
+
+    def load_room_file(self, path):
+        self.open_circle_file(path)
+        while True:
+            vnum = self.read_record_header()
+            if vnum is None:
+                return
+            room = self.read_room(vnum)
+            room.source_file = os.path.basename(path)
+            self.area.rooms[vnum] = room
+
+    def read_room(self, vnum):
+        name = self.read_string()
+        description = self.read_string()
+        zone_number, flags, sector_type = self.read_line().split()
+        room = CircleRoom(
+            vnum=vnum,
+            name=name,
+            description=description,
+            zone_number=int(zone_number),
+            room_flags=circle_asciiflag_conv(flags),
+            sector_type=int(sector_type),
+        )
+        while True:
+            line = self.read_line().strip()
+            if line == "S":
+                return room
+            if line.startswith("D"):
+                exit = self.read_exit(int(line[1:]))
+                room.exits[exit.door] = exit
+            elif line == "E":
+                room.extra_descriptions.append(
+                    area_reader.model.ExtraDescription(keyword=self.read_string(), description=self.read_string())
+                )
+            else:
+                self.parse_fail(f"Unknown room metadata {line!r}")
+
+    def read_exit(self, door):
+        description = self.read_string()
+        keyword = self.read_string()
+        locks, key, destination = self.read_int_list()
+        if locks == 1:
+            exit_info = EXIT_FLAGS.ISDOOR
+        elif locks == 2:
+            exit_info = EXIT_FLAGS.ISDOOR | EXIT_FLAGS.PICKPROOF
+        else:
+            exit_info = EXIT_FLAGS.NONE
+        return CircleExit(
+            door=door, description=description, keyword=keyword, exit_info=exit_info, key=key, destination=destination
+        )
+
+    def load_mobile_file(self, path):
+        self.open_circle_file(path)
+        while True:
+            vnum = self.read_record_header()
+            if vnum is None:
+                return
+            mob = self.read_mobile(vnum)
+            mob.source_file = os.path.basename(path)
+            self.area.mobs[vnum] = mob
+
+    def read_mobile(self, vnum):
+        name = self.read_string()
+        short_desc = self.read_string()
+        long_desc = self.read_string()
+        description = self.read_string()
+        act_flags, affected_flags, alignment, mob_type = self.read_line().split()
+        act = circle_asciiflag_conv(act_flags) | CircleMobFlags.ISNPC
+        affected_by = circle_asciiflag_conv(affected_flags)
+        level, source_hitroll, source_ac, hit_token, damage_token = self.read_line().split()
+        wealth, exp = self.read_int_list()
+        default_pos, start_pos, sex = self.read_int_list()
+        especs = {}
+        if mob_type.upper() == "E":
+            while True:
+                line = self.read_line().strip()
+                if line == "E":
+                    break
+                if ":" in line:
+                    key, value = line.split(":", 1)
+                    especs[key.strip()] = value.strip()
+        return CircleMob(
+            vnum=vnum,
+            name=name,
+            short_desc=short_desc,
+            long_desc=long_desc,
+            description=description,
+            act=act,
+            affected_by=affected_by,
+            alignment=int(alignment),
+            mob_type=mob_type.upper(),
+            level=int(level),
+            hitroll=20 - int(source_hitroll),
+            ac=int(source_ac) * 10,
+            hit=self.parse_dice_token(hit_token),
+            damage=self.parse_dice_token(damage_token),
+            wealth=wealth,
+            exp=exp,
+            default_pos=default_pos,
+            start_pos=start_pos,
+            sex=sex,
+            especs=especs,
+        )
+
+    def load_object_file(self, path):
+        self.open_circle_file(path)
+        while True:
+            vnum = self.read_record_header()
+            if vnum is None:
+                return
+            item = self.read_item(vnum)
+            item.source_file = os.path.basename(path)
+            self.area.objects[vnum] = item
+
+    def read_item(self, vnum):
+        name = self.read_string()
+        short_desc = self.read_string()
+        description = self.read_string()
+        action_description = self.read_string()
+        item_type, extra_flags, wear_flags = self.read_line().split()
+        value = self.read_int_list()
+        weight, cost, rent = self.read_int_list()
+        affected = []
+        extra_descriptions = []
+        while True:
+            self.skip_whitespace()
+            if self.current_char in ("#", "$", "\0"):
+                break
+            line = self.read_line().strip()
+            if line == "E":
+                extra_descriptions.append(
+                    area_reader.model.ExtraDescription(keyword=self.read_string(), description=self.read_string())
+                )
+            elif line == "A":
+                location, modifier = self.read_int_list()
+                affected.append(CircleAffectData(location=location, modifier=modifier))
+            else:
+                self.parse_fail(f"Unknown object metadata {line!r}")
+        return CircleItem(
+            vnum=vnum,
+            name=name,
+            short_desc=short_desc,
+            description=description,
+            action_description=action_description,
+            item_type=int(item_type),
+            extra_flags=circle_asciiflag_conv(extra_flags),
+            wear_flags=circle_asciiflag_conv(wear_flags),
+            value=value,
+            weight=weight,
+            cost=cost,
+            rent=rent,
+            affected=affected,
+            extra_descriptions=extra_descriptions,
+        )
+
+    def load_shop_file(self, path):
+        self.open_circle_file(path)
+        header = self.read_string()
+        self.area.shop_headers[os.path.basename(path)] = header
+        while True:
+            vnum = self.read_record_header()
+            if vnum is None:
+                return
+            shop = self.read_shop(vnum, header)
+            shop.source_file = os.path.basename(path)
+            self.area.shops[vnum] = shop
+
+    def read_number_list_until_minus_one(self):
+        values = []
+        while True:
+            value = int(self.read_line().strip())
+            if value == -1:
+                return values
+            values.append(value)
+
+    def read_word_list_until_minus_one(self):
+        values = []
+        while True:
+            value = self.read_line().strip()
+            if value == "-1":
+                return values
+            values.append(value)
+
+    def read_shop(self, vnum, header):
+        products = self.read_number_list_until_minus_one()
+        profit_buy = float(self.read_line().strip())
+        profit_sell = float(self.read_line().strip())
+        buy_type = self.read_word_list_until_minus_one()
+        messages = [self.read_string() for _ in range(7)]
+        temper = int(self.read_line().strip())
+        bitvector = int(self.read_line().strip())
+        keeper = int(self.read_line().strip())
+        with_who = int(self.read_line().strip())
+        rooms = self.read_number_list_until_minus_one()
+        open_hour = int(self.read_line().strip())
+        close_hour = int(self.read_line().strip())
+        open_hour_2 = 0
+        close_hour_2 = 0
+        while self.current_char in ("\r", "\n"):
+            self.index += 1
+        if self.current_char not in ("#", "$", "\0"):
+            open_hour_2 = int(self.read_line().strip())
+            close_hour_2 = int(self.read_line().strip())
+        return CircleShop(
+            vnum=vnum,
+            products=products,
+            profit_buy=profit_buy,
+            profit_sell=profit_sell,
+            buy_type=buy_type,
+            messages=messages,
+            temper=temper,
+            bitvector=bitvector,
+            keeper=keeper,
+            with_who=with_who,
+            rooms=rooms,
+            open_hour=open_hour,
+            close_hour=close_hour,
+            open_hour_2=open_hour_2,
+            close_hour_2=close_hour_2,
+        )
+
+    def as_dict(self):
+        return area_reader.serialization.EnumNameConverter().unstructure(self.area)
+
+    def as_json(self, indent=None):
+        return json.dumps(self.as_dict(), indent=indent)
 
 
 def circle_asciiflag_conv(flag):

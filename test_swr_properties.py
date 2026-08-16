@@ -11,11 +11,11 @@ import area_reader.model
 small_stat = st.integers(min_value=-10_000, max_value=10_000)
 
 
-def swr_reader_for(text: str) -> area_reader.SwrAreaFile:
+def swr_reader_for(text: str) -> area_reader.dialects.swr.SwrAreaFile:
     with tempfile.TemporaryDirectory() as directory:
         path = Path(directory) / "record.are"
         path.write_text(text, encoding="latin-1")
-        return area_reader.SwrAreaFile(path)
+        return area_reader.dialects.swr.SwrAreaFile(path)
 
 
 def padded(values, size):

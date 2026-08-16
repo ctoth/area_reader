@@ -7,58 +7,62 @@ from hypothesis import given, settings
 from hypothesis import strategies as st
 
 import area_reader.dialects.circle
+import area_reader.dialects.coffeemud
 import area_reader.dialects.merc
+import area_reader.dialects.rom
 import area_reader.dialects.smaug
+import area_reader.dialects.swr
 import area_reader.model
 import area_reader.parser
+from area_reader import constants
 
 
 def write_area(directory, text):
-	path = Path(directory) / "area.are"
-	path.write_text(text, encoding="ascii")
-	return path
+    path = Path(directory) / "area.are"
+    path.write_text(text, encoding="ascii")
+    return path
 
 
 def assert_jsonifies(area_file):
-	as_dict = area_file.as_dict()
-	assert json.loads(area_file.as_json()) == json.loads(json.dumps(as_dict))
+    as_dict = area_file.as_dict()
+    assert json.loads(area_file.as_json()) == json.loads(json.dumps(as_dict))
 
 
 def test_dice_roll_includes_the_maximum_face(monkeypatch):
-	monkeypatch.setattr(
-		area_reader.model.random,
-		"randrange",
-		lambda start, stop: stop - 1,
-	)
+    monkeypatch.setattr(
+        area_reader.model.random,
+        "randrange",
+        lambda start, stop: stop - 1,
+    )
 
-	assert area_reader.model.Dice(number=2, sides=6, bonus=3).roll() == 15
-	assert area_reader.model.Dice(number=2, sides=1, bonus=3).roll() == 5
+    assert area_reader.model.Dice(number=2, sides=6, bonus=3).roll() == 15
+    assert area_reader.model.Dice(number=2, sides=1, bonus=3).roll() == 5
 
 
 def test_dice_roll_zero_sides_contributes_zero():
-	assert area_reader.model.Dice(number=2, sides=0, bonus=0).roll() == 0
-	assert area_reader.model.Dice(number=5, sides=0, bonus=7).roll() == 7
-	assert area_reader.model.Dice().roll() == 0
+    assert area_reader.model.Dice(number=2, sides=0, bonus=0).roll() == 0
+    assert area_reader.model.Dice(number=5, sides=0, bonus=7).roll() == 7
+    assert area_reader.model.Dice().roll() == 0
 
 
 def test_dice_roll_negative_sides_rolls_one_per_die():
-	assert area_reader.model.Dice(number=3, sides=-4, bonus=2).roll() == 5
+    assert area_reader.model.Dice(number=3, sides=-4, bonus=2).roll() == 5
 
 
 def test_forms_instant_decay_is_bit_d():
-	from area_reader.constants import FORMS
+    from area_reader.constants import FORMS
 
-	assert FORMS.INSTANT_DECAY.value == 8
-	assert FORMS(8) is FORMS.INSTANT_DECAY
-	assert FORMS(12) == FORMS.MAGICAL | FORMS.INSTANT_DECAY
-	assert FORMS.OTHER.value == 16
+    assert FORMS.INSTANT_DECAY.value == 8
+    assert FORMS(8) is FORMS.INSTANT_DECAY
+    assert FORMS(12) == FORMS.MAGICAL | FORMS.INSTANT_DECAY
+    assert FORMS.OTHER.value == 16
 
 
 def test_wear_location_wrist_l_named_with_alias():
-	from area_reader.constants import WEAR_LOCATIONS
+    from area_reader.constants import WEAR_LOCATIONS
 
-	assert WEAR_LOCATIONS(14) is WEAR_LOCATIONS.WRIST_L
-	assert WEAR_LOCATIONS.RIST_L is WEAR_LOCATIONS.WRIST_L
+    assert WEAR_LOCATIONS(14) is WEAR_LOCATIONS.WRIST_L
+    assert WEAR_LOCATIONS.RIST_L is WEAR_LOCATIONS.WRIST_L
 
 
 reset_command = st.sampled_from(["M", "O", "P", "G", "E", "D", "R"])
@@ -70,219 +74,251 @@ swr_source_dir = Path(r"C:\Users\Q\src\swrfuss")
 circle_source_dir = Path(r"C:\Users\Q\src\circlemud")
 coffeemud_source_dir = Path(r"C:\Users\Q\src\coffeemud")
 
+
 def write_coffeemud_file(directory, text):
-	path = Path(directory) / "area.cmare"
-	path.write_text(text, encoding="utf-8")
-	return path
+    path = Path(directory) / "area.cmare"
+    path.write_text(text, encoding="utf-8")
+    return path
+
 
 def write_circle_world(directory, *, zon=None, wld=None, mob=None, obj=None, shp=None):
-	root = Path(directory)
-	world = root / "lib" / "world"
-	for family, text in {
-		"zon": zon,
-		"wld": wld,
-		"mob": mob,
-		"obj": obj,
-		"shp": shp,
-	}.items():
-		family_dir = world / family
-		family_dir.mkdir(parents=True, exist_ok=True)
-		index = family_dir / "index"
-		if text is None:
-			index.write_text("$\n", encoding="ascii")
-			continue
-		filename = f"1.{family}"
-		(family_dir / filename).write_text(text, encoding="ascii")
-		index.write_text(f"{filename}\n$\n", encoding="ascii")
-	return root
+    root = Path(directory)
+    world = root / "lib" / "world"
+    for family, text in {
+        "zon": zon,
+        "wld": wld,
+        "mob": mob,
+        "obj": obj,
+        "shp": shp,
+    }.items():
+        family_dir = world / family
+        family_dir.mkdir(parents=True, exist_ok=True)
+        index = family_dir / "index"
+        if text is None:
+            index.write_text("$\n", encoding="ascii")
+            continue
+        filename = f"1.{family}"
+        (family_dir / filename).write_text(text, encoding="ascii")
+        index.write_text(f"{filename}\n$\n", encoding="ascii")
+    return root
+
 
 def swr_are_paths():
-	if not swr_source_dir.exists():
-		return []
-	return sorted(swr_source_dir.rglob("*.are"))
+    if not swr_source_dir.exists():
+        return []
+    return sorted(swr_source_dir.rglob("*.are"))
+
 
 def circle_indexed_paths(family):
-	index = circle_source_dir / "lib" / "world" / family / "index"
-	if not index.exists():
-		return []
-	base = index.parent
-	paths = []
-	for line in index.read_text(encoding="ascii").splitlines():
-		name = line.strip()
-		if not name or name == "$":
-			continue
-		paths.append(base / name)
-	return paths
+    index = circle_source_dir / "lib" / "world" / family / "index"
+    if not index.exists():
+        return []
+    base = index.parent
+    paths = []
+    for line in index.read_text(encoding="ascii").splitlines():
+        name = line.strip()
+        if not name or name == "$":
+            continue
+        paths.append(base / name)
+    return paths
+
 
 def test_loading_rom_area(rom_path):
-	af = area_reader.RomAreaFile(rom_path)
-	af.load_sections()
-	assert af.area
-	assert af.as_dict()
-	assert_jsonifies(af)
+    af = area_reader.dialects.rom.RomAreaFile(rom_path)
+    af.load_sections()
+    assert af.area
+    assert af.as_dict()
+    assert_jsonifies(af)
+
 
 def test_loading_merc_area(merc_path):
-	af = area_reader.MercAreaFile(merc_path)
-	af.load_sections()
-	assert af.area
-	assert_jsonifies(af)
+    af = area_reader.dialects.merc.MercAreaFile(merc_path)
+    af.load_sections()
+    assert af.area
+    assert_jsonifies(af)
 
 
 def test_coffeemud_top_level_mobs_parse_as_dict_and_json():
-	with tempfile.TemporaryDirectory() as directory:
-		path = write_coffeemud_file(directory, """<MOBS><MOB><MCLAS>GenMob</MCLAS><MLEVL>8</MLEVL><MABLE>11</MABLE><MREJV>90</MREJV><MTEXT>&lt;NAME&gt;the death dog&lt;/NAME&gt;</MTEXT></MOB></MOBS>""")
+    with tempfile.TemporaryDirectory() as directory:
+        path = write_coffeemud_file(
+            directory,
+            """<MOBS><MOB><MCLAS>GenMob</MCLAS><MLEVL>8</MLEVL><MABLE>11</MABLE><MREJV>90</MREJV><MTEXT>&lt;NAME&gt;the death dog&lt;/NAME&gt;</MTEXT></MOB></MOBS>""",
+        )
 
-		af = area_reader.CoffeeMudAreaFile(path)
-		af.load_sections()
+        af = area_reader.dialects.coffeemud.CoffeeMudAreaFile(path)
+        af.load_sections()
 
-		assert af.area.top_level == "MOBS"
-		assert len(af.area.mobs) == 1
-		assert af.area.mobs[0].class_id == "GenMob"
-		assert af.as_dict()["mobs"][0]["class_id"] == "GenMob"
-		assert "GenMob" in af.as_json()
-		assert_jsonifies(af)
+        assert af.area.top_level == "MOBS"
+        assert len(af.area.mobs) == 1
+        assert af.area.mobs[0].class_id == "GenMob"
+        assert af.as_dict()["mobs"][0]["class_id"] == "GenMob"
+        assert "GenMob" in af.as_json()
+        assert_jsonifies(af)
 
 
 def test_coffeemud_top_level_items_parse():
-	with tempfile.TemporaryDirectory() as directory:
-		path = write_coffeemud_file(directory, """<ITEMS><ITEM><ICLAS>GenItem</ICLAS><IUSES>2147483647</IUSES><ILEVL>68</ILEVL><IABLE>0</IABLE><IREJV>0</IREJV><ITEXT>&lt;NAME&gt;an iron sifter&lt;/NAME&gt;</ITEXT></ITEM></ITEMS>""")
+    with tempfile.TemporaryDirectory() as directory:
+        path = write_coffeemud_file(
+            directory,
+            """<ITEMS><ITEM><ICLAS>GenItem</ICLAS><IUSES>2147483647</IUSES><ILEVL>68</ILEVL><IABLE>0</IABLE><IREJV>0</IREJV><ITEXT>&lt;NAME&gt;an iron sifter&lt;/NAME&gt;</ITEXT></ITEM></ITEMS>""",
+        )
 
-		af = area_reader.CoffeeMudAreaFile(path)
-		af.load_sections()
+        af = area_reader.dialects.coffeemud.CoffeeMudAreaFile(path)
+        af.load_sections()
 
-		assert af.area.top_level == "ITEMS"
-		assert len(af.area.items) == 1
-		assert af.area.items[0].class_id == "GenItem"
+        assert af.area.top_level == "ITEMS"
+        assert len(af.area.items) == 1
+        assert af.area.items[0].class_id == "GenItem"
 
 
 def test_coffeemud_top_level_area_parses_metadata():
-	with tempfile.TemporaryDirectory() as directory:
-		path = write_coffeemud_file(directory, """<AREA><ACLAS>StdArea</ACLAS><ANAME>Test Area</ANAME><ADESC>A test area.</ADESC><ACLIM>1</ACLIM><ASUBS /><ATECH>2</ATECH><ADATA /><AROOMS /></AREA>""")
+    with tempfile.TemporaryDirectory() as directory:
+        path = write_coffeemud_file(
+            directory,
+            """<AREA><ACLAS>StdArea</ACLAS><ANAME>Test Area</ANAME><ADESC>A test area.</ADESC><ACLIM>1</ACLIM><ASUBS /><ATECH>2</ATECH><ADATA /><AROOMS /></AREA>""",
+        )
 
-		af = area_reader.CoffeeMudAreaFile(path)
-		af.load_sections()
+        af = area_reader.dialects.coffeemud.CoffeeMudAreaFile(path)
+        af.load_sections()
 
-		assert af.area.top_level == "AREA"
-		assert af.area.class_id == "StdArea"
-		assert af.area.name == "Test Area"
-		assert af.area.description == "A test area."
+        assert af.area.top_level == "AREA"
+        assert af.area.class_id == "StdArea"
+        assert af.area.name == "Test Area"
+        assert af.area.description == "A test area."
 
 
 def test_coffeemud_direct_room_parses_as_room_record():
-	with tempfile.TemporaryDirectory() as directory:
-		path = write_coffeemud_file(directory, """<AROOM><ROOMID>Test Area#1</ROOMID><RAREA>Test Area</RAREA><RCLAS>StoneRoom</RCLAS><RDISP>A quiet room</RDISP><RDESC>A plain room.</RDESC><RTEXT /><ROOMEXITS /><ROOMCONTENT><ROOMMOBS /><ROOMITEMS /></ROOMCONTENT></AROOM>""")
+    with tempfile.TemporaryDirectory() as directory:
+        path = write_coffeemud_file(
+            directory,
+            """<AROOM><ROOMID>Test Area#1</ROOMID><RAREA>Test Area</RAREA><RCLAS>StoneRoom</RCLAS><RDISP>A quiet room</RDISP><RDESC>A plain room.</RDESC><RTEXT /><ROOMEXITS /><ROOMCONTENT><ROOMMOBS /><ROOMITEMS /></ROOMCONTENT></AROOM>""",
+        )
 
-		af = area_reader.CoffeeMudAreaFile(path)
-		af.load_sections()
+        af = area_reader.dialects.coffeemud.CoffeeMudAreaFile(path)
+        af.load_sections()
 
-		assert af.area.top_level == "AROOM"
-	assert "Test Area#1" in af.area.rooms
-	assert af.area.rooms["Test Area#1"].class_id == "StoneRoom"
+        assert af.area.top_level == "AROOM"
+    assert "Test Area#1" in af.area.rooms
+    assert af.area.rooms["Test Area#1"].class_id == "StoneRoom"
 
 
 def test_coffeemud_mob_reads_nested_common_fields_and_collections():
-	with tempfile.TemporaryDirectory() as directory:
-		path = write_coffeemud_file(directory, """<MOBS><MOB><MCLAS>GenMob</MCLAS><MLEVL>8</MLEVL><MABLE>11</MABLE><MREJV>90</MREJV><MTEXT>&lt;NAME&gt;the death dog&lt;/NAME&gt;&lt;DESC&gt;A large two-headed hound barks at you viciously.&lt;/DESC&gt;&lt;DISP&gt;The death dog stands here.&lt;/DISP&gt;&lt;PROP&gt;11|76|8|8|0|8|90|1.0|19|23|0|&lt;/PROP&gt;&lt;BEHAVES&gt;&lt;BHAVE&gt;&lt;BCLASS&gt;CombatAbilities&lt;/BCLASS&gt;&lt;BPARMS /&gt;&lt;/BHAVE&gt;&lt;BHAVE&gt;&lt;BCLASS&gt;MobileAggressive&lt;/BCLASS&gt;&lt;BPARMS&gt;WANDER&lt;/BPARMS&gt;&lt;/BHAVE&gt;&lt;/BEHAVES&gt;&lt;AFFECS&gt;&lt;AFF&gt;&lt;ACLASS&gt;Skill_Dodge&lt;/ACLASS&gt;&lt;ATEXT /&gt;&lt;/AFF&gt;&lt;/AFFECS&gt;&lt;FLAG&gt;0&lt;/FLAG&gt;&lt;MONEY&gt;14&lt;/MONEY&gt;&lt;VARMONEY&gt;0.0&lt;/VARMONEY&gt;&lt;GENDER&gt;N&lt;/GENDER&gt;&lt;MRACE&gt;Dog&lt;/MRACE&gt;&lt;FACTIONS&gt;&lt;FCTN ID="ALIGNMENT.INI"&gt;1&lt;/FCTN&gt;&lt;FCTN ID="INCLINATION.INI"&gt;0&lt;/FCTN&gt;&lt;/FACTIONS&gt;&lt;ABLTYS&gt;&lt;ABLTY&gt;&lt;ACLASS&gt;Skill_Disarm&lt;/ACLASS&gt;&lt;APROF&gt;100&lt;/APROF&gt;&lt;ADATA&gt;&lt;AWRAP /&gt;&lt;/ADATA&gt;&lt;/ABLTY&gt;&lt;/ABLTYS&gt;</MTEXT></MOB></MOBS>""")
+    with tempfile.TemporaryDirectory() as directory:
+        path = write_coffeemud_file(
+            directory,
+            """<MOBS><MOB><MCLAS>GenMob</MCLAS><MLEVL>8</MLEVL><MABLE>11</MABLE><MREJV>90</MREJV><MTEXT>&lt;NAME&gt;the death dog&lt;/NAME&gt;&lt;DESC&gt;A large two-headed hound barks at you viciously.&lt;/DESC&gt;&lt;DISP&gt;The death dog stands here.&lt;/DISP&gt;&lt;PROP&gt;11|76|8|8|0|8|90|1.0|19|23|0|&lt;/PROP&gt;&lt;BEHAVES&gt;&lt;BHAVE&gt;&lt;BCLASS&gt;CombatAbilities&lt;/BCLASS&gt;&lt;BPARMS /&gt;&lt;/BHAVE&gt;&lt;BHAVE&gt;&lt;BCLASS&gt;MobileAggressive&lt;/BCLASS&gt;&lt;BPARMS&gt;WANDER&lt;/BPARMS&gt;&lt;/BHAVE&gt;&lt;/BEHAVES&gt;&lt;AFFECS&gt;&lt;AFF&gt;&lt;ACLASS&gt;Skill_Dodge&lt;/ACLASS&gt;&lt;ATEXT /&gt;&lt;/AFF&gt;&lt;/AFFECS&gt;&lt;FLAG&gt;0&lt;/FLAG&gt;&lt;MONEY&gt;14&lt;/MONEY&gt;&lt;VARMONEY&gt;0.0&lt;/VARMONEY&gt;&lt;GENDER&gt;N&lt;/GENDER&gt;&lt;MRACE&gt;Dog&lt;/MRACE&gt;&lt;FACTIONS&gt;&lt;FCTN ID="ALIGNMENT.INI"&gt;1&lt;/FCTN&gt;&lt;FCTN ID="INCLINATION.INI"&gt;0&lt;/FCTN&gt;&lt;/FACTIONS&gt;&lt;ABLTYS&gt;&lt;ABLTY&gt;&lt;ACLASS&gt;Skill_Disarm&lt;/ACLASS&gt;&lt;APROF&gt;100&lt;/APROF&gt;&lt;ADATA&gt;&lt;AWRAP /&gt;&lt;/ADATA&gt;&lt;/ABLTY&gt;&lt;/ABLTYS&gt;</MTEXT></MOB></MOBS>""",
+        )
 
-		af = area_reader.CoffeeMudAreaFile(path)
-		af.load_sections()
+        af = area_reader.dialects.coffeemud.CoffeeMudAreaFile(path)
+        af.load_sections()
 
-		mob = af.area.mobs[0]
-		assert mob.class_id == "GenMob"
-		assert mob.level == 8
-		assert mob.ability == 11
-		assert mob.rejuv == 90
-		assert mob.name == "the death dog"
-		assert mob.description == "A large two-headed hound barks at you viciously."
-		assert mob.display == "The death dog stands here."
-		assert mob.race == "Dog"
-		assert mob.gender == "N"
-		assert mob.money == 14
-		assert [behavior.class_id for behavior in mob.behaviors] == ["CombatAbilities", "MobileAggressive"]
-		assert mob.behaviors[1].parameters == "WANDER"
-		assert mob.affects[0].class_id == "Skill_Dodge"
-		assert mob.factions["ALIGNMENT.INI"] == 1
-		assert mob.factions["INCLINATION.INI"] == 0
-		assert mob.abilities[0].class_id == "Skill_Disarm"
-		assert mob.abilities[0].proficiency == 100
-		assert mob.raw_data["PROP"] == "11|76|8|8|0|8|90|1.0|19|23|0|"
+        mob = af.area.mobs[0]
+        assert mob.class_id == "GenMob"
+        assert mob.level == 8
+        assert mob.ability == 11
+        assert mob.rejuv == 90
+        assert mob.name == "the death dog"
+        assert mob.description == "A large two-headed hound barks at you viciously."
+        assert mob.display == "The death dog stands here."
+        assert mob.race == "Dog"
+        assert mob.gender == "N"
+        assert mob.money == 14
+        assert [behavior.class_id for behavior in mob.behaviors] == ["CombatAbilities", "MobileAggressive"]
+        assert mob.behaviors[1].parameters == "WANDER"
+        assert mob.affects[0].class_id == "Skill_Dodge"
+        assert mob.factions["ALIGNMENT.INI"] == 1
+        assert mob.factions["INCLINATION.INI"] == 0
+        assert mob.abilities[0].class_id == "Skill_Disarm"
+        assert mob.abilities[0].proficiency == 100
+        assert mob.raw_data["PROP"] == "11|76|8|8|0|8|90|1.0|19|23|0|"
 
 
 def test_coffeemud_item_reads_nested_common_fields_container_fields_and_affects():
-	with tempfile.TemporaryDirectory() as directory:
-		path = write_coffeemud_file(directory, """<ITEMS><ITEM><ICLAS>GenContainer</ICLAS><IUSES>2147483647</IUSES><ILEVL>42</ILEVL><IABLE>0</IABLE><IREJV>0</IREJV><ITEXT>&lt;NAME&gt;an iron potion rack&lt;/NAME&gt;&lt;DESC&gt;an iron potion rack.  &lt;/DESC&gt;&lt;DISP&gt;an iron potion rack lies here&lt;/DISP&gt;&lt;PROP&gt;0|0|0|0|0|42|0|1.0|21|0|0|&lt;/PROP&gt;&lt;IMG /&gt;&lt;BEHAVES /&gt;&lt;AFFECS&gt;&lt;AFF&gt;&lt;ACLASS&gt;Prop_NoPurge&lt;/ACLASS&gt;&lt;ATEXT /&gt;&lt;/AFF&gt;&lt;/AFFECS&gt;&lt;FLAG&gt;27&lt;/FLAG&gt;&lt;IDENT /&gt;&lt;VALUE&gt;105&lt;/VALUE&gt;&lt;MTRAL&gt;801&lt;/MTRAL&gt;&lt;READ /&gt;&lt;WORNL&gt;false&lt;/WORNL&gt;&lt;WORNB&gt;512&lt;/WORNB&gt;&lt;CAPA&gt;120&lt;/CAPA&gt;&lt;CONT&gt;2048&lt;/CONT&gt;&lt;OPENTK&gt;30&lt;/OPENTK&gt;</ITEXT></ITEM></ITEMS>""")
+    with tempfile.TemporaryDirectory() as directory:
+        path = write_coffeemud_file(
+            directory,
+            """<ITEMS><ITEM><ICLAS>GenContainer</ICLAS><IUSES>2147483647</IUSES><ILEVL>42</ILEVL><IABLE>0</IABLE><IREJV>0</IREJV><ITEXT>&lt;NAME&gt;an iron potion rack&lt;/NAME&gt;&lt;DESC&gt;an iron potion rack.  &lt;/DESC&gt;&lt;DISP&gt;an iron potion rack lies here&lt;/DISP&gt;&lt;PROP&gt;0|0|0|0|0|42|0|1.0|21|0|0|&lt;/PROP&gt;&lt;IMG /&gt;&lt;BEHAVES /&gt;&lt;AFFECS&gt;&lt;AFF&gt;&lt;ACLASS&gt;Prop_NoPurge&lt;/ACLASS&gt;&lt;ATEXT /&gt;&lt;/AFF&gt;&lt;/AFFECS&gt;&lt;FLAG&gt;27&lt;/FLAG&gt;&lt;IDENT /&gt;&lt;VALUE&gt;105&lt;/VALUE&gt;&lt;MTRAL&gt;801&lt;/MTRAL&gt;&lt;READ /&gt;&lt;WORNL&gt;false&lt;/WORNL&gt;&lt;WORNB&gt;512&lt;/WORNB&gt;&lt;CAPA&gt;120&lt;/CAPA&gt;&lt;CONT&gt;2048&lt;/CONT&gt;&lt;OPENTK&gt;30&lt;/OPENTK&gt;</ITEXT></ITEM></ITEMS>""",
+        )
 
-		af = area_reader.CoffeeMudAreaFile(path)
-		af.load_sections()
+        af = area_reader.dialects.coffeemud.CoffeeMudAreaFile(path)
+        af.load_sections()
 
-		item = af.area.items[0]
-		assert item.class_id == "GenContainer"
-		assert item.uses == 2147483647
-		assert item.level == 42
-		assert item.name == "an iron potion rack"
-		assert item.description == "an iron potion rack.  "
-		assert item.display == "an iron potion rack lies here"
-		assert item.prop == "0|0|0|0|0|42|0|1.0|21|0|0|"
-		assert item.flag == 27
-		assert item.value == 105
-		assert item.material == 801
-		assert item.read_text == ""
-		assert item.worn_location == "false"
-		assert item.worn_bitmap == 512
-		assert item.capacity == 120
-		assert item.container_flags == 2048
-		assert item.open_ticks == 30
-		assert item.affects[0].class_id == "Prop_NoPurge"
+        item = af.area.items[0]
+        assert item.class_id == "GenContainer"
+        assert item.uses == 2147483647
+        assert item.level == 42
+        assert item.name == "an iron potion rack"
+        assert item.description == "an iron potion rack.  "
+        assert item.display == "an iron potion rack lies here"
+        assert item.prop == "0|0|0|0|0|42|0|1.0|21|0|0|"
+        assert item.flag == 27
+        assert item.value == 105
+        assert item.material == 801
+        assert item.read_text == ""
+        assert item.worn_location == "false"
+        assert item.worn_bitmap == 512
+        assert item.capacity == 120
+        assert item.container_flags == 2048
+        assert item.open_ticks == 30
+        assert item.affects[0].class_id == "Prop_NoPurge"
 
 
 def test_coffeemud_area_reads_rooms_exits_and_room_content():
-	with tempfile.TemporaryDirectory() as directory:
-		path = write_coffeemud_file(directory, """<AREA><ACLAS>StdArea</ACLAS><ANAME>Test Area</ANAME><ADESC>A test area.</ADESC><ACLIM>1</ACLIM><ASUBS>builder</ASUBS><ATECH>2</ATECH><ADATA><AUTHOR>Builder</AUTHOR></ADATA><AROOMS><AROOM><ROOMID>Test Area#1</ROOMID><RAREA>Test Area</RAREA><RCLAS>StoneRoom</RCLAS><RDISP>A quiet room</RDISP><RDESC>A plain room.</RDESC><RTEXT>&lt;RCLIM&gt;3&lt;/RCLIM&gt;&lt;RATMO&gt;4&lt;/RATMO&gt;</RTEXT><ROOMEXITS><REXIT><XDIRE>0</XDIRE><XDOOR>Test Area#2</XDOOR><XEXIT><EXID>StdOpenDoorway</EXID><EXDAT>&lt;NAME&gt;a doorway&lt;/NAME&gt;</EXDAT></XEXIT></REXIT></ROOMEXITS><ROOMCONTENT><ROOMMOBS><RMOB><MCLAS>GenMob</MCLAS><MLEVL>5</MLEVL><MABLE>1</MABLE><MREJV>10</MREJV><MTEXT>&lt;NAME&gt;a room mob&lt;/NAME&gt;&lt;MONEY&gt;7&lt;/MONEY&gt;</MTEXT></RMOB></ROOMMOBS><ROOMITEMS><RITEM COUNT=2><ICLAS>GenItem</ICLAS><IIDEN>item1</IIDEN><ILOCA>container1</ILOCA><IUSES>1</IUSES><ILEVL>2</ILEVL><IABLE>3</IABLE><IREJV>4</IREJV><ITEXT>&lt;NAME&gt;a room item&lt;/NAME&gt;&lt;VALUE&gt;9&lt;/VALUE&gt;</ITEXT></RITEM></ROOMITEMS></ROOMCONTENT></AROOM></AROOMS></AREA>""")
+    with tempfile.TemporaryDirectory() as directory:
+        path = write_coffeemud_file(
+            directory,
+            """<AREA><ACLAS>StdArea</ACLAS><ANAME>Test Area</ANAME><ADESC>A test area.</ADESC><ACLIM>1</ACLIM><ASUBS>builder</ASUBS><ATECH>2</ATECH><ADATA><AUTHOR>Builder</AUTHOR></ADATA><AROOMS><AROOM><ROOMID>Test Area#1</ROOMID><RAREA>Test Area</RAREA><RCLAS>StoneRoom</RCLAS><RDISP>A quiet room</RDISP><RDESC>A plain room.</RDESC><RTEXT>&lt;RCLIM&gt;3&lt;/RCLIM&gt;&lt;RATMO&gt;4&lt;/RATMO&gt;</RTEXT><ROOMEXITS><REXIT><XDIRE>0</XDIRE><XDOOR>Test Area#2</XDOOR><XEXIT><EXID>StdOpenDoorway</EXID><EXDAT>&lt;NAME&gt;a doorway&lt;/NAME&gt;</EXDAT></XEXIT></REXIT></ROOMEXITS><ROOMCONTENT><ROOMMOBS><RMOB><MCLAS>GenMob</MCLAS><MLEVL>5</MLEVL><MABLE>1</MABLE><MREJV>10</MREJV><MTEXT>&lt;NAME&gt;a room mob&lt;/NAME&gt;&lt;MONEY&gt;7&lt;/MONEY&gt;</MTEXT></RMOB></ROOMMOBS><ROOMITEMS><RITEM COUNT=2><ICLAS>GenItem</ICLAS><IIDEN>item1</IIDEN><ILOCA>container1</ILOCA><IUSES>1</IUSES><ILEVL>2</ILEVL><IABLE>3</IABLE><IREJV>4</IREJV><ITEXT>&lt;NAME&gt;a room item&lt;/NAME&gt;&lt;VALUE&gt;9&lt;/VALUE&gt;</ITEXT></RITEM></ROOMITEMS></ROOMCONTENT></AROOM></AROOMS></AREA>""",
+        )
 
-		af = area_reader.CoffeeMudAreaFile(path)
-		af.load_sections()
+        af = area_reader.dialects.coffeemud.CoffeeMudAreaFile(path)
+        af.load_sections()
 
-		assert af.area.class_id == "StdArea"
-		assert af.area.name == "Test Area"
-		assert af.area.raw_data["AUTHOR"] == "Builder"
-		room = af.area.rooms["Test Area#1"]
-		assert room.class_id == "StoneRoom"
-		assert room.display == "A quiet room"
-		assert room.climate == 3
-		assert room.atmosphere == 4
-		assert room.exits[0].direction == 0
-		assert room.exits[0].target_room_id == "Test Area#2"
-		assert room.exits[0].class_id == "StdOpenDoorway"
-		assert room.exits[0].raw_data["NAME"] == "a doorway"
-		assert room.mobs[0].name == "a room mob"
-		assert room.mobs[0].money == 7
-		assert room.items[0].class_id == "GenItem"
-		assert room.items[0].count == 2
-		assert room.items[0].ident == "item1"
-		assert room.items[0].location == "container1"
-		assert room.items[0].name == "a room item"
-		assert room.items[0].value == 9
+        assert af.area.class_id == "StdArea"
+        assert af.area.name == "Test Area"
+        assert af.area.raw_data["AUTHOR"] == "Builder"
+        room = af.area.rooms["Test Area#1"]
+        assert room.class_id == "StoneRoom"
+        assert room.display == "A quiet room"
+        assert room.climate == 3
+        assert room.atmosphere == 4
+        assert room.exits[0].direction == 0
+        assert room.exits[0].target_room_id == "Test Area#2"
+        assert room.exits[0].class_id == "StdOpenDoorway"
+        assert room.exits[0].raw_data["NAME"] == "a doorway"
+        assert room.mobs[0].name == "a room mob"
+        assert room.mobs[0].money == 7
+        assert room.items[0].class_id == "GenItem"
+        assert room.items[0].count == 2
+        assert room.items[0].ident == "item1"
+        assert room.items[0].location == "container1"
+        assert room.items[0].name == "a room item"
+        assert room.items[0].value == 9
 
 
 def test_coffeemud_item_parses_nested_ssarea():
-	with tempfile.TemporaryDirectory() as directory:
-		path = write_coffeemud_file(directory, """<ITEMS><ITEM><ICLAS>GenBoardable</ICLAS><IUSES>100</IUSES><ILEVL>1</ILEVL><IABLE>0</IABLE><IREJV>0</IREJV><ITEXT>&lt;NAME&gt;a skiff&lt;/NAME&gt;&lt;DESC&gt;a small skiff&lt;/DESC&gt;&lt;DISP&gt;a skiff is here&lt;/DISP&gt;&lt;SSAREA&gt;&lt;AREA&gt;&lt;ACLAS&gt;StdBoardableShip&lt;/ACLAS&gt;&lt;ANAME&gt;Skiff&lt;/ANAME&gt;&lt;ADESC /&gt;&lt;ACLIM&gt;0&lt;/ACLIM&gt;&lt;ASUBS /&gt;&lt;ATECH&gt;0&lt;/ATECH&gt;&lt;ADATA /&gt;&lt;AROOMS&gt;&lt;AROOM&gt;&lt;ROOMID&gt;Skiff#0&lt;/ROOMID&gt;&lt;RAREA&gt;Skiff&lt;/RAREA&gt;&lt;RCLAS&gt;ShipDeck&lt;/RCLAS&gt;&lt;RDISP&gt;The Deck&lt;/RDISP&gt;&lt;RDESC /&gt;&lt;RTEXT /&gt;&lt;ROOMEXITS /&gt;&lt;ROOMCONTENT&gt;&lt;ROOMMOBS /&gt;&lt;ROOMITEMS /&gt;&lt;/ROOMCONTENT&gt;&lt;/AROOM&gt;&lt;/AROOMS&gt;&lt;/AREA&gt;&lt;/SSAREA&gt;</ITEXT></ITEM></ITEMS>""")
+    with tempfile.TemporaryDirectory() as directory:
+        path = write_coffeemud_file(
+            directory,
+            """<ITEMS><ITEM><ICLAS>GenBoardable</ICLAS><IUSES>100</IUSES><ILEVL>1</ILEVL><IABLE>0</IABLE><IREJV>0</IREJV><ITEXT>&lt;NAME&gt;a skiff&lt;/NAME&gt;&lt;DESC&gt;a small skiff&lt;/DESC&gt;&lt;DISP&gt;a skiff is here&lt;/DISP&gt;&lt;SSAREA&gt;&lt;AREA&gt;&lt;ACLAS&gt;StdBoardableShip&lt;/ACLAS&gt;&lt;ANAME&gt;Skiff&lt;/ANAME&gt;&lt;ADESC /&gt;&lt;ACLIM&gt;0&lt;/ACLIM&gt;&lt;ASUBS /&gt;&lt;ATECH&gt;0&lt;/ATECH&gt;&lt;ADATA /&gt;&lt;AROOMS&gt;&lt;AROOM&gt;&lt;ROOMID&gt;Skiff#0&lt;/ROOMID&gt;&lt;RAREA&gt;Skiff&lt;/RAREA&gt;&lt;RCLAS&gt;ShipDeck&lt;/RCLAS&gt;&lt;RDISP&gt;The Deck&lt;/RDISP&gt;&lt;RDESC /&gt;&lt;RTEXT /&gt;&lt;ROOMEXITS /&gt;&lt;ROOMCONTENT&gt;&lt;ROOMMOBS /&gt;&lt;ROOMITEMS /&gt;&lt;/ROOMCONTENT&gt;&lt;/AROOM&gt;&lt;/AROOMS&gt;&lt;/AREA&gt;&lt;/SSAREA&gt;</ITEXT></ITEM></ITEMS>""",
+        )
 
-		af = area_reader.CoffeeMudAreaFile(path)
-		af.load_sections()
+        af = area_reader.dialects.coffeemud.CoffeeMudAreaFile(path)
+        af.load_sections()
 
-		item = af.area.items[0]
-		assert "SSAREA" in item.raw_data
-		assert item.nested_area.name == "Skiff"
-		assert item.nested_area.class_id == "StdBoardableShip"
-		assert "Skiff#0" in item.nested_area.rooms
+        item = af.area.items[0]
+        assert "SSAREA" in item.raw_data
+        assert item.nested_area.name == "Skiff"
+        assert item.nested_area.class_id == "StdBoardableShip"
+        assert "Skiff#0" in item.nested_area.rooms
 
 
 @given(arg1=small_int, arg2=small_int, arg3=small_int, arg4=small_int)
 @settings(max_examples=30, deadline=None)
 def test_rom_reset_reads_arg4_for_mobile_resets(arg1, arg2, arg3, arg4):
-	with tempfile.TemporaryDirectory() as directory:
-		path = write_area(directory, f"""#AREA
+    with tempfile.TemporaryDirectory() as directory:
+        path = write_area(
+            directory,
+            f"""#AREA
 file.are~
 Test~
 {{ All }} Test~
@@ -291,50 +327,56 @@ Test~
 M 0 {arg1} {arg2} {arg3} {arg4}
 S
 #$
-""")
+""",
+        )
 
-		af = area_reader.RomAreaFile(path)
-		af.load_sections()
+        af = area_reader.dialects.rom.RomAreaFile(path)
+        af.load_sections()
 
-		reset = af.area.resets[0]
-		assert reset.command == "M"
-		assert reset.arg1 == arg1
-		assert reset.arg2 == arg2
-		assert reset.arg3 == arg3
-		assert reset.arg4 == arg4
+        reset = af.area.resets[0]
+        assert reset.command == "M"
+        assert reset.arg1 == arg1
+        assert reset.arg2 == arg2
+        assert reset.arg3 == arg3
+        assert reset.arg4 == arg4
 
 
 @given(command=reset_command, arg1=small_int, arg2=small_int, arg3=small_int)
 @settings(max_examples=30, deadline=None)
 def test_merc_resets_follow_three_argument_loader(command, arg1, arg2, arg3):
-	line_arg3 = "" if command in ("G", "R") else f" {arg3}"
-	expected_arg3 = 0 if command in ("G", "R") else arg3
-	with tempfile.TemporaryDirectory() as directory:
-		path = write_area(directory, f"""#AREA
+    line_arg3 = "" if command in ("G", "R") else f" {arg3}"
+    expected_arg3 = 0 if command in ("G", "R") else arg3
+    with tempfile.TemporaryDirectory() as directory:
+        path = write_area(
+            directory,
+            f"""#AREA
 Test~
 #RESETS
 {command} 0 {arg1} {arg2}{line_arg3}
 S
 #$
-""")
+""",
+        )
 
-		af = area_reader.MercAreaFile(path)
-		af.load_sections()
+        af = area_reader.dialects.merc.MercAreaFile(path)
+        af.load_sections()
 
-		reset = af.area.resets[0]
-		assert reset.command == command
-		assert reset.arg1 == arg1
-		assert reset.arg2 == arg2
-		assert reset.arg3 == expected_arg3
-		assert reset.arg4 is None
-		assert reset.arg5 is None
+        reset = af.area.resets[0]
+        assert reset.command == command
+        assert reset.arg1 == arg1
+        assert reset.arg2 == arg2
+        assert reset.arg3 == expected_arg3
+        assert reset.arg4 is None
+        assert reset.arg5 is None
 
 
 @given(wealth=st.integers(min_value=0, max_value=2_000_000))
 @settings(max_examples=30, deadline=None)
 def test_rom_mobile_wealth_is_read_raw(wealth):
-	with tempfile.TemporaryDirectory() as directory:
-		path = write_area(directory, f"""#AREA
+    with tempfile.TemporaryDirectory() as directory:
+        path = write_area(
+            directory,
+            f"""#AREA
 file.are~
 Test~
 {{ All }} Test~
@@ -356,19 +398,22 @@ standing standing neutral {wealth}
 0 0 medium none
 #0
 #$
-""")
+""",
+        )
 
-		af = area_reader.RomAreaFile(path)
-		af.load_sections()
+        af = area_reader.dialects.rom.RomAreaFile(path)
+        af.load_sections()
 
-		assert af.area.mobs[1].wealth == wealth
+        assert af.area.mobs[1].wealth == wealth
 
 
 @given(room_flags=st.integers(min_value=0, max_value=255), sector_type=st.integers(min_value=0, max_value=9))
 @settings(max_examples=30, deadline=None)
 def test_merc_rooms_use_merc_room_flag_type(room_flags, sector_type):
-	with tempfile.TemporaryDirectory() as directory:
-		path = write_area(directory, f"""#AREA
+    with tempfile.TemporaryDirectory() as directory:
+        path = write_area(
+            directory,
+            f"""#AREA
 Test~
 #ROOMS
 #1
@@ -379,27 +424,30 @@ Description.
 S
 #0
 #$
-""")
+""",
+        )
 
-		af = area_reader.MercAreaFile(path)
-		af.load_sections()
+        af = area_reader.dialects.merc.MercAreaFile(path)
+        af.load_sections()
 
-		room = af.area.rooms[1]
-	assert isinstance(room, area_reader.dialects.merc.MercRoom)
-	assert isinstance(room.room_flags, area_reader.MERC_ROOM_FLAGS)
+        room = af.area.rooms[1]
+    assert isinstance(room, area_reader.dialects.merc.MercRoom)
+    assert isinstance(room.room_flags, constants.MERC_ROOM_FLAGS)
 
 
 @given(
-	version=st.integers(min_value=0, max_value=9),
-	low_soft=st.integers(min_value=0, max_value=60),
-	high_soft=st.integers(min_value=0, max_value=60),
-	low_hard=st.integers(min_value=0, max_value=60),
-	high_hard=st.integers(min_value=0, max_value=60),
+    version=st.integers(min_value=0, max_value=9),
+    low_soft=st.integers(min_value=0, max_value=60),
+    high_soft=st.integers(min_value=0, max_value=60),
+    low_hard=st.integers(min_value=0, max_value=60),
+    high_hard=st.integers(min_value=0, max_value=60),
 )
 @settings(max_examples=20, deadline=None)
 def test_smaug_reads_real_top_level_metadata(version, low_soft, high_soft, low_hard, high_hard):
-	with tempfile.TemporaryDirectory() as directory:
-		path = write_area(directory, f"""#AREA
+    with tempfile.TemporaryDirectory() as directory:
+        path = write_area(
+            directory,
+            f"""#AREA
 SMAUG Test~
 #VERSION {version}
 #AUTHOR Builder~
@@ -413,35 +461,38 @@ $
 #ROOMS
 #0
 #$
-""")
+""",
+        )
 
-		af = area_reader.SmaugAreaFile(path)
-		af.load_sections()
+        af = area_reader.dialects.smaug.SmaugAreaFile(path)
+        af.load_sections()
 
-		assert af.area.name == "SMAUG Test"
-		assert af.area.version == version
-		assert af.area.author == "Builder"
-		assert af.area.low_soft_range == low_soft
-		assert af.area.high_soft_range == high_soft
-		assert af.area.low_hard_range == low_hard
-		assert af.area.high_hard_range == high_hard
-		assert af.area.flags == 7
-		assert af.area.high_economy == 123
-		assert af.area.low_economy == 456
+        assert af.area.name == "SMAUG Test"
+        assert af.area.version == version
+        assert af.area.author == "Builder"
+        assert af.area.low_soft_range == low_soft
+        assert af.area.high_soft_range == high_soft
+        assert af.area.low_hard_range == low_hard
+        assert af.area.high_hard_range == high_hard
+        assert af.area.flags == 7
+        assert af.area.high_economy == 123
+        assert af.area.low_economy == 456
 
 
 @given(
-	act=st.integers(min_value=0, max_value=2_000_000),
-	affected=st.integers(min_value=0, max_value=2_000_000),
-	alignment=st.integers(min_value=-1000, max_value=1000),
-	level=st.integers(min_value=1, max_value=100),
-	gold=st.integers(min_value=0, max_value=1_000_000),
-	exp=st.integers(min_value=0, max_value=1_000_000),
+    act=st.integers(min_value=0, max_value=2_000_000),
+    affected=st.integers(min_value=0, max_value=2_000_000),
+    alignment=st.integers(min_value=-1000, max_value=1000),
+    level=st.integers(min_value=1, max_value=100),
+    gold=st.integers(min_value=0, max_value=1_000_000),
+    exp=st.integers(min_value=0, max_value=1_000_000),
 )
 @settings(max_examples=20, deadline=None)
 def test_smaug_basic_mobile_uses_smaug_mobile_layout(act, affected, alignment, level, gold, exp):
-	with tempfile.TemporaryDirectory() as directory:
-		path = write_area(directory, f"""#AREA
+    with tempfile.TemporaryDirectory() as directory:
+        path = write_area(
+            directory,
+            f"""#AREA
 SMAUG Test~
 #MOBILES
 #1
@@ -459,30 +510,33 @@ A plain mobile.
 #ROOMS
 #0
 #$
-""")
+""",
+        )
 
-		af = area_reader.SmaugAreaFile(path)
-		af.load_sections()
+        af = area_reader.dialects.smaug.SmaugAreaFile(path)
+        af.load_sections()
 
-		mob = af.area.mobs[1]
-		assert mob.act == act | area_reader.ROM_ACT_TYPES.IS_NPC
-		assert mob.affected_by == affected
-		assert mob.alignment == alignment
-		assert mob.level == level
-		assert mob.hitroll == 2
-		assert mob.ac == 3
-		assert mob.hit.number == 1
-		assert mob.hit.sides == 4
-		assert mob.hit.bonus == 5
-		assert mob.damage.number == 2
-		assert mob.damage.sides == 6
-		assert mob.damage.bonus == 7
-		assert mob.wealth == gold
+        mob = af.area.mobs[1]
+        assert mob.act == act | constants.ROM_ACT_TYPES.IS_NPC
+        assert mob.affected_by == affected
+        assert mob.alignment == alignment
+        assert mob.level == level
+        assert mob.hitroll == 2
+        assert mob.ac == 3
+        assert mob.hit.number == 1
+        assert mob.hit.sides == 4
+        assert mob.hit.bonus == 5
+        assert mob.damage.number == 2
+        assert mob.damage.sides == 6
+        assert mob.damage.bonus == 7
+        assert mob.wealth == gold
 
 
 def test_smaug_extended_bitvectors_preserve_word_boundaries():
-	with tempfile.TemporaryDirectory() as directory:
-		path = write_area(directory, """#AREA
+    with tempfile.TemporaryDirectory() as directory:
+        path = write_area(
+            directory,
+            """#AREA
 SMAUG Test~
 #MOBILES
 #1
@@ -500,19 +554,22 @@ A plain mobile.
 #ROOMS
 #0
 #$
-""")
+""",
+        )
 
-		af = area_reader.SmaugAreaFile(path)
-		af.load_sections()
+        af = area_reader.dialects.smaug.SmaugAreaFile(path)
+        af.load_sections()
 
-		mob = af.area.mobs[1]
-		assert int(mob.act) == (1073741827 | (2048 << 32))
-		assert int(mob.affected_by) == 4 << 32
+        mob = af.area.mobs[1]
+        assert int(mob.act) == (1073741827 | (2048 << 32))
+        assert int(mob.affected_by) == 4 << 32
 
 
 def test_smaug_mobile_flags_use_smaug_engine_bit_positions():
-	with tempfile.TemporaryDirectory() as directory:
-		path = write_area(directory, """#AREA
+    with tempfile.TemporaryDirectory() as directory:
+        path = write_area(
+            directory,
+            """#AREA
 SMAUG Test~
 #MOBILES
 #1
@@ -530,67 +587,68 @@ A plain mobile.
 #ROOMS
 #0
 #$
-""")
+""",
+        )
 
-		af = area_reader.SmaugAreaFile(path)
-		af.load_sections()
+        af = area_reader.dialects.smaug.SmaugAreaFile(path)
+        af.load_sections()
 
-		mob = af.area.mobs[1]
-		assert mob.act == (
-			area_reader.SMAUG_ACT_TYPES.IS_NPC
-			| area_reader.SMAUG_ACT_TYPES.IMMORTAL
-		)
-		assert mob.affected_by == (
-			area_reader.SMAUG_AFFECTED_BY.DETECT_INVIS
-			| area_reader.SMAUG_AFFECTED_BY.DETECT_HIDDEN
-			| area_reader.SMAUG_AFFECTED_BY.TRUESIGHT
-		)
-		result = af.as_dict()["mobs"][1]
-		assert result["act"] == "SMAUG_ACT_TYPES.IS_NPC|IMMORTAL"
-		assert result["affected_by"] == (
-			"SMAUG_AFFECTED_BY.DETECT_INVIS|DETECT_HIDDEN|TRUESIGHT"
-		)
+        mob = af.area.mobs[1]
+        assert mob.act == (constants.SMAUG_ACT_TYPES.IS_NPC | constants.SMAUG_ACT_TYPES.IMMORTAL)
+        assert mob.affected_by == (
+            constants.SMAUG_AFFECTED_BY.DETECT_INVIS
+            | constants.SMAUG_AFFECTED_BY.DETECT_HIDDEN
+            | constants.SMAUG_AFFECTED_BY.TRUESIGHT
+        )
+        result = af.as_dict()["mobs"][1]
+        assert result["act"] == "SMAUG_ACT_TYPES.IS_NPC|IMMORTAL"
+        assert result["affected_by"] == ("SMAUG_AFFECTED_BY.DETECT_INVIS|DETECT_HIDDEN|TRUESIGHT")
 
 
 @given(
-	fix_types=st.sampled_from(
-		([0, 0, 0], [5, 9, 15], [98, 99, 100]),
-	),
+    fix_types=st.sampled_from(
+        ([0, 0, 0], [5, 9, 15], [98, 99, 100]),
+    ),
 )
 @settings(max_examples=3, deadline=None)
 def test_smaug_repairs_consume_exactly_three_fix_types(fix_types):
-	keeper = 21_002
-	with tempfile.TemporaryDirectory() as directory:
-		path = write_area(directory, f"""#AREA
+    keeper = 21_002
+    with tempfile.TemporaryDirectory() as directory:
+        path = write_area(
+            directory,
+            f"""#AREA
 Repair Test~
 #REPAIRS
-{keeper} {' '.join(map(str, fix_types))} 100 1 0 23 ; repair shop
+{keeper} {" ".join(map(str, fix_types))} 100 1 0 23 ; repair shop
 0
 #SPECIALS
 M {keeper} spec_repair
 S
 #$
-""")
+""",
+        )
 
-		af = area_reader.SmaugAreaFile(path)
-		af.load_sections()
+        af = area_reader.dialects.smaug.SmaugAreaFile(path)
+        af.load_sections()
 
-		assert len(af.area.specials) == 1
-		assert af.area.specials[0].arg1 == keeper
-		assert af.area.specials[0].arg2 == "spec_repair"
+        assert len(af.area.specials) == 1
+        assert af.area.specials[0].arg1 == keeper
+        assert af.area.specials[0].arg2 == "spec_repair"
 
 
 @given(
-	sector_type=st.integers(min_value=0, max_value=10),
-	tele_delay=st.integers(min_value=0, max_value=100),
-	tele_vnum=st.integers(min_value=0, max_value=50000),
-	tunnel=st.integers(min_value=0, max_value=100),
-	max_weight=st.integers(min_value=0, max_value=10000),
+    sector_type=st.integers(min_value=0, max_value=10),
+    tele_delay=st.integers(min_value=0, max_value=100),
+    tele_vnum=st.integers(min_value=0, max_value=50000),
+    tunnel=st.integers(min_value=0, max_value=100),
+    max_weight=st.integers(min_value=0, max_value=10000),
 )
 @settings(max_examples=20, deadline=None)
 def test_smaug_rooms_read_tail_fields(sector_type, tele_delay, tele_vnum, tunnel, max_weight):
-	with tempfile.TemporaryDirectory() as directory:
-		path = write_area(directory, f"""#AREA
+    with tempfile.TemporaryDirectory() as directory:
+        path = write_area(
+            directory,
+            f"""#AREA
 SMAUG Test~
 #MOBILES
 #0
@@ -603,30 +661,33 @@ Description.
 S
 #0
 #$
-""")
+""",
+        )
 
-		af = area_reader.SmaugAreaFile(path)
-		af.load_sections()
+        af = area_reader.dialects.smaug.SmaugAreaFile(path)
+        af.load_sections()
 
-		room = af.area.rooms[1]
-		assert isinstance(room, area_reader.dialects.smaug.SmaugRoom)
-		assert room.sector_type == sector_type
-		assert room.tele_delay == tele_delay
-		assert room.tele_vnum == tele_vnum
-		assert room.tunnel == tunnel
-		assert room.max_weight == max_weight
+        room = af.area.rooms[1]
+        assert isinstance(room, area_reader.dialects.smaug.SmaugRoom)
+        assert room.sector_type == sector_type
+        assert room.tele_delay == tele_delay
+        assert room.tele_vnum == tele_vnum
+        assert room.tunnel == tunnel
+        assert room.max_weight == max_weight
 
 
 @given(
-	left_flag=st.sampled_from([1, 2, 4, 8, 16, 32]),
-	right_flag=st.sampled_from([64, 128, 256, 512]),
-	weight=st.integers(min_value=1, max_value=1000),
-	cost=st.integers(min_value=0, max_value=100000),
+    left_flag=st.sampled_from([1, 2, 4, 8, 16, 32]),
+    right_flag=st.sampled_from([64, 128, 256, 512]),
+    weight=st.integers(min_value=1, max_value=1000),
+    cost=st.integers(min_value=0, max_value=100000),
 )
 @settings(max_examples=20, deadline=None)
 def test_smaug_objects_read_pipe_composed_wear_flags(left_flag, right_flag, weight, cost):
-	with tempfile.TemporaryDirectory() as directory:
-		path = write_area(directory, f"""#AREA
+    with tempfile.TemporaryDirectory() as directory:
+        path = write_area(
+            directory,
+            f"""#AREA
 SMAUG Test~
 #MOBILES
 #0
@@ -643,33 +704,38 @@ An object is here.~
 #ROOMS
 #0
 #$
-""")
+""",
+        )
 
-		af = area_reader.SmaugAreaFile(path)
-		af.load_sections()
+        af = area_reader.dialects.smaug.SmaugAreaFile(path)
+        af.load_sections()
 
-		item = af.area.objects[1]
-		assert isinstance(item, area_reader.dialects.smaug.SmaugItem)
-		assert item.wear_flags == left_flag | right_flag
-		assert item.weight == weight
-		assert item.cost == cost
+        item = af.area.objects[1]
+        assert isinstance(item, area_reader.dialects.smaug.SmaugItem)
+        assert item.wear_flags == left_flag | right_flag
+        assert item.weight == weight
+        assert item.cost == cost
 
 
 @given(
-	version=st.integers(min_value=1, max_value=99),
-	low_soft=st.integers(min_value=0, max_value=60),
-	high_soft=st.integers(min_value=60, max_value=103),
-	low_hard=st.integers(min_value=0, max_value=60),
-	high_hard=st.integers(min_value=60, max_value=103),
-	mob_vnum=st.integers(min_value=1, max_value=50000),
-	object_vnum=st.integers(min_value=1, max_value=50000),
-	room_vnum=st.integers(min_value=1, max_value=50000),
-	gold=st.integers(min_value=0, max_value=1_000_000),
+    version=st.integers(min_value=1, max_value=99),
+    low_soft=st.integers(min_value=0, max_value=60),
+    high_soft=st.integers(min_value=60, max_value=103),
+    low_hard=st.integers(min_value=0, max_value=60),
+    high_hard=st.integers(min_value=60, max_value=103),
+    mob_vnum=st.integers(min_value=1, max_value=50000),
+    object_vnum=st.integers(min_value=1, max_value=50000),
+    room_vnum=st.integers(min_value=1, max_value=50000),
+    gold=st.integers(min_value=0, max_value=1_000_000),
 )
 @settings(max_examples=20, deadline=None)
-def test_swr_fuss_area_reads_keyed_records(version, low_soft, high_soft, low_hard, high_hard, mob_vnum, object_vnum, room_vnum, gold):
-	with tempfile.TemporaryDirectory() as directory:
-		path = write_area(directory, f"""#FUSSAREA
+def test_swr_fuss_area_reads_keyed_records(
+    version, low_soft, high_soft, low_hard, high_hard, mob_vnum, object_vnum, room_vnum, gold
+):
+    with tempfile.TemporaryDirectory() as directory:
+        path = write_area(
+            directory,
+            f"""#FUSSAREA
 #AREADATA
 Version      {version}
 Name         SWR Test~
@@ -725,31 +791,34 @@ Reset M 0 {mob_vnum} 1 {room_vnum}
 #ENDROOM
 
 #ENDAREA
-""")
+""",
+        )
 
-		af = area_reader.SwrAreaFile(path)
-		af.load_sections()
-		assert_jsonifies(af)
+        af = area_reader.dialects.swr.SwrAreaFile(path)
+        af.load_sections()
+        assert_jsonifies(af)
 
-		assert af.area.name == "SWR Test"
-		assert af.area.version == version
-		assert af.area.author == "Builder"
-		assert af.area.low_soft_range == low_soft
-		assert af.area.high_soft_range == high_soft
-		assert af.area.low_hard_range == low_hard
-		assert af.area.high_hard_range == high_hard
-		assert af.area.high_economy == 123
-		assert af.area.low_economy == 456
-		assert af.area.mobs[mob_vnum].wealth == gold
-		assert af.area.objects[object_vnum].weight == 7
-		assert af.area.objects[object_vnum].cost == 8
-		assert af.area.rooms[room_vnum].name == "Test Room"
-		assert af.area.rooms[room_vnum].resets[0].command == "M"
+        assert af.area.name == "SWR Test"
+        assert af.area.version == version
+        assert af.area.author == "Builder"
+        assert af.area.low_soft_range == low_soft
+        assert af.area.high_soft_range == high_soft
+        assert af.area.low_hard_range == low_hard
+        assert af.area.high_hard_range == high_hard
+        assert af.area.high_economy == 123
+        assert af.area.low_economy == 456
+        assert af.area.mobs[mob_vnum].wealth == gold
+        assert af.area.objects[object_vnum].weight == 7
+        assert af.area.objects[object_vnum].cost == 8
+        assert af.area.rooms[room_vnum].name == "Test Room"
+        assert af.area.rooms[room_vnum].resets[0].command == "M"
 
 
 def test_circle_rooms_read_flags_exits_and_extra_descriptions():
-	with tempfile.TemporaryDirectory() as directory:
-		root = write_circle_world(directory, wld="""#3001
+    with tempfile.TemporaryDirectory() as directory:
+        root = write_circle_world(
+            directory,
+            wld="""#3001
 Temple~
 The temple is quiet.
 ~
@@ -765,27 +834,30 @@ The altar is worn smooth.
 ~
 S
 $
-""")
+""",
+        )
 
-		af = area_reader.CircleAreaFile(root)
-		af.load_sections()
-		assert_jsonifies(af)
+        af = area_reader.dialects.circle.CircleAreaFile(root)
+        af.load_sections()
+        assert_jsonifies(af)
 
-		room = af.area.rooms[3001]
-		assert room.name == "Temple"
-		assert room.room_flags == area_reader.dialects.circle.circle_asciiflag_conv("dJ")
-		assert room.sector_type == 0
-		assert room.exits[0].description == "A northern road.\n"
-		assert room.exits[0].keyword == "gate"
-		assert room.exits[0].exit_info == area_reader.EXIT_FLAGS.ISDOOR | area_reader.EXIT_FLAGS.PICKPROOF
-		assert room.exits[0].key == 3010
-		assert room.exits[0].destination == 3002
-		assert room.extra_descriptions[0].keyword == "altar"
+        room = af.area.rooms[3001]
+        assert room.name == "Temple"
+        assert room.room_flags == area_reader.dialects.circle.circle_asciiflag_conv("dJ")
+        assert room.sector_type == 0
+        assert room.exits[0].description == "A northern road.\n"
+        assert room.exits[0].keyword == "gate"
+        assert room.exits[0].exit_info == constants.EXIT_FLAGS.ISDOOR | constants.EXIT_FLAGS.PICKPROOF
+        assert room.exits[0].key == 3010
+        assert room.exits[0].destination == 3002
+        assert room.extra_descriptions[0].keyword == "altar"
 
 
 def test_circle_simple_mobile_uses_circle_transforms():
-	with tempfile.TemporaryDirectory() as directory:
-		root = write_circle_world(directory, mob="""#10
+    with tempfile.TemporaryDirectory() as directory:
+        root = write_circle_world(
+            directory,
+            mob="""#10
 clone~
 the clone~
 A boring old clone is standing here.
@@ -797,31 +869,37 @@ b 0 -25 S
 50 125
 8 5 1
 $
-""")
+""",
+        )
 
-		af = area_reader.CircleAreaFile(root)
-		af.load_sections()
+        af = area_reader.dialects.circle.CircleAreaFile(root)
+        af.load_sections()
 
-		mob = af.area.mobs[10]
-		assert mob.name == "clone"
-		assert mob.act == area_reader.dialects.circle.circle_asciiflag_conv("b") | area_reader.dialects.circle.CircleMobFlags.ISNPC
-		assert mob.affected_by == 0
-		assert mob.alignment == -25
-		assert mob.level == 7
-		assert mob.hitroll == 17
-		assert mob.ac == 40
-		assert mob.hit == area_reader.model.Dice(number=2, sides=8, bonus=11)
-		assert mob.damage == area_reader.model.Dice(number=1, sides=4, bonus=2)
-		assert mob.wealth == 50
-		assert mob.exp == 125
-		assert mob.default_pos == 8
-		assert mob.start_pos == 5
-		assert mob.sex == 1
+        mob = af.area.mobs[10]
+        assert mob.name == "clone"
+        assert (
+            mob.act
+            == area_reader.dialects.circle.circle_asciiflag_conv("b") | area_reader.dialects.circle.CircleMobFlags.ISNPC
+        )
+        assert mob.affected_by == 0
+        assert mob.alignment == -25
+        assert mob.level == 7
+        assert mob.hitroll == 17
+        assert mob.ac == 40
+        assert mob.hit == area_reader.model.Dice(number=2, sides=8, bonus=11)
+        assert mob.damage == area_reader.model.Dice(number=1, sides=4, bonus=2)
+        assert mob.wealth == 50
+        assert mob.exp == 125
+        assert mob.default_pos == 8
+        assert mob.start_pos == 5
+        assert mob.sex == 1
 
 
 def test_circle_enhanced_mobile_reads_espec_section():
-	with tempfile.TemporaryDirectory() as directory:
-		root = write_circle_world(directory, mob="""#1
+    with tempfile.TemporaryDirectory() as directory:
+        root = write_circle_world(
+            directory,
+            mob="""#1
 Puff dragon fractal~
 Puff~
 Puff the Fractal Dragon is here.
@@ -836,20 +914,23 @@ BareHandAttack: 12
 Str: 18
 E
 $
-""")
+""",
+        )
 
-		af = area_reader.CircleAreaFile(root)
-		af.load_sections()
+        af = area_reader.dialects.circle.CircleAreaFile(root)
+        af.load_sections()
 
-		mob = af.area.mobs[1]
-		assert mob.level == 26
-		assert mob.especs["BareHandAttack"] == "12"
-		assert mob.especs["Str"] == "18"
+        mob = af.area.mobs[1]
+        assert mob.level == 26
+        assert mob.especs["BareHandAttack"] == "12"
+        assert mob.especs["Str"] == "18"
 
 
 def test_circle_objects_end_at_next_record():
-	with tempfile.TemporaryDirectory() as directory:
-		root = write_circle_world(directory, obj="""#10
+    with tempfile.TemporaryDirectory() as directory:
+        root = write_circle_world(
+            directory,
+            obj="""#10
 waybread bread~
 a waybread~
 Some waybread has been put here.~
@@ -870,26 +951,29 @@ A coin lies here.~
 1 2 3 4
 1 2 3
 $
-""")
+""",
+        )
 
-		af = area_reader.CircleAreaFile(root)
-		af.load_sections()
+        af = area_reader.dialects.circle.CircleAreaFile(root)
+        af.load_sections()
 
-		assert sorted(af.area.objects) == [10, 11]
-		item = af.area.objects[10]
-		assert item.item_type == 19
-		assert item.extra_flags == area_reader.dialects.circle.circle_asciiflag_conv("g")
-		assert item.wear_flags == 1
-		assert item.value == [24, 0, 0, 0]
-		assert item.weight == 1
-		assert item.cost == 50
-		assert item.rent == 50
-		assert item.extra_descriptions[0].keyword == "waybread bread"
+        assert sorted(af.area.objects) == [10, 11]
+        item = af.area.objects[10]
+        assert item.item_type == 19
+        assert item.extra_flags == area_reader.dialects.circle.circle_asciiflag_conv("g")
+        assert item.wear_flags == 1
+        assert item.value == [24, 0, 0, 0]
+        assert item.weight == 1
+        assert item.cost == 50
+        assert item.rent == 50
+        assert item.extra_descriptions[0].keyword == "waybread bread"
 
 
 def test_circle_zones_follow_circle_reset_command_arity():
-	with tempfile.TemporaryDirectory() as directory:
-		root = write_circle_world(directory, zon="""#30
+    with tempfile.TemporaryDirectory() as directory:
+        root = write_circle_world(
+            directory,
+            zon="""#30
 Midgaard~
 3000 3099 30 2
 M 0 3000 1 3001
@@ -899,55 +983,61 @@ R 0 3001 3012
 D 0 3001 0 2
 S
 $
-""")
+""",
+        )
 
-		af = area_reader.CircleAreaFile(root)
-		af.load_sections()
+        af = area_reader.dialects.circle.CircleAreaFile(root)
+        af.load_sections()
 
-		zone = af.area.zones[30]
-		assert zone.name == "Midgaard"
-		assert zone.bot == 3000
-		assert zone.top == 3099
-		assert zone.lifespan == 30
-		assert zone.reset_mode == 2
-		assert [(reset.command, reset.if_flag, reset.arg1, reset.arg2, reset.arg3) for reset in zone.resets] == [
-			("M", 0, 3000, 1, 3001),
-			("G", 1, 3010, 2, None),
-			("E", 1, 3011, 1, 16),
-			("R", 0, 3001, 3012, None),
-			("D", 0, 3001, 0, 2),
-		]
+        zone = af.area.zones[30]
+        assert zone.name == "Midgaard"
+        assert zone.bot == 3000
+        assert zone.top == 3099
+        assert zone.lifespan == 30
+        assert zone.reset_mode == 2
+        assert [(reset.command, reset.if_flag, reset.arg1, reset.arg2, reset.arg3) for reset in zone.resets] == [
+            ("M", 0, 3000, 1, 3001),
+            ("G", 1, 3010, 2, None),
+            ("E", 1, 3011, 1, 16),
+            ("R", 0, 3001, 3012, None),
+            ("D", 0, 3001, 0, 2),
+        ]
 
 
 def test_circle_zone_rejects_premature_eof(monkeypatch):
-	with tempfile.TemporaryDirectory() as directory:
-		root = write_circle_world(directory, zon="""#30
+    with tempfile.TemporaryDirectory() as directory:
+        root = write_circle_world(
+            directory,
+            zon="""#30
 Midgaard~
 3000 3099 30 2
 M 0 3000 1 3001
-""")
+""",
+        )
 
-		af = area_reader.CircleAreaFile(root)
-		original_read_line = af.read_line
-		eof_reads = 0
+        af = area_reader.dialects.circle.CircleAreaFile(root)
+        original_read_line = af.read_line
+        eof_reads = 0
 
-		def bounded_read_line():
-			nonlocal eof_reads
-			line = original_read_line()
-			if line == '' and af.current_char == '\0':
-				eof_reads += 1
-				if eof_reads > 1:
-					raise AssertionError("zone parser retried EOF")
-			return line
+        def bounded_read_line():
+            nonlocal eof_reads
+            line = original_read_line()
+            if line == "" and af.current_char == "\0":
+                eof_reads += 1
+                if eof_reads > 1:
+                    raise AssertionError("zone parser retried EOF")
+            return line
 
-		monkeypatch.setattr(af, "read_line", bounded_read_line)
-		with pytest.raises(area_reader.parser.ParseError, match="premature end of file"):
-			af.load_zones()
+        monkeypatch.setattr(af, "read_line", bounded_read_line)
+        with pytest.raises(area_reader.parser.ParseError, match="premature end of file"):
+            af.load_zones()
 
 
 def test_circle_v3_shop_records_parse_core_fields():
-	with tempfile.TemporaryDirectory() as directory:
-		root = write_circle_world(directory, shp="""CircleMUD v3.0 Shop File~
+    with tempfile.TemporaryDirectory() as directory:
+        root = write_circle_world(
+            directory,
+            shp="""CircleMUD v3.0 Shop File~
 #3000~
 3050
 3051
@@ -973,197 +1063,200 @@ WAND
 0
 28
 $
-""")
+""",
+        )
 
-		af = area_reader.CircleAreaFile(root)
-		af.load_sections()
+        af = area_reader.dialects.circle.CircleAreaFile(root)
+        af.load_sections()
 
-		shop = af.area.shops[3000]
-		assert shop.products == [3050, 3051]
-		assert shop.profit_buy == 1.15
-		assert shop.profit_sell == 0.15
-		assert shop.buy_type == ["SCROLL", "WAND"]
-		assert shop.keeper == 3000
-		assert shop.rooms == [3033]
-		assert shop.open_hour == 0
-		assert shop.close_hour == 28
-		assert shop.messages[0] == "%s Sorry, I haven't got exactly that item."
+        shop = af.area.shops[3000]
+        assert shop.products == [3050, 3051]
+        assert shop.profit_buy == 1.15
+        assert shop.profit_sell == 0.15
+        assert shop.buy_type == ["SCROLL", "WAND"]
+        assert shop.keeper == 3000
+        assert shop.rooms == [3033]
+        assert shop.open_hour == 0
+        assert shop.close_hour == 28
+        assert shop.messages[0] == "%s Sorry, I haven't got exactly that item."
 
 
 def test_loading_actual_circle_zones_when_available():
-	if not circle_source_dir.exists():
-		return
+    if not circle_source_dir.exists():
+        return
 
-	af = area_reader.CircleAreaFile(circle_source_dir)
-	af.load_zones()
+    af = area_reader.dialects.circle.CircleAreaFile(circle_source_dir)
+    af.load_zones()
 
-	assert len(af.area.zones) == len(circle_indexed_paths("zon"))
-	assert 0 in af.area.zones
+    assert len(af.area.zones) == len(circle_indexed_paths("zon"))
+    assert 0 in af.area.zones
 
 
 def test_loading_actual_circle_rooms_when_available():
-	if not circle_source_dir.exists():
-		return
+    if not circle_source_dir.exists():
+        return
 
-	af = area_reader.CircleAreaFile(circle_source_dir)
-	af.load_rooms()
+    af = area_reader.dialects.circle.CircleAreaFile(circle_source_dir)
+    af.load_rooms()
 
-	assert af.area.rooms
-	assert 0 in af.area.rooms
+    assert af.area.rooms
+    assert 0 in af.area.rooms
 
 
 def test_loading_actual_circle_mobiles_when_available():
-	if not circle_source_dir.exists():
-		return
+    if not circle_source_dir.exists():
+        return
 
-	af = area_reader.CircleAreaFile(circle_source_dir)
-	af.load_mobiles()
+    af = area_reader.dialects.circle.CircleAreaFile(circle_source_dir)
+    af.load_mobiles()
 
-	assert af.area.mobs
-	assert 1 in af.area.mobs
+    assert af.area.mobs
+    assert 1 in af.area.mobs
 
 
 def test_loading_actual_circle_objects_when_available():
-	if not circle_source_dir.exists():
-		return
+    if not circle_source_dir.exists():
+        return
 
-	af = area_reader.CircleAreaFile(circle_source_dir)
-	af.load_objects()
+    af = area_reader.dialects.circle.CircleAreaFile(circle_source_dir)
+    af.load_objects()
 
-	assert af.area.objects
-	assert 0 in af.area.objects
+    assert af.area.objects
+    assert 0 in af.area.objects
 
 
 def test_loading_actual_circle_shops_when_available():
-	if not circle_source_dir.exists():
-		return
+    if not circle_source_dir.exists():
+        return
 
-	af = area_reader.CircleAreaFile(circle_source_dir)
-	af.load_shops()
+    af = area_reader.dialects.circle.CircleAreaFile(circle_source_dir)
+    af.load_shops()
 
-	assert af.area.shops
-	assert 3000 in af.area.shops
+    assert af.area.shops
+    assert 3000 in af.area.shops
 
 
 def test_loading_actual_circle_world_when_available():
-	if not circle_source_dir.exists():
-		return
+    if not circle_source_dir.exists():
+        return
 
-	af = area_reader.CircleAreaFile(circle_source_dir)
-	af.load_sections()
+    af = area_reader.dialects.circle.CircleAreaFile(circle_source_dir)
+    af.load_sections()
 
-	assert af.area.zones
-	assert af.area.rooms
-	assert af.area.mobs
-	assert af.area.objects
-	assert af.area.shops
+    assert af.area.zones
+    assert af.area.rooms
+    assert af.area.mobs
+    assert af.area.objects
+    assert af.area.shops
 
 
 def test_loading_actual_coffeemud_monsters_when_available():
-	path = coffeemud_source_dir / "resources" / "examples" / "monsters.cmare"
-	if not path.exists():
-		return
+    path = coffeemud_source_dir / "resources" / "examples" / "monsters.cmare"
+    if not path.exists():
+        return
 
-	af = area_reader.CoffeeMudAreaFile(path)
-	af.load_sections()
+    af = area_reader.dialects.coffeemud.CoffeeMudAreaFile(path)
+    af.load_sections()
 
-	expected_mobs = path.read_text(encoding="latin-1").count("<MOB>")
-	assert len(af.area.mobs) == expected_mobs
-	assert af.area.mobs[0].name == "the death dog"
-	assert af.area.mobs[0].behaviors
-	assert af.area.mobs[0].abilities
+    expected_mobs = path.read_text(encoding="latin-1").count("<MOB>")
+    assert len(af.area.mobs) == expected_mobs
+    assert af.area.mobs[0].name == "the death dog"
+    assert af.area.mobs[0].behaviors
+    assert af.area.mobs[0].abilities
 
 
 def test_loading_actual_coffeemud_deities_when_available():
-	path = coffeemud_source_dir / "resources" / "examples" / "deities.cmare"
-	if not path.exists():
-		return
+    path = coffeemud_source_dir / "resources" / "examples" / "deities.cmare"
+    if not path.exists():
+        return
 
-	af = area_reader.CoffeeMudAreaFile(path)
-	af.load_sections()
+    af = area_reader.dialects.coffeemud.CoffeeMudAreaFile(path)
+    af.load_sections()
 
-	expected_mobs = path.read_text(encoding="latin-1").count("<MOB>")
-	assert len(af.area.mobs) == expected_mobs
-	assert af.area.mobs[0].class_id == "GenDeity"
-	assert af.area.mobs[0].rejuv == 0
-	assert af.area.mobs[0].raw_data["CLEREQ"] == "-class +cleric +necromancer +doomsayer +templar"
+    expected_mobs = path.read_text(encoding="latin-1").count("<MOB>")
+    assert len(af.area.mobs) == expected_mobs
+    assert af.area.mobs[0].class_id == "GenDeity"
+    assert af.area.mobs[0].rejuv == 0
+    assert af.area.mobs[0].raw_data["CLEREQ"] == "-class +cleric +necromancer +doomsayer +templar"
 
 
 def test_loading_actual_coffeemud_junk_items_when_available():
-	path = coffeemud_source_dir / "resources" / "examples" / "junk.cmare"
-	if not path.exists():
-		return
+    path = coffeemud_source_dir / "resources" / "examples" / "junk.cmare"
+    if not path.exists():
+        return
 
-	af = area_reader.CoffeeMudAreaFile(path)
-	af.load_sections()
+    af = area_reader.dialects.coffeemud.CoffeeMudAreaFile(path)
+    af.load_sections()
 
-	expected_items = path.read_text(encoding="latin-1").count("<ITEM>")
-	assert len(af.area.items) == expected_items
-	assert af.area.items[0].name == "an iron sifter"
-	assert af.area.items[0].value == 26
-	assert af.area.items[1].capacity == 37
-	assert af.area.items[2].affects[0].class_id == "Prop_NoPurge"
+    expected_items = path.read_text(encoding="latin-1").count("<ITEM>")
+    assert len(af.area.items) == expected_items
+    assert af.area.items[0].name == "an iron sifter"
+    assert af.area.items[0].value == 26
+    assert af.area.items[1].capacity == 37
+    assert af.area.items[2].affects[0].class_id == "Prop_NoPurge"
 
 
 def test_loading_actual_coffeemud_shipbuilding_nested_areas_when_available():
-	path = coffeemud_source_dir / "resources" / "skills" / "shipbuilding.cmare"
-	if not path.exists():
-		return
+    path = coffeemud_source_dir / "resources" / "skills" / "shipbuilding.cmare"
+    if not path.exists():
+        return
 
-	af = area_reader.CoffeeMudAreaFile(path)
-	af.load_sections()
+    af = area_reader.dialects.coffeemud.CoffeeMudAreaFile(path)
+    af.load_sections()
 
-	assert af.area.items
-	assert af.area.items[0].nested_area is not None
-	assert af.area.items[0].nested_area.rooms
-	first_room = next(iter(af.area.items[0].nested_area.rooms.values()))
-	assert first_room.exits
+    assert af.area.items
+    assert af.area.items[0].nested_area is not None
+    assert af.area.items[0].nested_area.rooms
+    first_room = next(iter(af.area.items[0].nested_area.rooms.values()))
+    assert first_room.exits
 
 
 def test_loading_actual_coffeemud_caravanbuilding_nested_contents_when_available():
-	path = coffeemud_source_dir / "resources" / "skills" / "caravanbuilding.cmare"
-	if not path.exists():
-		return
+    path = coffeemud_source_dir / "resources" / "skills" / "caravanbuilding.cmare"
+    if not path.exists():
+        return
 
-	af = area_reader.CoffeeMudAreaFile(path)
-	af.load_sections()
+    af = area_reader.dialects.coffeemud.CoffeeMudAreaFile(path)
+    af.load_sections()
 
-	nested_areas = [item.nested_area for item in af.area.items if item.nested_area is not None]
-	assert nested_areas
-	assert any(room.items for area in nested_areas for room in area.rooms.values())
+    nested_areas = [item.nested_area for item in af.area.items if item.nested_area is not None]
+    assert nested_areas
+    assert any(room.items for area in nested_areas for room in area.rooms.values())
 
 
 def test_loading_actual_coffeemud_clancastles_nested_rooms_and_exits_when_available():
-	path = coffeemud_source_dir / "resources" / "skills" / "clancastles.cmare"
-	if not path.exists():
-		return
+    path = coffeemud_source_dir / "resources" / "skills" / "clancastles.cmare"
+    if not path.exists():
+        return
 
-	af = area_reader.CoffeeMudAreaFile(path)
-	af.load_sections()
+    af = area_reader.dialects.coffeemud.CoffeeMudAreaFile(path)
+    af.load_sections()
 
-	nested_areas = [item.nested_area for item in af.area.items if item.nested_area is not None]
-	assert nested_areas
-	assert any(len(area.rooms) > 1 for area in nested_areas)
-	assert any(room.exits for area in nested_areas for room in area.rooms.values())
+    nested_areas = [item.nested_area for item in af.area.items if item.nested_area is not None]
+    assert nested_areas
+    assert any(len(area.rooms) > 1 for area in nested_areas)
+    assert any(room.exits for area in nested_areas for room in area.rooms.values())
 
 
 def test_loading_smaug_map1_source_area_when_available():
-	path = smaug_source_dir / "map1.are"
-	if not path.exists():
-		return
+    path = smaug_source_dir / "map1.are"
+    if not path.exists():
+        return
 
-	af = area_reader.SmaugAreaFile(path)
-	af.load_sections()
-	assert_jsonifies(af)
+    af = area_reader.dialects.smaug.SmaugAreaFile(path)
+    af.load_sections()
+    assert_jsonifies(af)
 
-	assert af.area.name == "Continent 1"
-	assert 30000 in af.area.mobs
-	assert 30000 in af.area.rooms
+    assert af.area.name == "Continent 1"
+    assert 30000 in af.area.mobs
+    assert 30000 in af.area.rooms
 
 
 def test_smaug_vnum_section_can_end_at_eof():
-	with tempfile.TemporaryDirectory() as directory:
-		path = write_area(directory, """#AREA
+    with tempfile.TemporaryDirectory() as directory:
+        path = write_area(
+            directory,
+            """#AREA
 SMAUG Test~
 #MOBILES
 #0
@@ -1174,48 +1267,49 @@ Description.
 ~
 0 0 0
 S
-""")
+""",
+        )
 
-		af = area_reader.SmaugAreaFile(path)
-		af.load_sections()
+        af = area_reader.dialects.smaug.SmaugAreaFile(path)
+        af.load_sections()
 
-		assert 1 in af.area.rooms
+        assert 1 in af.area.rooms
 
 
 def test_loading_actual_rom_source_areas_when_available():
-	if not rom_source_dir.exists():
-		return
+    if not rom_source_dir.exists():
+        return
 
-	for path in sorted(rom_source_dir.glob("*.are")):
-		if path.name == "proto.are":
-			continue
-		af = area_reader.RomAreaFile(path)
-		af.load_sections()
-		assert af.area
+    for path in sorted(rom_source_dir.glob("*.are")):
+        if path.name == "proto.are":
+            continue
+        af = area_reader.dialects.rom.RomAreaFile(path)
+        af.load_sections()
+        assert af.area
 
 
 def test_loading_actual_merc_source_areas_when_available():
-	if not merc_source_dir.exists():
-		return
+    if not merc_source_dir.exists():
+        return
 
-	for path in sorted(merc_source_dir.glob("*.are")):
-		af = area_reader.MercAreaFile(path)
-		af.load_sections()
-		assert af.area
+    for path in sorted(merc_source_dir.glob("*.are")):
+        af = area_reader.dialects.merc.MercAreaFile(path)
+        af.load_sections()
+        assert af.area
 
 
 def test_loading_actual_smaug_source_areas_when_available():
-	if not smaug_source_dir.exists():
-		return
+    if not smaug_source_dir.exists():
+        return
 
-	for path in sorted(smaug_source_dir.glob("*.are")):
-		af = area_reader.SmaugAreaFile(path)
-		af.load_sections()
-		assert af.area
+    for path in sorted(smaug_source_dir.glob("*.are")):
+        af = area_reader.dialects.smaug.SmaugAreaFile(path)
+        af.load_sections()
+        assert af.area
 
 
 @pytest.mark.parametrize("swr_path", swr_are_paths(), ids=lambda path: str(path.relative_to(swr_source_dir)))
 def test_loading_actual_swr_are_file_when_available(swr_path):
-	af = area_reader.SwrAreaFile(swr_path)
-	af.load_sections()
-	assert af.area
+    af = area_reader.dialects.swr.SwrAreaFile(swr_path)
+    af.load_sections()
+    assert af.area

@@ -2,13 +2,16 @@
 
 import logging
 from collections import OrderedDict
+from operator import setitem
 
 from attr import Factory, attr, attributes
 
 import area_reader.dialects.merc
 import area_reader.dialects.rom
 import area_reader.model
+import area_reader.parser
 import area_reader.schema
+import area_reader.serialization
 import area_reader.values
 from area_reader.constants import (
     EXIT_FLAGS,
@@ -26,6 +29,197 @@ from area_reader.native import number as native_number
 from area_reader.native import records as native_records
 from area_reader.native import tilde_string as native_tilde_string
 from area_reader.native import word as native_word
+
+
+class SmaugAreaFile(area_reader.dialects.rom.RomAreaFile):
+    MAX_FIX = 3
+
+    def create_area(self):
+        return SmaugArea()
+
+    def skip_smaug_programs(self):
+        self.skip_whitespace()
+        while self.current_char == ">":
+            program_end = self.data.find("\n|\n", self.index)
+            if program_end == -1:
+                program_end = self.data.find("\r\n|\r\n", self.index)
+            if program_end != -1:
+                self.index = program_end + 3
+                self.skip_whitespace()
+                continue
+            next_record = self.data.find("\n#", self.index)
+            if next_record == -1:
+                self.index = len(self.data) - 1
+                return
+            self.index = next_record + 1
+
+    def read_smaug_programs(self):
+        programs = []
+        self.skip_whitespace()
+        while self.current_char == ">":
+            self.read_and_verify_letter(">")
+            programs.append(
+                SmaugProgram(
+                    trigger=self.read_word(),
+                    argument=self.read_string(),
+                    commands=self.read_string(),
+                )
+            )
+            self.skip_whitespace()
+        self.read_and_verify_letter("|")
+        return programs
+
+    def load_sections(self):
+        readers = {
+            "area": self.read_area_metadata,
+            "author": self.load_author,
+            "credits": self.load_credits,
+            "flags": self.load_flags,
+            "ranges": self.load_ranges,
+            "version": self.load_version,
+            "resetmsg": self.load_resetmsg,
+            "economy": self.load_economy,
+            "helps": self.load_helps,
+            "mobiles": self.load_mobiles,
+            "objects": self.load_objects,
+            "rooms": self.load_rooms,
+            "resets": self.load_resets,
+            "shops": self.load_shops,
+            "specials": self.load_specials,
+            "repairs": self.load_repairs,
+            "continent": self.load_continent,
+            "climate": self.load_climate,
+            "spelllimit": self.load_spelllimit,
+        }
+        while True:
+            self.skip_whitespace()
+            if self.index >= len(self.data):
+                return
+            section_name = self.read_section_name()
+            self.current_section_name = section_name
+            if section_name == "$":
+                return
+            reader = readers.get(section_name)
+            if reader is None:
+                self.skip_section(section_name)
+            else:
+                logger.info(f"Processing section {section_name}")
+                try:
+                    reader()
+                except area_reader.parser.ParseError:
+                    raise
+                except Exception as error:  # noqa: BLE001 - add parser source context to arbitrary model errors
+                    self.parse_fail(f"Error reading section {section_name!r}: {error!r}")
+
+    def read_area_metadata(self):
+        self.area.name = self.read_string()
+
+    def load_author(self):
+        self.area.author = self.read_string()
+
+    def load_credits(self):
+        self.area.credits = self.read_string()
+
+    def load_flags(self):
+        self.area.flags = self.read_number()
+        line = self.read_to_eol().strip()
+        self.area.reset_frequency = int(line.split()[0]) if line else 0
+
+    def load_ranges(self):
+        self.area.low_soft_range = self.read_number()
+        self.area.high_soft_range = self.read_number()
+        self.area.low_hard_range = self.read_number()
+        self.area.high_hard_range = self.read_number()
+        self.read_word()  # $
+
+    def load_version(self):
+        self.area.version = self.read_number()
+
+    def load_continent(self):
+        self.area.continent = self.read_string()
+
+    def load_climate(self):
+        self.area.climate = self.read_number_line()
+
+    def load_spelllimit(self):
+        self.area.spelllimit = self.read_number()
+
+    def load_mobiles(self):
+        for mob in self.load_smaug_vnum_section(SmaugMob):
+            setitem(self.area.mobs, mob.vnum, mob)
+
+    def load_objects(self):
+        for item in self.load_smaug_vnum_section(SmaugItem):
+            setitem(self.area.objects, item.vnum, item)
+
+    def load_rooms(self):
+        for room in self.load_smaug_vnum_section(SmaugRoom):
+            setitem(self.area.rooms, room.vnum, room)
+
+    def load_smaug_vnum_section(self, section_object_type):
+        while True:
+            self.skip_whitespace()
+            if self.index >= len(self.data):
+                break
+            if self.current_char != "#":
+                self.parse_fail(f"Expected # got {self.current_char}")
+            next_char = self.data[self.index + 1 : self.index + 2]
+            if not (next_char.isdigit() or next_char == "-"):
+                break
+            vnum = self.read_vnum()
+            if vnum == 0:
+                break
+            yield self.read_object(section_object_type, vnum=vnum)
+
+    def load_resets(self):
+        for reset in self.read_flat_section(area_reader.dialects.merc.MercReset):
+            self.area.resets.append(reset)
+
+    def load_repairs(self):
+        while True:
+            keeper = self.read_number()
+            if keeper == 0:
+                break
+            fix_type = [self.read_number() for _ in range(self.MAX_FIX)]
+            profit_fix = self.read_number()
+            shop_type = self.read_number()
+            open_hour = self.read_number()
+            close_hour = self.read_number()
+            comment = self.read_to_eol()
+            self.area.repairs.append(
+                SmaugRepair(
+                    keeper=keeper,
+                    fix_type=fix_type,
+                    profit_fix=profit_fix,
+                    shop_type=shop_type,
+                    open_hour=open_hour,
+                    close_hour=close_hour,
+                    comment=comment,
+                )
+            )
+
+    def load_resetmsg(self):
+        self.area.resetmsg = self.read_string()
+
+    def load_economy(self):
+        self.area.high_economy = self.read_number()
+        self.area.low_economy = self.read_number()
+
+    def load_room(self, vnum):
+        logger.debug("Reading room %d", vnum)
+        room = area_reader.model.Room(vnum=vnum)
+        room.name = self.read_string()
+        room.description = self.read_string()
+        room.area_number = self.read_number()
+        room.room_flags = self.read_flag()
+        self.read_line()
+        # room.sector_type, room.tele_delay, room.tele_vnum, room.tunnel, room.max_weight = map(int, line.split())
+        self.read_room_data(room)
+        return room
+
+    def read_line(self):
+        return self.read_to_eol()
+
 
 logger = logging.getLogger("area_reader")
 

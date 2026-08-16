@@ -62,10 +62,7 @@ def enum_type_in(annotation):
 
 def attrs_enum_fields():
     classes = {
-        value
-        for module in OWNER_MODULES
-        for value in vars(module).values()
-        if isinstance(value, type) and has(value)
+        value for module in OWNER_MODULES for value in vars(module).values() if isinstance(value, type) and has(value)
     }
     return [
         (owner, attribute, enum_type_in(attribute.type))
@@ -169,9 +166,9 @@ def test_every_enum_typed_attrs_field_jsonifies_recursively(
 
 def test_enums_jsonify_recursively_in_mixed_containers_and_mapping_keys():
     payload = {
-        area_reader.EXIT_DIRECTIONS.NORTH: [
-            area_reader.ROM_ACT_TYPES.IS_NPC | area_reader.ROM_ACT_TYPES.SENTINEL,
-            {"wear": area_reader.WEAR_FLAGS.TAKE},
+        constants.EXIT_DIRECTIONS.NORTH: [
+            constants.ROM_ACT_TYPES.IS_NPC | constants.ROM_ACT_TYPES.SENTINEL,
+            {"wear": constants.WEAR_FLAGS.TAKE},
         ],
     }
 
@@ -221,7 +218,7 @@ def test_save_as_json_uses_the_same_enum_safe_representation(tmp_path):
     area_file.area = area_reader.dialects.rom.RomArea(
         mobs={
             1: area_reader.dialects.rom.RomMob(
-                act=(area_reader.ROM_ACT_TYPES.IS_NPC | area_reader.ROM_ACT_TYPES.SENTINEL),
+                act=(constants.ROM_ACT_TYPES.IS_NPC | constants.ROM_ACT_TYPES.SENTINEL),
             ),
         },
     )
