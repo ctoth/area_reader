@@ -10,6 +10,7 @@ import area_reader.dialects.merc
 import area_reader.dialects.rom
 import area_reader.dialects.smaug
 import area_reader.dialects.swr
+import area_reader.dialects.tba
 import area_reader.serialization
 
 SNIFF_SIZE = 64 * 1024
@@ -40,6 +41,9 @@ def detect_area_type(area_file_path):
         direct_index = path / "zon" / "index"
         nested_index = path / "lib" / "world" / "zon" / "index"
         if direct_index.is_file() or nested_index.is_file():
+            world_root = path if direct_index.is_file() else path / "lib" / "world"
+            if (world_root / "trg" / "index").is_file() or (world_root / "qst" / "index").is_file():
+                return area_reader.dialects.tba.TbaAreaFile
             return area_reader.dialects.circle.CircleAreaFile
         raise ValueError(f"Could not detect area type for {path}")
 

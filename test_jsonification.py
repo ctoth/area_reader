@@ -11,6 +11,7 @@ import area_reader.dialects.merc
 import area_reader.dialects.rom
 import area_reader.dialects.smaug
 import area_reader.dialects.swr
+import area_reader.dialects.tba
 import area_reader.model
 import area_reader.serialization
 from area_reader import constants, parser
@@ -24,6 +25,7 @@ OWNER_MODULES = (
     area_reader.dialects.smaug,
     area_reader.dialects.swr,
     area_reader.dialects.circle,
+    area_reader.dialects.tba,
     area_reader.dialects.coffeemud,
 )
 

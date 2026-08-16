@@ -143,6 +143,7 @@ Initial sibling institutions:
 - `Smaug`
 - `SwrFuss`
 - `Circle`
+- `Tba`
 - `CoffeeMud`
 
 These are area/world-content institutions. Their first obligation is native
@@ -437,6 +438,7 @@ fields, and known discarded data for each existing reader:
 - SMAUG
 - SWR/FUSS
 - Circle
+- TBA
 - CoffeeMud
 
 Also document LambdaMOO as an external programmable-world institution, using

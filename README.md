@@ -16,6 +16,7 @@ very easy to do things like render the entire tree of objects out as JSON or sim
 | SMAUG | `SmaugAreaFile` | `dumps()` / `write()` | single tilde-delimited area file |
 | SWR / FUSS | `SwrAreaFile` | `dumps()` / `write()` | single tilde-delimited area file |
 | CircleMUD | `CircleAreaFile` | `dumps()` / `write()` | indexed world tree (`wld`/`mob`/`obj`/`zon`/`shp`) directory |
+| tbaMUD | `TbaAreaFile` | `dumps()` / `write()` | indexed world tree (`zon`/`trg`/`wld`/`mob`/`obj`/`shp`/`qst`) directory |
 | CoffeeMud | `CoffeeMudAreaFile` | `dumps()` / `write()` | `.cmare` XML export (areas, item/mob catalogs, nested boardable areas) |
 
 ## Example usage
@@ -66,6 +67,25 @@ relative to `lib/world` to canonical native text. `write()` creates that tree,
 including every family index. Index order, record-to-file membership, mobile
 type, and shop version headers are part of the attrs model and survive a
 semantic round trip.
+
+### tbaMUD
+
+tbaMUD retains CircleMUD's indexed tree but has its own native signature. Use
+`TbaAreaFile` to preserve the four 32-bit flag banks, zone builder and level
+metadata, DG triggers and attachments, string-valued zone variables, quests,
+object levels and timers, and hidden exits.
+
+```python
+>>> import area_reader
+>>> world = area_reader.TbaAreaFile('/path/to/tbamud')
+>>> world.load_sections()
+>>> world.area.triggers
+>>> world.area.quests
+>>> world.write('/path/to/canonical-tbamud')
+```
+
+Directory auto-detection distinguishes a tbaMUD tree from a CircleMUD tree by
+its indexed `trg` or `qst` family.
 
 ### CoffeeMud
 

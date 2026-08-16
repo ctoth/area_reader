@@ -6,6 +6,7 @@ from area_reader.dialects.merc import MercAreaFile
 from area_reader.dialects.rom import RomAreaFile
 from area_reader.dialects.smaug import SmaugAreaFile
 from area_reader.dialects.swr import SwrAreaFile
+from area_reader.dialects.tba import TbaAreaFile
 
 __all__ = (
     "CircleAreaFile",
@@ -14,4 +15,5 @@ __all__ = (
     "RomAreaFile",
     "SmaugAreaFile",
     "SwrAreaFile",
+    "TbaAreaFile",
 )
