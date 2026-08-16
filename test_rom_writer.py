@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-import area_reader
+import area_reader.model
 from area_reader.native import NativeWriteError, render_record
 
 
@@ -202,7 +202,7 @@ def test_rom_mobprog_annotations_are_bidirectional(tmp_path: Path) -> None:
 	[
 		area_reader.RomItem(item_type="trash", value=[0, 0, 0, 0, 0], condition=57),
 		area_reader.RomArmorClass(pierce=7, bash=0, slash=0, exotic=0),
-		area_reader.Exit(door=0, exit_info=area_reader.EXIT_FLAGS.CLOSED),
+		area_reader.model.Exit(door=0, exit_info=area_reader.EXIT_FLAGS.CLOSED),
 	],
 )
 def test_rom_annotations_reject_unrepresentable_models(record: object) -> None:

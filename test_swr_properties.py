@@ -3,7 +3,7 @@ from pathlib import Path
 
 from hypothesis import given, settings, strategies as st
 
-import area_reader
+import area_reader.model
 
 
 small_stat = st.integers(min_value=-10_000, max_value=10_000)
@@ -69,8 +69,8 @@ UnknownProgram ignored~
 	assert mob.alignment == stats1[0]
 	assert mob.level == stats1[1]
 	assert mob.wealth == stats1[4]
-	assert mob.hit == area_reader.Dice(*stats2)
-	assert mob.damage == area_reader.Dice(*stats3)
+	assert mob.hit == area_reader.model.Dice(*stats2)
+	assert mob.damage == area_reader.model.Dice(*stats3)
 	assert mob.hitroll == stats4[3]
 	assert mob.ac == area_reader.RomArmorClass(*([stats1[3]] * 4))
 

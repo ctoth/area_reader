@@ -1,4 +1,4 @@
-import area_reader
+import area_reader.model
 import json
 import os
 import pytest
@@ -20,23 +20,23 @@ def assert_jsonifies(area_file):
 
 def test_dice_roll_includes_the_maximum_face(monkeypatch):
 	monkeypatch.setattr(
-		area_reader.random,
+		area_reader.model.random,
 		"randrange",
 		lambda start, stop: stop - 1,
 	)
 
-	assert area_reader.Dice(number=2, sides=6, bonus=3).roll() == 15
-	assert area_reader.Dice(number=2, sides=1, bonus=3).roll() == 5
+	assert area_reader.model.Dice(number=2, sides=6, bonus=3).roll() == 15
+	assert area_reader.model.Dice(number=2, sides=1, bonus=3).roll() == 5
 
 
 def test_dice_roll_zero_sides_contributes_zero():
-	assert area_reader.Dice(number=2, sides=0, bonus=0).roll() == 0
-	assert area_reader.Dice(number=5, sides=0, bonus=7).roll() == 7
-	assert area_reader.Dice().roll() == 0
+	assert area_reader.model.Dice(number=2, sides=0, bonus=0).roll() == 0
+	assert area_reader.model.Dice(number=5, sides=0, bonus=7).roll() == 7
+	assert area_reader.model.Dice().roll() == 0
 
 
 def test_dice_roll_negative_sides_rolls_one_per_die():
-	assert area_reader.Dice(number=3, sides=-4, bonus=2).roll() == 5
+	assert area_reader.model.Dice(number=3, sides=-4, bonus=2).roll() == 5
 
 
 def test_forms_instant_decay_is_bit_d():
@@ -804,8 +804,8 @@ $
 		assert mob.level == 7
 		assert mob.hitroll == 17
 		assert mob.ac == 40
-		assert mob.hit == area_reader.Dice(number=2, sides=8, bonus=11)
-		assert mob.damage == area_reader.Dice(number=1, sides=4, bonus=2)
+		assert mob.hit == area_reader.model.Dice(number=2, sides=8, bonus=11)
+		assert mob.damage == area_reader.model.Dice(number=1, sides=4, bonus=2)
 		assert mob.wealth == 50
 		assert mob.exp == 125
 		assert mob.default_pos == 8

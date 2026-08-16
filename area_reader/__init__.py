@@ -7,7 +7,6 @@ import enum
 import html
 import io
 import json
-import random
 import re
 import os
 import sys
@@ -17,48 +16,16 @@ from attr import attr, attributes, Factory, fields
 from operator import setitem
 
 from area_reader.constants import *
-from area_reader.native import (
-	NativeField,
-	NativeSection,
-	NativeWriteError,
-	flag as native_flag,
-	nested as native_nested,
-	number as native_number,
-	raw as native_raw,
-	records as native_records,
-	render_document,
-	render_record,
-	signed_number as native_signed_number,
-	tilde_string as native_tilde_string,
-	word as native_word,
-)
+from area_reader.native import NativeField, NativeSection, NativeWriteError, flag as native_flag, nested as native_nested, number as native_number, raw as native_raw, records as native_records, render_document, render_record, tilde_string as native_tilde_string, word as native_word
 import area_reader.serialization
+import area_reader.model
+import area_reader.schema
+import area_reader.values
 
 logger = logging.getLogger('area_reader')
 logging.basicConfig(level=logging.INFO)
 
-def field(type=None, read=True, on_read=None, original_type=None, only_if=None, native=None, *args, **kwargs):
-	metadata = dict(read=read)
-	if on_read:
-		metadata['on_read'] = on_read
-	if original_type:
-		metadata['original_type'] = original_type
-	if only_if:
-		metadata['only_if'] = only_if
-	if native:
-		metadata['native'] = native
-	return attr(type=type, metadata=metadata, *args, **kwargs)
-
 class ParseError(Exception): pass
-
-class Letter(str):
-	pass
-
-class Word(str):
-	pass
-
-class VNum(int):
-	pass
 
 class AreaFile(object):
 	area_type = None
@@ -76,12 +43,12 @@ class AreaFile(object):
 		self.skipped_sections = []
 		self.current_section_name = "N/A"
 		self.readers = {
-			Word: self.read_word,
-			Letter: self.read_letter,
-			VNum: self.read_number,
+			area_reader.values.Word: self.read_word,
+			area_reader.values.Letter: self.read_letter,
+			area_reader.values.VNum: self.read_number,
 			str: self.read_string,
 			int: self.read_number,
-			VNum: self.read_number,
+			area_reader.values.VNum: self.read_number,
 			enum.IntFlag: self.read_flag,
 			RomArmorClass: lambda: self.read_object_from_fields(RomArmorClass),
 		}
@@ -358,19 +325,19 @@ class AreaFile(object):
 		return name.lower()
 
 	def load_rooms(self):
-		for item in self.load_vnum_section(Room):
+		for item in self.load_vnum_section(area_reader.model.Room):
 			setitem(self.area.rooms, item.vnum, item)
 
 	def load_objects(self):
-		for item in self.load_vnum_section(Item):
+		for item in self.load_vnum_section(area_reader.model.Item):
 			setitem(self.area.objects, item.vnum, item)
 
 	def load_resets(self):
-		for reset in self.read_flat_section(Reset):
+		for reset in self.read_flat_section(area_reader.model.Reset):
 			self.area.resets.append(reset)
 
 	def load_specials(self):
-		for special in self.read_flat_section(Special):
+		for special in self.read_flat_section(area_reader.model.Special):
 			self.area.specials.append(special)
 
 	def load_shops(self):
@@ -396,7 +363,7 @@ class AreaFile(object):
 			if keyword[0] == '$':
 				break
 			logger.debug("Reading help with keyword %s", keyword)
-			help = Help(level=level, keyword=keyword)
+			help = area_reader.model.Help(level=level, keyword=keyword)
 			help.text = self.read_string()
 			self.area.helps.append(help)
 
@@ -470,21 +437,6 @@ def native_condition(value, owner):
 		return conditions[value]
 	except KeyError:
 		raise NativeWriteError("ROM condition %r has no native letter" % value)
-
-
-def native_exit_lock(value, owner):
-	del owner
-	locks = {
-		int(EXIT_FLAGS.NONE): 0,
-		int(EXIT_FLAGS.ISDOOR): 1,
-		int(EXIT_FLAGS.ISDOOR | EXIT_FLAGS.PICKPROOF): 2,
-		int(EXIT_FLAGS.ISDOOR | EXIT_FLAGS.NOPASS): 3,
-		int(EXIT_FLAGS.ISDOOR | EXIT_FLAGS.NOPASS | EXIT_FLAGS.PICKPROOF): 4,
-	}
-	try:
-		return str(locks[int(value)])
-	except KeyError:
-		raise NativeWriteError("ROM exit flags %r have no native lock code" % value)
 
 
 def native_item_values(value, owner):
@@ -583,64 +535,16 @@ def native_swr_dice(value, owner):
 	return '%d %d %d' % (value.number, value.sides, value.bonus)
 
 
-def native_reset_command(value, owner):
-	del owner
-	return '*' if value is None else str(value)
-
-
-def native_comment(value, owner):
-	del owner
-	if not value:
-		return ''
-	return str(value)
-
-
-def native_reset_command_suffix(owner):
-	return '' if owner.command is None else ' '
-
-
-def native_reset_arg2_suffix(owner):
-	return '' if owner.command in ('G', 'R') else ' '
-
-
-def native_reset_arg3_suffix(owner):
-	return ' ' if owner.command in ('P', 'M') else ''
-
-
-@attributes
-class ExtraDescription(object):
-	keyword = field(default='', type=str, native=NativeField(1, native_tilde_string, prefix='E\n'))
-	description = field(default='', type=str, native=NativeField(2, native_tilde_string))
-
-@attributes
-class MudBase(object):
-	vnum = field(default=0, type=VNum, read=False)
-	name = field(default="", type=str)
-	description = field(default='', type=str)
-	extra_descriptions = attr(default=Factory(list), type=List[ExtraDescription])
-
-@attributes
-class Item(MudBase):
-	short_desc = field(default='', type=str)
-	item_type = field(default=-1, type=int)
-	extra_flags = field(default=0, type=int)
-	wear_flags = field(default=0, type=WEAR_FLAGS, converter=WEAR_FLAGS)
-	cost = field(default=0, type=int)
-	level = field(default=0, type=int)
-	weight = field(default=0, type=int)
-	affected = attr(default=Factory(list))
-	value = attr(default=Factory(list), type=List)
-
 @attributes
 class MercAffectData(object):
 	type = attr(default=-1)
 	duration = attr(default=-1)
-	location = field(default=-1, native=NativeField(1, native_number, prefix='A\n'))
-	modifier = field(default=-1, native=NativeField(2, native_number))
+	location = area_reader.schema.field(default=-1, native=NativeField(1, native_number, prefix='A\n'))
+	modifier = area_reader.schema.field(default=-1, native=NativeField(2, native_number))
 	bitvector = attr(default=0)
 
 @attributes
-class RomItem(Item):
+class RomItem(area_reader.model.Item):
 
 	@staticmethod
 	def convert_condition(letter):
@@ -657,21 +561,21 @@ class RomItem(Item):
 		condition = conditions[letter]
 		return condition
 
-	vnum = field(default=0, type=VNum, read=False, native=NativeField(0, native_number, prefix='#'))
-	name = field(default='', type=str, native=NativeField(1, native_tilde_string))
-	short_desc = field(default='', type=str, native=NativeField(2, native_tilde_string))
-	description = field(default='', type=str, native=NativeField(3, native_tilde_string))
-	material = field(default='', type=str, native=NativeField(4, native_tilde_string))
-	item_type = field(default=-1, type=int, native=NativeField(5, native_word))
-	extra_flags = field(default=0, type=int, native=NativeField(6, native_flag))
-	wear_flags = field(default=0, type=WEAR_FLAGS, converter=WEAR_FLAGS, native=NativeField(7, native_flag))
-	value = field(default=Factory(list), type=List, native=NativeField(8, native_item_values))
-	level = field(default=0, type=int, native=NativeField(9, native_number))
-	weight = field(default=0, type=int, native=NativeField(10, native_number))
-	cost = field(default=0, type=int, native=NativeField(11, native_number))
-	condition = field(default=100, type=int, original_type=Letter, on_read=convert_condition, native=NativeField(12, native_condition))
-	affected = field(default=Factory(list), native=NativeField(13, native_records, suffix=''))
-	extra_descriptions = field(default=Factory(list), type=List[ExtraDescription], native=NativeField(14, native_records, suffix=''))
+	vnum = area_reader.schema.field(default=0, type=area_reader.values.VNum, read=False, native=NativeField(0, native_number, prefix='#'))
+	name = area_reader.schema.field(default='', type=str, native=NativeField(1, native_tilde_string))
+	short_desc = area_reader.schema.field(default='', type=str, native=NativeField(2, native_tilde_string))
+	description = area_reader.schema.field(default='', type=str, native=NativeField(3, native_tilde_string))
+	material = area_reader.schema.field(default='', type=str, native=NativeField(4, native_tilde_string))
+	item_type = area_reader.schema.field(default=-1, type=int, native=NativeField(5, native_word))
+	extra_flags = area_reader.schema.field(default=0, type=int, native=NativeField(6, native_flag))
+	wear_flags = area_reader.schema.field(default=0, type=WEAR_FLAGS, converter=WEAR_FLAGS, native=NativeField(7, native_flag))
+	value = area_reader.schema.field(default=Factory(list), type=List, native=NativeField(8, native_item_values))
+	level = area_reader.schema.field(default=0, type=int, native=NativeField(9, native_number))
+	weight = area_reader.schema.field(default=0, type=int, native=NativeField(10, native_number))
+	cost = area_reader.schema.field(default=0, type=int, native=NativeField(11, native_number))
+	condition = area_reader.schema.field(default=100, type=int, original_type=area_reader.values.Letter, on_read=convert_condition, native=NativeField(12, native_condition))
+	affected = area_reader.schema.field(default=Factory(list), native=NativeField(13, native_records, suffix=''))
+	extra_descriptions = area_reader.schema.field(default=Factory(list), type=List[area_reader.model.ExtraDescription], native=NativeField(14, native_records, suffix=''))
 
 	@classmethod
 	def read(cls, reader, vnum=None, **kwargs):
@@ -733,7 +637,7 @@ class RomItem(Item):
 				af.bitvector = reader.read_flag()
 				affected.append(af)
 			elif letter == 'E':
-				extra_descriptions.append(reader.read_object(ExtraDescription))
+				extra_descriptions.append(reader.read_object(area_reader.model.ExtraDescription))
 			else:
 				reader.index -= 1
 				break
@@ -744,57 +648,30 @@ multiply_10 = lambda n: n * 10
 
 @attributes
 class RomArmorClass(object):
-	pierce = field(default=0, type=int, on_read=multiply_10, native=NativeField(1, native_divide_by_ten))
-	bash = field(default=0, type=int, on_read=multiply_10, native=NativeField(2, native_divide_by_ten))
-	slash = field(default=0, type=int, on_read=multiply_10, native=NativeField(3, native_divide_by_ten))
-	exotic = field(default=0, type=int, on_read=multiply_10, native=NativeField(4, native_divide_by_ten))
-
-@attributes
-class Dice(object):
-	number = field(default=0, type=int, native=NativeField(1, native_number, suffix=''))
-	sides = field(default=0, type=int, native=NativeField(2, native_number, prefix='d', suffix=''))
-	bonus = field(default=0, type=int, native=NativeField(3, native_signed_number))
-
-	@classmethod
-	def read(cls, reader, **kwargs):
-		number = reader.read_number()
-		reader.read_letter() #D
-		sides = reader.read_number()
-		bonus = reader.read_number()
-		return cls(number=number, sides=sides, bonus=bonus, **kwargs)
-
-	def roll(self):
-		# ROM's dice() (src/db.c) returns 0 for size 0, and its
-		# number_range() clamps a degenerate range to the low bound,
-		# so negative sides roll 1 per die.
-		if self.sides == 0:
-			return self.bonus
-		score = 0
-		sides = max(self.sides, 1)
-		for roll in range(self.number):
-			score += random.randrange(1, sides + 1)
-		score += self.bonus
-		return score
+	pierce = area_reader.schema.field(default=0, type=int, on_read=multiply_10, native=NativeField(1, native_divide_by_ten))
+	bash = area_reader.schema.field(default=0, type=int, on_read=multiply_10, native=NativeField(2, native_divide_by_ten))
+	slash = area_reader.schema.field(default=0, type=int, on_read=multiply_10, native=NativeField(3, native_divide_by_ten))
+	exotic = area_reader.schema.field(default=0, type=int, on_read=multiply_10, native=NativeField(4, native_divide_by_ten))
 
 @attributes
 class RomMobprog(object):
-	trig_type = field(default=None, type=Word, native=NativeField(1, native_word, prefix='M ', suffix=' '))
-	vnum = field(default=-1, type=VNum, native=NativeField(2, native_number, suffix=' '))
-	trig_phrase = field(default=None, type=str, native=NativeField(3, native_tilde_string))
+	trig_type = area_reader.schema.field(default=None, type=area_reader.values.Word, native=NativeField(1, native_word, prefix='M ', suffix=' '))
+	vnum = area_reader.schema.field(default=-1, type=area_reader.values.VNum, native=NativeField(2, native_number, suffix=' '))
+	trig_phrase = area_reader.schema.field(default=None, type=str, native=NativeField(3, native_tilde_string))
 
 @attributes
-class RomCharacter(MudBase):
-	short_desc = field(default='', type=str)
+class RomCharacter(area_reader.model.MudBase):
+	short_desc = area_reader.schema.field(default='', type=str)
 	long_desc = attr(default="", type=str)
-	level = field(default=0, type=int)
+	level = area_reader.schema.field(default=0, type=int)
 	race = attr(default="", type=str)
 	group = attr(default=0, type=int)
 	hitroll = attr(default=0, type=int)
-	hit = attr(default=Factory(Dice), type=Dice)
-	mana = attr(default=Factory(Dice), type=Dice)
-	material = field(default='', type=str)
-	damage = attr(default=Factory(Dice), type=Dice)
-	damtype = attr(default='', type=Word)
+	hit = attr(default=Factory(area_reader.model.Dice), type=area_reader.model.Dice)
+	mana = attr(default=Factory(area_reader.model.Dice), type=area_reader.model.Dice)
+	material = area_reader.schema.field(default='', type=str)
+	damage = attr(default=Factory(area_reader.model.Dice), type=area_reader.model.Dice)
+	damtype = attr(default='', type=area_reader.values.Word)
 	ac = attr(default=Factory(RomArmorClass), type=RomArmorClass)
 	act = attr(default=ROM_ACT_TYPES.IS_NPC.value, type=ROM_ACT_TYPES, converter=ROM_ACT_TYPES)
 	affected_by = attr(default=0, type=AFFECTED_BY, converter=AFFECTED_BY)
@@ -803,37 +680,37 @@ mark_as_npc = lambda act_flags: ROM_ACT_TYPES(act_flags) | ROM_ACT_TYPES.IS_NPC
 
 @attributes
 class RomMob(RomCharacter):
-	vnum = field(default=0, type=VNum, read=False, native=NativeField(0, native_number, prefix='#'))
-	name = field(default='', type=str, native=NativeField(1, native_tilde_string))
-	short_desc = field(default='', type=str, native=NativeField(2, native_tilde_string))
-	long_desc = field(default='', type=str, native=NativeField(3, native_tilde_string))
-	description = field(default='', type=str, native=NativeField(4, native_tilde_string))
-	race = field(default='', type=str, native=NativeField(5, native_tilde_string))
-	act = field(default=0, type=ROM_ACT_TYPES, converter=ROM_ACT_TYPES, native=NativeField(6, native_flag))
-	affected_by = field(default=0, type=AFFECTED_BY, converter=AFFECTED_BY, native=NativeField(7, native_flag))
-	alignment = field(default=0, type=int, native=NativeField(8, native_number))
-	group = field(default=0, type=int, native=NativeField(9, native_number))
-	level = field(default=0, type=int, native=NativeField(10, native_number))
-	hitroll = field(default=0, type=int, native=NativeField(11, native_number))
-	hit = field(default=Factory(Dice), type=Dice, native=NativeField(12, native_nested))
-	mana = field(default=Factory(Dice), type=Dice, native=NativeField(13, native_nested))
-	damage = field(default=Factory(Dice), type=Dice, native=NativeField(14, native_nested))
-	damtype = field(default='', type=Word, native=NativeField(15, native_word))
-	ac = field(default=Factory(RomArmorClass), type=RomArmorClass, native=NativeField(16, native_nested))
-	shop = field(default=None, read=False)
-	off_flags = field(default=0, type=OFFENSE, converter=OFFENSE, native=NativeField(17, native_flag))
-	imm_flags = field(default=0, type=IMM_FLAGS, converter=IMM_FLAGS, native=NativeField(18, native_flag))
-	res_flags = field(default=0, type=IMM_FLAGS, converter=IMM_FLAGS, native=NativeField(19, native_flag))
-	vuln_flags = field(default=0, type=IMM_FLAGS, converter=IMM_FLAGS, native=NativeField(20, native_flag))
-	start_pos = field(default=None, type=Word, native=NativeField(21, native_word))
-	default_pos = field(default=None, type=Word, native=NativeField(22, native_word))
-	sex = field(default='', type=Word, native=NativeField(23, native_word))
-	wealth = field(default=0, type=int, native=NativeField(24, native_number))
-	form = field(default=0, type=FORMS, converter=FORMS, native=NativeField(25, native_flag))
-	parts = field(default=0, type=PARTS, converter=PARTS, native=NativeField(26, native_flag))
-	size = field(default=None, type=Word, native=NativeField(27, native_word))
-	material = field(default='', type=str, native=NativeField(28, native_word))
-	mprogs = field(default=Factory(list), type=Optional[List[RomMobprog]], native=NativeField(29, native_records))
+	vnum = area_reader.schema.field(default=0, type=area_reader.values.VNum, read=False, native=NativeField(0, native_number, prefix='#'))
+	name = area_reader.schema.field(default='', type=str, native=NativeField(1, native_tilde_string))
+	short_desc = area_reader.schema.field(default='', type=str, native=NativeField(2, native_tilde_string))
+	long_desc = area_reader.schema.field(default='', type=str, native=NativeField(3, native_tilde_string))
+	description = area_reader.schema.field(default='', type=str, native=NativeField(4, native_tilde_string))
+	race = area_reader.schema.field(default='', type=str, native=NativeField(5, native_tilde_string))
+	act = area_reader.schema.field(default=0, type=ROM_ACT_TYPES, converter=ROM_ACT_TYPES, native=NativeField(6, native_flag))
+	affected_by = area_reader.schema.field(default=0, type=AFFECTED_BY, converter=AFFECTED_BY, native=NativeField(7, native_flag))
+	alignment = area_reader.schema.field(default=0, type=int, native=NativeField(8, native_number))
+	group = area_reader.schema.field(default=0, type=int, native=NativeField(9, native_number))
+	level = area_reader.schema.field(default=0, type=int, native=NativeField(10, native_number))
+	hitroll = area_reader.schema.field(default=0, type=int, native=NativeField(11, native_number))
+	hit = area_reader.schema.field(default=Factory(area_reader.model.Dice), type=area_reader.model.Dice, native=NativeField(12, native_nested))
+	mana = area_reader.schema.field(default=Factory(area_reader.model.Dice), type=area_reader.model.Dice, native=NativeField(13, native_nested))
+	damage = area_reader.schema.field(default=Factory(area_reader.model.Dice), type=area_reader.model.Dice, native=NativeField(14, native_nested))
+	damtype = area_reader.schema.field(default='', type=area_reader.values.Word, native=NativeField(15, native_word))
+	ac = area_reader.schema.field(default=Factory(RomArmorClass), type=RomArmorClass, native=NativeField(16, native_nested))
+	shop = area_reader.schema.field(default=None, read=False)
+	off_flags = area_reader.schema.field(default=0, type=OFFENSE, converter=OFFENSE, native=NativeField(17, native_flag))
+	imm_flags = area_reader.schema.field(default=0, type=IMM_FLAGS, converter=IMM_FLAGS, native=NativeField(18, native_flag))
+	res_flags = area_reader.schema.field(default=0, type=IMM_FLAGS, converter=IMM_FLAGS, native=NativeField(19, native_flag))
+	vuln_flags = area_reader.schema.field(default=0, type=IMM_FLAGS, converter=IMM_FLAGS, native=NativeField(20, native_flag))
+	start_pos = area_reader.schema.field(default=None, type=area_reader.values.Word, native=NativeField(21, native_word))
+	default_pos = area_reader.schema.field(default=None, type=area_reader.values.Word, native=NativeField(22, native_word))
+	sex = area_reader.schema.field(default='', type=area_reader.values.Word, native=NativeField(23, native_word))
+	wealth = area_reader.schema.field(default=0, type=int, native=NativeField(24, native_number))
+	form = area_reader.schema.field(default=0, type=FORMS, converter=FORMS, native=NativeField(25, native_flag))
+	parts = area_reader.schema.field(default=0, type=PARTS, converter=PARTS, native=NativeField(26, native_flag))
+	size = area_reader.schema.field(default=None, type=area_reader.values.Word, native=NativeField(27, native_word))
+	material = area_reader.schema.field(default='', type=str, native=NativeField(28, native_word))
+	mprogs = area_reader.schema.field(default=Factory(list), type=Optional[List[RomMobprog]], native=NativeField(29, native_records))
 
 	@classmethod
 	def read(cls, reader, vnum, **kwargs):
@@ -849,9 +726,9 @@ class RomMob(RomCharacter):
 		group = reader.read_number()
 		level = reader.read_number()
 		hitroll = reader.read_number()
-		hit = Dice.read(reader=reader)
-		mana = Dice.read(reader=reader)
-		damage = Dice.read(reader=reader)
+		hit = area_reader.model.Dice.read(reader=reader)
+		mana = area_reader.model.Dice.read(reader=reader)
+		damage = area_reader.model.Dice.read(reader=reader)
 		damtype = reader.read_word()
 		ac = reader.read_object(RomArmorClass)
 		off_flags = reader.read_flag()
@@ -923,9 +800,9 @@ class RomAffectData(object):
 	type = attr(default=None)
 	level = attr(default=None)
 	duration = attr(default=None)
-	location = field(default=None, native=NativeField(1, native_number, prefix=native_affect_prefix, suffix=' '))
-	modifier = field(default=None, native=NativeField(2, native_number, suffix=native_affect_modifier_suffix))
-	bitvector = field(
+	location = area_reader.schema.field(default=None, native=NativeField(1, native_number, prefix=native_affect_prefix, suffix=' '))
+	modifier = area_reader.schema.field(default=None, native=NativeField(2, native_number, suffix=native_affect_modifier_suffix))
+	bitvector = area_reader.schema.field(
 		default=0,
 		native=NativeField(
 			3,
@@ -948,7 +825,7 @@ class MercArea(object):
 		NativeSection('SPECIALS', collection='specials', end='S\n'),
 	)
 
-	metadata = field(default='', native=NativeField(1, native_tilde_string, section='area'))
+	metadata = area_reader.schema.field(default='', native=NativeField(1, native_tilde_string, section='area'))
 	helps = attr(default=Factory(list))
 	rooms = attr(default=Factory(OrderedDict))
 	mobs = attr(default=Factory(OrderedDict))
@@ -960,51 +837,8 @@ class MercArea(object):
 
 
 @attributes
-class Help(object):
-	level = field(default=0, type=int, native=NativeField(1, native_number, suffix=' '))
-	keyword = field(default='', type=Word, native=NativeField(2, native_tilde_string))
-	text = field(default='', type=str, native=NativeField(3, native_tilde_string))
-
-@attributes
-class Exit(object):
-	keyword = field(default='', type=Word, native=NativeField(3, native_tilde_string))
-	description = field(default='', type=str, native=NativeField(2, native_tilde_string))
-	door = field(
-		default=None,
-		type=Optional[EXIT_DIRECTIONS],
-		converter=lambda value: None if value is None else EXIT_DIRECTIONS(value),
-		native=NativeField(1, native_number, prefix='D'),
-	)
-	exit_info = field(default=0, type=EXIT_FLAGS, converter=EXIT_FLAGS, native=NativeField(4, native_exit_lock))
-	rs_flags = attr(default=0, type=int)
-	key = field(default=0, type=int, native=NativeField(5, native_number))
-	destination = field(default=None, type=int, native=NativeField(6, native_number))
-
-	@classmethod
-	def read(cls, reader, **kwargs):
-		logger.debug("Reading exit")
-		locks = 0
-		door = reader.read_number()
-		description = reader.read_string()
-		keyword = reader.read_string()
-		exit_info = 0
-		locks = reader.read_number()
-		key = reader.read_number()
-		destination = reader.read_number()
-		if locks == 1:
-			exit_info = EXIT_FLAGS.ISDOOR
-		elif locks == 2:
-			exit_info = EXIT_FLAGS.ISDOOR | EXIT_FLAGS.PICKPROOF
-		elif locks == 3:
-			exit_info = EXIT_FLAGS.ISDOOR | EXIT_FLAGS.NOPASS
-		elif locks == 4:
-			exit_info = EXIT_FLAGS.ISDOOR | EXIT_FLAGS.NOPASS | EXIT_FLAGS.PICKPROOF
-		return cls(door=door, description=description, keyword=keyword, exit_info=exit_info, key=key, destination=destination)
-
-
-@attributes
-class MercExit(Exit):
-	exit_info = field(
+class MercExit(area_reader.model.Exit):
+	exit_info = area_reader.schema.field(
 		default=0,
 		type=EXIT_FLAGS,
 		converter=EXIT_FLAGS,
@@ -1014,177 +848,44 @@ class MercExit(Exit):
 
 @attributes
 class SmaugProgram(object):
-	trigger = field(default='', type=Word, native=NativeField(1, native_word, prefix='> ', suffix=' '))
-	argument = field(default='', type=str, native=NativeField(2, native_tilde_string))
-	commands = field(default='', type=str, native=NativeField(3, native_tilde_string))
+	trigger = area_reader.schema.field(default='', type=area_reader.values.Word, native=NativeField(1, native_word, prefix='> ', suffix=' '))
+	argument = area_reader.schema.field(default='', type=str, native=NativeField(2, native_tilde_string))
+	commands = area_reader.schema.field(default='', type=str, native=NativeField(3, native_tilde_string))
 
 
 @attributes
 class SmaugMap(object):
-	vnum = field(default=0, type=int, native=NativeField(1, native_number, prefix='M ', suffix=' '))
-	x = field(default=0, type=int, native=NativeField(2, native_number, suffix=' '))
-	y = field(default=0, type=int, native=NativeField(3, native_number, suffix=' '))
-	entry = field(default='', type=Letter, native=NativeField(4, native_word))
+	vnum = area_reader.schema.field(default=0, type=int, native=NativeField(1, native_number, prefix='M ', suffix=' '))
+	x = area_reader.schema.field(default=0, type=int, native=NativeField(2, native_number, suffix=' '))
+	y = area_reader.schema.field(default=0, type=int, native=NativeField(3, native_number, suffix=' '))
+	entry = area_reader.schema.field(default='', type=area_reader.values.Letter, native=NativeField(4, native_word))
 
 
 @attributes
 class SmaugRepair(object):
-	keeper = field(default=0, type=int, native=NativeField(1, native_number, suffix=' '))
-	fix_type = field(default=Factory(list), type=list, native=NativeField(2, native_numbers, suffix=' '))
-	profit_fix = field(default=0, type=int, native=NativeField(3, native_number, suffix=' '))
-	shop_type = field(default=0, type=int, native=NativeField(4, native_number, suffix=' '))
-	open_hour = field(default=0, type=int, native=NativeField(5, native_number, suffix=' '))
-	close_hour = field(default=0, type=int, native=NativeField(6, native_number, suffix=''))
-	comment = field(default='', type=str, native=NativeField(7, native_comment))
+	keeper = area_reader.schema.field(default=0, type=int, native=NativeField(1, native_number, suffix=' '))
+	fix_type = area_reader.schema.field(default=Factory(list), type=list, native=NativeField(2, native_numbers, suffix=' '))
+	profit_fix = area_reader.schema.field(default=0, type=int, native=NativeField(3, native_number, suffix=' '))
+	shop_type = area_reader.schema.field(default=0, type=int, native=NativeField(4, native_number, suffix=' '))
+	open_hour = area_reader.schema.field(default=0, type=int, native=NativeField(5, native_number, suffix=' '))
+	close_hour = area_reader.schema.field(default=0, type=int, native=NativeField(6, native_number, suffix=''))
+	comment = area_reader.schema.field(default='', type=str, native=NativeField(7, area_reader.model.native_comment))
 
 
 @attributes
-class SmaugExit(Exit):
-	door = field(default=None, type=int, native=NativeField(1, native_number, prefix='D'))
-	description = field(default='', type=str, native=NativeField(2, native_tilde_string))
-	keyword = field(default='', type=Word, native=NativeField(3, native_tilde_string))
-	locks = field(default=0, type=int, native=NativeField(4, native_number, suffix=' '))
+class SmaugExit(area_reader.model.Exit):
+	door = area_reader.schema.field(default=None, type=int, native=NativeField(1, native_number, prefix='D'))
+	description = area_reader.schema.field(default='', type=str, native=NativeField(2, native_tilde_string))
+	keyword = area_reader.schema.field(default='', type=area_reader.values.Word, native=NativeField(3, native_tilde_string))
+	locks = area_reader.schema.field(default=0, type=int, native=NativeField(4, native_number, suffix=' '))
 	exit_info = attr(default=0, type=EXIT_FLAGS, converter=EXIT_FLAGS)
-	key = field(default=0, type=int, native=NativeField(5, native_number, suffix=' '))
-	destination = field(default=None, type=int, native=NativeField(6, native_number, suffix=' '))
-	distance = field(default=0, type=int, native=NativeField(7, native_number, suffix=' '))
+	key = area_reader.schema.field(default=0, type=int, native=NativeField(5, native_number, suffix=' '))
+	destination = area_reader.schema.field(default=None, type=int, native=NativeField(6, native_number, suffix=' '))
+	distance = area_reader.schema.field(default=0, type=int, native=NativeField(7, native_number, suffix=' '))
 	x = attr(default=0, type=int)
 	y = attr(default=0, type=int)
-	pulltype = field(default=0, type=int, native=NativeField(8, native_number, suffix=' '))
-	pull = field(default=0, type=int, native=NativeField(9, native_number))
-
-@attributes
-class Room(MudBase):
-	NATIVE_SUFFIX = 'S\n'
-
-	vnum = field(default=0, type=VNum, read=False, native=NativeField(0, native_number, prefix='#'))
-	name = field(default='', type=str, native=NativeField(1, native_tilde_string))
-	description = field(default='', type=str, native=NativeField(2, native_tilde_string))
-	owner = field(
-		default=None,
-		type=str,
-		native=NativeField(10, native_tilde_string, prefix='O ', when=lambda owner: bool(owner.owner)),
-	)
-	clan = field(
-		default='',
-		type=str,
-		native=NativeField(7, native_tilde_string, prefix='C ', when=lambda owner: bool(owner.clan)),
-	)
-	area = attr(default=None)
-	area_number = field(default=0, type=int, native=NativeField(3, native_number))
-	room_flags = field(default=0, type=ROM_ROOM_FLAGS, converter=ROM_ROOM_FLAGS, native=NativeField(4, native_flag))
-	sector_type = field(default=0, type=SECTOR_TYPES, converter=SECTOR_TYPES, native=NativeField(5, native_number)) #FIXME
-	heal_rate = field(
-		default=100,
-		type=int,
-		native=NativeField(6, native_number, prefix='H ', when=lambda owner: owner.heal_rate != 100),
-	)
-	mana_rate = field(
-		default=100,
-		type=int,
-		native=NativeField(7, native_number, prefix='M ', when=lambda owner: owner.mana_rate != 100),
-	)
-	exits = field(default=Factory(list), type=List[Exit], native=NativeField(8, native_records, suffix=''))
-	extra_descriptions = field(default=Factory(list), type=List[ExtraDescription], native=NativeField(9, native_records, suffix=''))
-
-	@classmethod
-	def read(cls, reader, vnum):
-		logger.debug("Reading room with vnum %d", vnum)
-		name = reader.read_string()
-		description = reader.read_string()
-		area_number = reader.read_number()
-		room_flags = reader.read_flag()
-		sector_type = reader.read_number()
-		if sector_type == -1:
-			sector_type = 0
-		room = cls(vnum=vnum, name=name, description=description, area_number=area_number, room_flags=room_flags, sector_type=sector_type)
-		room.read_metadata(reader)
-		return room
-
-	def read_metadata(self, reader):
-		while True:
-			letter = reader.read_letter()
-			if letter == 'S':
-				break
-			if letter == 'H':
-				self.heal_rate = reader.read_number()
-			elif letter == 'M':
-				self.mana_rate = reader.read_number()
-			elif letter == 'C':
-				self.clan = reader.read_string()
-			elif letter == 'D':
-				self.exits.append(Exit.read(reader=reader))
-			elif letter == 'E':
-				self.extra_descriptions.append(reader.read_object(ExtraDescription))
-			elif letter == 'O':
-				self.owner = reader.read_string()
-			else:
-				reader.parse_fail("Don't know how to process room attribute: %s" % letter)
-
-
-@attributes
-class Reset(object):
-	command = field(default=None, native=NativeField(1, native_reset_command, suffix=native_reset_command_suffix))
-	if_flag = field(
-		default=0,
-		native=NativeField(2, native_number, suffix=' ', when=lambda owner: owner.command is not None),
-	)
-	arg1 = field(
-		default=None,
-		type=Letter,
-		native=NativeField(3, native_number, suffix=' ', when=lambda owner: owner.command is not None),
-	)
-	arg2 = field(
-		default=None,
-		native=NativeField(4, native_number, suffix=native_reset_arg2_suffix, when=lambda owner: owner.command is not None),
-	)
-	arg3 = field(
-		default=None,
-		native=NativeField(5, native_number, suffix=native_reset_arg3_suffix, when=lambda owner: owner.command not in (None, 'G', 'R')),
-	)
-	arg4 = field(
-		default=None,
-		native=NativeField(6, native_number, suffix='', when=lambda owner: owner.command in ('P', 'M')),
-	)
-	comment = field(default=None, type=str, native=NativeField(7, native_comment))
-
-	@classmethod
-	def read(cls, reader, letter):
-		command = letter
-		if_flag = reader.read_number()
-		arg1 = reader.read_number()
-		arg2 = reader.read_number()
-		if letter == 'G' or letter == 'R':
-			arg3 = 0
-		else:
-			arg3 = reader.read_number()
-		if letter == 'P' or letter == 'M':
-			arg4 = reader.read_number()
-		else:
-			arg4 = 0
-		comment = reader.read_to_eol()
-		return cls(command=command, if_flag=if_flag, arg1=arg1, arg2=arg2, arg3=arg3, arg4=arg4, comment=comment)
-
-@attributes
-class Special(object):
-	command = field(default=None, native=NativeField(1, native_reset_command, suffix=native_reset_command_suffix))
-	arg1 = field(
-		default=None,
-		native=NativeField(2, native_number, suffix=' ', when=lambda owner: owner.command is not None),
-	)
-	arg2 = field(
-		default=None,
-		native=NativeField(3, native_word, suffix='', when=lambda owner: owner.command is not None),
-	)
-	comment = field(default=None, type=str, native=NativeField(4, native_comment))
-
-	@classmethod
-	def read(cls, reader, letter, **kwargs):
-		command = letter
-		arg1 = reader.read_number()
-		arg2 = reader.read_word()
-		comment = reader.read_to_eol()
-		return cls(command=command,arg1=arg1, arg2=arg2, comment=comment)
+	pulltype = area_reader.schema.field(default=0, type=int, native=NativeField(8, native_number, suffix=' '))
+	pull = area_reader.schema.field(default=0, type=int, native=NativeField(9, native_number))
 
 @attributes
 class RomArea(object):
@@ -1199,25 +900,25 @@ class RomArea(object):
 		NativeSection('SPECIALS', collection='specials', end='S\n'),
 	)
 
-	name = field(default='', native=NativeField(2, native_tilde_string, section='area'))
-	metadata = field(default='', native=NativeField(3, native_tilde_string, section='area'))
-	original_filename = field(default='', native=NativeField(1, native_tilde_string, section='area'))
-	first_vnum = field(default=-1, native=NativeField(4, native_number, section='area'))
-	last_vnum = field(default=-1, native=NativeField(5, native_number, section='area'))
-	helps = attr(default=Factory(list), type=List[Help])
-	rooms = attr(default=Factory(OrderedDict), type=Dict[int, Room])
+	name = area_reader.schema.field(default='', native=NativeField(2, native_tilde_string, section='area'))
+	metadata = area_reader.schema.field(default='', native=NativeField(3, native_tilde_string, section='area'))
+	original_filename = area_reader.schema.field(default='', native=NativeField(1, native_tilde_string, section='area'))
+	first_vnum = area_reader.schema.field(default=-1, native=NativeField(4, native_number, section='area'))
+	last_vnum = area_reader.schema.field(default=-1, native=NativeField(5, native_number, section='area'))
+	helps = attr(default=Factory(list), type=List[area_reader.model.Help])
+	rooms = attr(default=Factory(OrderedDict), type=Dict[int, area_reader.model.Room])
 	mobs = attr(default=Factory(OrderedDict))
 	objects = attr(default=Factory(OrderedDict))
-	resets = attr(default=Factory(list), type=List[Reset])
-	specials = attr(default=Factory(list), type=List[Special])
+	resets = attr(default=Factory(list), type=List[area_reader.model.Reset])
+	specials = attr(default=Factory(list), type=List[area_reader.model.Special])
 	shops = attr(default=Factory(list))
 	mobprogs = attr(default=Factory(OrderedDict))
 
 @attributes
-class MercRoom(Room):
+class MercRoom(area_reader.model.Room):
 	owner = attr(default=None, type=str)
 	clan = attr(default='', type=str)
-	room_flags = field(
+	room_flags = area_reader.schema.field(
 		default=0,
 		type=MERC_ROOM_FLAGS,
 		converter=MERC_ROOM_FLAGS,
@@ -1225,7 +926,7 @@ class MercRoom(Room):
 	)
 	heal_rate = attr(default=100, type=int)
 	mana_rate = attr(default=100, type=int)
-	exits = field(default=Factory(list), type=List[MercExit], native=NativeField(8, native_records, suffix=''))
+	exits = area_reader.schema.field(default=Factory(list), type=List[MercExit], native=NativeField(8, native_records, suffix=''))
 
 	def read_metadata(self, reader):
 		logger.debug("Reading room data for %d" % self.vnum)
@@ -1236,43 +937,43 @@ class MercRoom(Room):
 			if letter == 'D':
 				self.exits.append(MercExit.read(reader=reader))
 			elif letter == 'E':
-				self.extra_descriptions.append(reader.read_object(ExtraDescription))
+				self.extra_descriptions.append(reader.read_object(area_reader.model.ExtraDescription))
 			else:
 				reader.parse_fail("room %d has flag %s not DES" % (self.vnum, letter))
 
 @attributes
 class RomShop(object):
-	keeper = field(default=0, type=int, native=NativeField(1, native_number, suffix=' '))
-	buy_type = field(default=Factory(list), type=list, native=NativeField(2, native_trade_types, suffix=' '))
-	profit_buy = field(default=0, type=int, native=NativeField(3, native_number, suffix=' '))
-	profit_sell = field(default=0, type=int, native=NativeField(4, native_number, suffix=' '))
-	open_hour = field(default=0, type=int, native=NativeField(5, native_number, suffix=' '))
-	close_hour = field(default=0, type=int, native=NativeField(6, native_number, suffix=''))
-	comment = field(default='', type=str, native=NativeField(7, native_comment))
+	keeper = area_reader.schema.field(default=0, type=int, native=NativeField(1, native_number, suffix=' '))
+	buy_type = area_reader.schema.field(default=Factory(list), type=list, native=NativeField(2, native_trade_types, suffix=' '))
+	profit_buy = area_reader.schema.field(default=0, type=int, native=NativeField(3, native_number, suffix=' '))
+	profit_sell = area_reader.schema.field(default=0, type=int, native=NativeField(4, native_number, suffix=' '))
+	open_hour = area_reader.schema.field(default=0, type=int, native=NativeField(5, native_number, suffix=' '))
+	close_hour = area_reader.schema.field(default=0, type=int, native=NativeField(6, native_number, suffix=''))
+	comment = area_reader.schema.field(default='', type=str, native=NativeField(7, area_reader.model.native_comment))
 
 @attributes
 class SmaugMob(RomMob):
-	vnum = field(default=0, type=VNum, read=False, native=NativeField(0, native_number, prefix='#'))
-	name = field(default='', type=str, native=NativeField(1, native_tilde_string))
-	short_desc = field(default='', type=str, native=NativeField(2, native_tilde_string))
-	long_desc = field(default='', type=str, native=NativeField(3, native_tilde_string))
-	description = field(default='', type=str, native=NativeField(4, native_tilde_string))
+	vnum = area_reader.schema.field(default=0, type=area_reader.values.VNum, read=False, native=NativeField(0, native_number, prefix='#'))
+	name = area_reader.schema.field(default='', type=str, native=NativeField(1, native_tilde_string))
+	short_desc = area_reader.schema.field(default='', type=str, native=NativeField(2, native_tilde_string))
+	long_desc = area_reader.schema.field(default='', type=str, native=NativeField(3, native_tilde_string))
+	description = area_reader.schema.field(default='', type=str, native=NativeField(4, native_tilde_string))
 	race = attr(default='', type=str)
-	act = field(default=SMAUG_ACT_TYPES.IS_NPC.value, type=SMAUG_ACT_TYPES, converter=SMAUG_ACT_TYPES, native=NativeField(5, native_flag, suffix=' '))
-	affected_by = field(default=0, type=SMAUG_AFFECTED_BY, converter=SMAUG_AFFECTED_BY, native=NativeField(6, native_flag, suffix=' '))
-	alignment = field(default=0, type=int, native=NativeField(7, native_number, suffix=' '))
-	native_type = field(default='S', type=Letter, native=NativeField(8, native_word))
+	act = area_reader.schema.field(default=SMAUG_ACT_TYPES.IS_NPC.value, type=SMAUG_ACT_TYPES, converter=SMAUG_ACT_TYPES, native=NativeField(5, native_flag, suffix=' '))
+	affected_by = area_reader.schema.field(default=0, type=SMAUG_AFFECTED_BY, converter=SMAUG_AFFECTED_BY, native=NativeField(6, native_flag, suffix=' '))
+	alignment = area_reader.schema.field(default=0, type=int, native=NativeField(7, native_number, suffix=' '))
+	native_type = area_reader.schema.field(default='S', type=area_reader.values.Letter, native=NativeField(8, native_word))
 	group = attr(default=0, type=int)
-	level = field(default=0, type=int, native=NativeField(9, native_number, suffix=' '))
-	hitroll = field(default=0, type=int, native=NativeField(10, native_number, suffix=' '))
-	ac = field(default=0, type=int, native=NativeField(11, native_number, suffix=' '))
-	hit = field(default=Factory(Dice), type=Dice, native=NativeField(12, native_dice_inline, suffix=' '))
-	mana = attr(default=Factory(Dice), type=Dice)
-	damage = field(default=Factory(Dice), type=Dice, native=NativeField(13, native_dice_inline))
-	damtype = attr(default='', type=Word)
-	economy_lines = field(default=Factory(list), type=list, native=NativeField(14, native_number_lines, when=lambda owner: bool(owner.economy_lines)))
-	position_line = field(default=Factory(list), type=list, native=NativeField(15, native_numbers))
-	complex_lines = field(default=Factory(list), type=list, native=NativeField(16, native_number_lines, when=lambda owner: bool(owner.complex_lines)))
+	level = area_reader.schema.field(default=0, type=int, native=NativeField(9, native_number, suffix=' '))
+	hitroll = area_reader.schema.field(default=0, type=int, native=NativeField(10, native_number, suffix=' '))
+	ac = area_reader.schema.field(default=0, type=int, native=NativeField(11, native_number, suffix=' '))
+	hit = area_reader.schema.field(default=Factory(area_reader.model.Dice), type=area_reader.model.Dice, native=NativeField(12, native_dice_inline, suffix=' '))
+	mana = attr(default=Factory(area_reader.model.Dice), type=area_reader.model.Dice)
+	damage = area_reader.schema.field(default=Factory(area_reader.model.Dice), type=area_reader.model.Dice, native=NativeField(13, native_dice_inline))
+	damtype = attr(default='', type=area_reader.values.Word)
+	economy_lines = area_reader.schema.field(default=Factory(list), type=list, native=NativeField(14, native_number_lines, when=lambda owner: bool(owner.economy_lines)))
+	position_line = area_reader.schema.field(default=Factory(list), type=list, native=NativeField(15, native_numbers))
+	complex_lines = area_reader.schema.field(default=Factory(list), type=list, native=NativeField(16, native_number_lines, when=lambda owner: bool(owner.complex_lines)))
 	wealth = attr(default=0, type=int)
 	start_pos = attr(default=0, type=int)
 	default_pos = attr(default=0, type=int)
@@ -1283,10 +984,10 @@ class SmaugMob(RomMob):
 	vuln_flags = attr(default=0, type=IMM_FLAGS, converter=IMM_FLAGS)
 	form = attr(default=0, type=FORMS, converter=FORMS)
 	parts = attr(default=0, type=PARTS, converter=PARTS)
-	size = attr(default=None, type=Word)
+	size = attr(default=None, type=area_reader.values.Word)
 	material = attr(default='', type=str)
 	mprogs = attr(default=Factory(list), type=Optional[List[RomMobprog]])
-	programs = field(default=Factory(list), type=List[SmaugProgram], native=NativeField(17, native_smaug_programs, suffix=''))
+	programs = area_reader.schema.field(default=Factory(list), type=List[SmaugProgram], native=NativeField(17, native_smaug_programs, suffix=''))
 
 	@classmethod
 	def read(cls, reader, vnum):
@@ -1302,8 +1003,8 @@ class SmaugMob(RomMob):
 		level = reader.read_number()
 		hitroll = reader.read_number()
 		ac = reader.read_number()
-		hit = Dice.read(reader=reader)
-		damage = Dice.read(reader=reader)
+		hit = area_reader.model.Dice.read(reader=reader)
+		damage = area_reader.model.Dice.read(reader=reader)
 		if letter not in ('S', 'C', 'V'):
 			reader.parse_fail("Reading SMAUG MOB vnum %d unexpected type %s" % (vnum, letter))
 		numeric_lines = []
@@ -1336,26 +1037,26 @@ class SmaugMob(RomMob):
 		return cls(vnum=vnum, name=name, short_desc=short_desc, long_desc=long_desc, description=description, act=act, affected_by=affected_by, alignment=alignment, native_type=letter, level=level, hitroll=hitroll, ac=ac, hit=hit, damage=damage, economy_lines=economy_lines, position_line=position_line, complex_lines=complex_lines, wealth=wealth, start_pos=start_pos, default_pos=default_pos, sex=sex, programs=programs)
 
 @attributes
-class SmaugItem(Item):
-	vnum = field(default=0, type=VNum, read=False, native=NativeField(0, native_number, prefix='#'))
-	name = field(default='', type=str, native=NativeField(1, native_tilde_string))
-	short_desc = field(default='', type=str, native=NativeField(2, native_tilde_string))
-	description = field(default='', type=str, native=NativeField(3, native_tilde_string))
-	action_description = field(default='', type=str, native=NativeField(4, native_tilde_string))
-	item_type = field(default=-1, type=int, native=NativeField(5, native_number, suffix=' '))
-	extra_flags = field(default=0, type=int, native=NativeField(6, native_flag, suffix=' '))
-	wear_flags = field(default=0, type=WEAR_FLAGS, converter=WEAR_FLAGS, native=NativeField(7, native_flag, suffix=' '))
-	header_tail = field(default=Factory(list), type=list, native=NativeField(8, native_numbers))
+class SmaugItem(area_reader.model.Item):
+	vnum = area_reader.schema.field(default=0, type=area_reader.values.VNum, read=False, native=NativeField(0, native_number, prefix='#'))
+	name = area_reader.schema.field(default='', type=str, native=NativeField(1, native_tilde_string))
+	short_desc = area_reader.schema.field(default='', type=str, native=NativeField(2, native_tilde_string))
+	description = area_reader.schema.field(default='', type=str, native=NativeField(3, native_tilde_string))
+	action_description = area_reader.schema.field(default='', type=str, native=NativeField(4, native_tilde_string))
+	item_type = area_reader.schema.field(default=-1, type=int, native=NativeField(5, native_number, suffix=' '))
+	extra_flags = area_reader.schema.field(default=0, type=int, native=NativeField(6, native_flag, suffix=' '))
+	wear_flags = area_reader.schema.field(default=0, type=WEAR_FLAGS, converter=WEAR_FLAGS, native=NativeField(7, native_flag, suffix=' '))
+	header_tail = area_reader.schema.field(default=Factory(list), type=list, native=NativeField(8, native_numbers))
 	layers = attr(default=0, type=int)
 	level = attr(default=0, type=int)
-	value = field(default=Factory(list), type=List, native=NativeField(9, native_numbers))
-	weight = field(default=0, type=int, native=NativeField(10, native_number, suffix=' '))
-	cost = field(default=0, type=int, native=NativeField(11, native_number, suffix=' '))
-	cost_tail = field(default=Factory(list), type=list, native=NativeField(12, native_numbers))
-	spell_words = field(default=Factory(list), type=list, native=NativeField(13, native_words, when=lambda owner: bool(owner.spell_words)))
-	affected = field(default=Factory(list), native=NativeField(14, native_records, suffix=''))
-	extra_descriptions = field(default=Factory(list), type=List[ExtraDescription], native=NativeField(15, native_records, suffix=''))
-	programs = field(default=Factory(list), type=List[SmaugProgram], native=NativeField(16, native_smaug_programs, suffix=''))
+	value = area_reader.schema.field(default=Factory(list), type=List, native=NativeField(9, native_numbers))
+	weight = area_reader.schema.field(default=0, type=int, native=NativeField(10, native_number, suffix=' '))
+	cost = area_reader.schema.field(default=0, type=int, native=NativeField(11, native_number, suffix=' '))
+	cost_tail = area_reader.schema.field(default=Factory(list), type=list, native=NativeField(12, native_numbers))
+	spell_words = area_reader.schema.field(default=Factory(list), type=list, native=NativeField(13, native_words, when=lambda owner: bool(owner.spell_words)))
+	affected = area_reader.schema.field(default=Factory(list), native=NativeField(14, native_records, suffix=''))
+	extra_descriptions = area_reader.schema.field(default=Factory(list), type=List[area_reader.model.ExtraDescription], native=NativeField(15, native_records, suffix=''))
+	programs = area_reader.schema.field(default=Factory(list), type=List[SmaugProgram], native=NativeField(16, native_smaug_programs, suffix=''))
 
 	@classmethod
 	def read(cls, reader, vnum):
@@ -1394,7 +1095,7 @@ class SmaugItem(Item):
 				aff.location = reader.read_number()
 				aff.modifier = reader.read_number()
 			elif letter == 'E':
-				extra_descriptions.append(reader.read_object(ExtraDescription))
+				extra_descriptions.append(reader.read_object(area_reader.model.ExtraDescription))
 			elif letter == '>':
 				reader.index -= 1
 				programs = reader.read_smaug_programs()
@@ -1427,27 +1128,27 @@ class SmaugArea(RomArea):
 		NativeSection('SPECIALS', collection='specials', end='S\n'),
 	)
 
-	name = field(default='', type=str, native=NativeField(1, native_tilde_string, section='area'))
+	name = area_reader.schema.field(default='', type=str, native=NativeField(1, native_tilde_string, section='area'))
 	metadata = attr(default='', type=str)
 	original_filename = attr(default='', type=str)
 	first_vnum = attr(default=-1, type=int)
 	last_vnum = attr(default=-1, type=int)
-	version = field(default=0, type=int, native=NativeField(1, native_number, section='version'))
-	author = field(default='', type=str, native=NativeField(1, native_tilde_string, section='author'))
-	credits = field(default='', type=str, native=NativeField(1, native_tilde_string, section='credits'))
-	low_soft_range = field(default=0, type=int, native=NativeField(1, native_number, suffix=' ', section='ranges'))
-	high_soft_range = field(default=0, type=int, native=NativeField(2, native_number, suffix=' ', section='ranges'))
-	low_hard_range = field(default=0, type=int, native=NativeField(3, native_number, suffix=' ', section='ranges'))
-	high_hard_range = field(default=0, type=int, native=NativeField(4, native_number, suffix='\n$\n', section='ranges'))
-	resetmsg = field(default='', type=str, native=NativeField(1, native_tilde_string, section='resetmsg'))
-	flags = field(default=0, type=int, native=NativeField(1, native_number, suffix=' ', section='flags'))
-	reset_frequency = field(default=0, type=int, native=NativeField(2, native_number, section='flags'))
-	high_economy = field(default=0, type=int, native=NativeField(1, native_number, suffix=' ', section='economy'))
-	low_economy = field(default=0, type=int, native=NativeField(2, native_number, section='economy'))
-	continent = field(default='', type=str, native=NativeField(1, native_tilde_string, section='continent'))
-	climate = field(default=Factory(list), type=list, native=NativeField(1, native_numbers, section='climate'))
-	spelllimit = field(default=0, type=int, native=NativeField(1, native_number, section='spelllimit'))
-	helps = attr(default=Factory(list), type=List[Help])
+	version = area_reader.schema.field(default=0, type=int, native=NativeField(1, native_number, section='version'))
+	author = area_reader.schema.field(default='', type=str, native=NativeField(1, native_tilde_string, section='author'))
+	credits = area_reader.schema.field(default='', type=str, native=NativeField(1, native_tilde_string, section='credits'))
+	low_soft_range = area_reader.schema.field(default=0, type=int, native=NativeField(1, native_number, suffix=' ', section='ranges'))
+	high_soft_range = area_reader.schema.field(default=0, type=int, native=NativeField(2, native_number, suffix=' ', section='ranges'))
+	low_hard_range = area_reader.schema.field(default=0, type=int, native=NativeField(3, native_number, suffix=' ', section='ranges'))
+	high_hard_range = area_reader.schema.field(default=0, type=int, native=NativeField(4, native_number, suffix='\n$\n', section='ranges'))
+	resetmsg = area_reader.schema.field(default='', type=str, native=NativeField(1, native_tilde_string, section='resetmsg'))
+	flags = area_reader.schema.field(default=0, type=int, native=NativeField(1, native_number, suffix=' ', section='flags'))
+	reset_frequency = area_reader.schema.field(default=0, type=int, native=NativeField(2, native_number, section='flags'))
+	high_economy = area_reader.schema.field(default=0, type=int, native=NativeField(1, native_number, suffix=' ', section='economy'))
+	low_economy = area_reader.schema.field(default=0, type=int, native=NativeField(2, native_number, section='economy'))
+	continent = area_reader.schema.field(default='', type=str, native=NativeField(1, native_tilde_string, section='continent'))
+	climate = area_reader.schema.field(default=Factory(list), type=list, native=NativeField(1, native_numbers, section='climate'))
+	spelllimit = area_reader.schema.field(default=0, type=int, native=NativeField(1, native_number, section='spelllimit'))
+	helps = attr(default=Factory(list), type=List[area_reader.model.Help])
 	rooms = attr(default=Factory(OrderedDict))
 	mobs = attr(default=Factory(OrderedDict))
 	objects = attr(default=Factory(OrderedDict))
@@ -1457,25 +1158,25 @@ class SmaugArea(RomArea):
 	repairs = attr(default=Factory(list), type=List[SmaugRepair])
 
 @attributes
-class SmaugRoom(Room):
-	vnum = field(default=0, type=VNum, read=False, native=NativeField(0, native_number, prefix='#'))
-	name = field(default='', type=str, native=NativeField(1, native_tilde_string))
-	description = field(default='', type=str, native=NativeField(2, native_tilde_string))
+class SmaugRoom(area_reader.model.Room):
+	vnum = area_reader.schema.field(default=0, type=area_reader.values.VNum, read=False, native=NativeField(0, native_number, prefix='#'))
+	name = area_reader.schema.field(default='', type=str, native=NativeField(1, native_tilde_string))
+	description = area_reader.schema.field(default='', type=str, native=NativeField(2, native_tilde_string))
 	owner = attr(default=None, type=str)
 	clan = attr(default='', type=str)
-	area_number = field(default=0, type=int, native=NativeField(3, native_number, suffix=' '))
-	room_flags = field(default=0, type=int, native=NativeField(4, native_flag, suffix=' '))
-	sector_type = field(default=0, type=int, native=NativeField(5, native_number, suffix=' '))
+	area_number = area_reader.schema.field(default=0, type=int, native=NativeField(3, native_number, suffix=' '))
+	room_flags = area_reader.schema.field(default=0, type=int, native=NativeField(4, native_flag, suffix=' '))
+	sector_type = area_reader.schema.field(default=0, type=int, native=NativeField(5, native_number, suffix=' '))
 	heal_rate = attr(default=100, type=int)
 	mana_rate = attr(default=100, type=int)
-	tele_delay = field(default=0, type=int, native=NativeField(6, native_number, suffix=' '))
-	tele_vnum = field(default=0, type=int, native=NativeField(7, native_number, suffix=' '))
-	tunnel = field(default=0, type=int, native=NativeField(8, native_number, suffix=' '))
-	max_weight = field(default=0, type=int, native=NativeField(9, native_number))
-	exits = field(default=Factory(list), type=List[SmaugExit], native=NativeField(10, native_records, suffix=''))
-	extra_descriptions = field(default=Factory(list), type=List[ExtraDescription], native=NativeField(11, native_records, suffix=''))
-	maps = field(default=Factory(list), type=List[SmaugMap], native=NativeField(12, native_records, suffix=''))
-	programs = field(default=Factory(list), type=List[SmaugProgram], native=NativeField(13, native_smaug_programs, suffix=''))
+	tele_delay = area_reader.schema.field(default=0, type=int, native=NativeField(6, native_number, suffix=' '))
+	tele_vnum = area_reader.schema.field(default=0, type=int, native=NativeField(7, native_number, suffix=' '))
+	tunnel = area_reader.schema.field(default=0, type=int, native=NativeField(8, native_number, suffix=' '))
+	max_weight = area_reader.schema.field(default=0, type=int, native=NativeField(9, native_number))
+	exits = area_reader.schema.field(default=Factory(list), type=List[SmaugExit], native=NativeField(10, native_records, suffix=''))
+	extra_descriptions = area_reader.schema.field(default=Factory(list), type=List[area_reader.model.ExtraDescription], native=NativeField(11, native_records, suffix=''))
+	maps = area_reader.schema.field(default=Factory(list), type=List[SmaugMap], native=NativeField(12, native_records, suffix=''))
+	programs = area_reader.schema.field(default=Factory(list), type=List[SmaugProgram], native=NativeField(13, native_smaug_programs, suffix=''))
 	light = attr(default=0)
 
 	@classmethod
@@ -1501,7 +1202,7 @@ class SmaugRoom(Room):
 			if letter == 'D':
 				self.exits.append(self.read_exit(reader))
 			elif letter == 'E':
-				self.extra_descriptions.append(reader.read_object(ExtraDescription))
+				self.extra_descriptions.append(reader.read_object(area_reader.model.ExtraDescription))
 			elif letter == 'M':
 				self.maps.append(SmaugMap(vnum=reader.read_number(), x=reader.read_number(), y=reader.read_number(), entry=reader.read_letter()))
 			elif letter == '>':
@@ -1530,8 +1231,8 @@ class SmaugRoom(Room):
 
 @attributes
 class SwrUnknown(object):
-	key = field(default='', type=Word, native=NativeField(1, native_word, suffix=' '))
-	value = field(default='', type=str, native=NativeField(2, native_swr_unknown_value))
+	key = area_reader.schema.field(default='', type=area_reader.values.Word, native=NativeField(1, native_word, suffix=' '))
+	value = area_reader.schema.field(default='', type=str, native=NativeField(2, native_swr_unknown_value))
 	tilde = attr(default=False, type=bool)
 
 
@@ -1540,10 +1241,10 @@ class SwrProgram(object):
 	NATIVE_PREFIX = '#MUDPROG\n'
 	NATIVE_SUFFIX = '#ENDPROG\n\n'
 
-	progtype = field(default='', type=str, native=NativeField(1, native_tilde_string, prefix='Progtype  '))
-	argument = field(default='', type=str, native=NativeField(2, native_tilde_string, prefix='Arglist   '))
-	commands = field(default='', type=str, native=NativeField(3, native_tilde_string, prefix='Comlist   ', when=lambda owner: bool(owner.commands)))
-	unknown = field(default=Factory(list), type=List[SwrUnknown], native=NativeField(4, native_records, suffix=''))
+	progtype = area_reader.schema.field(default='', type=str, native=NativeField(1, native_tilde_string, prefix='Progtype  '))
+	argument = area_reader.schema.field(default='', type=str, native=NativeField(2, native_tilde_string, prefix='Arglist   '))
+	commands = area_reader.schema.field(default='', type=str, native=NativeField(3, native_tilde_string, prefix='Comlist   ', when=lambda owner: bool(owner.commands)))
+	unknown = area_reader.schema.field(default=Factory(list), type=List[SwrUnknown], native=NativeField(4, native_records, suffix=''))
 
 
 @attributes
@@ -1551,9 +1252,9 @@ class SwrExtraDescription(object):
 	NATIVE_PREFIX = '#EXDESC\n'
 	NATIVE_SUFFIX = '#ENDEXDESC\n\n'
 
-	keyword = field(default='', type=str, native=NativeField(1, native_tilde_string, prefix='ExDescKey '))
-	description = field(default='', type=str, native=NativeField(2, native_tilde_string, prefix='ExDesc    ', when=lambda owner: bool(owner.description)))
-	unknown = field(default=Factory(list), type=List[SwrUnknown], native=NativeField(3, native_records, suffix=''))
+	keyword = area_reader.schema.field(default='', type=str, native=NativeField(1, native_tilde_string, prefix='ExDescKey '))
+	description = area_reader.schema.field(default='', type=str, native=NativeField(2, native_tilde_string, prefix='ExDesc    ', when=lambda owner: bool(owner.description)))
+	unknown = area_reader.schema.field(default=Factory(list), type=List[SwrUnknown], native=NativeField(3, native_records, suffix=''))
 
 
 @attributes
@@ -1561,26 +1262,26 @@ class SwrExit(object):
 	NATIVE_PREFIX = '#EXIT\n'
 	NATIVE_SUFFIX = '#ENDEXIT\n\n'
 
-	door = field(default='', type=str, native=NativeField(1, native_tilde_string, prefix='Direction '))
-	destination = field(default=0, type=int, native=NativeField(2, native_number, prefix='ToRoom    '))
-	key = field(default=0, type=int, native=NativeField(3, native_number, prefix='Key       ', when=lambda owner: owner.key > 0))
-	distance = field(default=0, type=int, native=NativeField(4, native_number, prefix='Distance  ', when=lambda owner: owner.distance != 0))
-	description = field(default='', type=str, native=NativeField(5, native_tilde_string, prefix='Desc      ', when=lambda owner: bool(owner.description)))
-	keyword = field(default='', type=str, native=NativeField(6, native_tilde_string, prefix='Keywords  ', when=lambda owner: bool(owner.keyword)))
-	flags = field(default='', type=str, native=NativeField(7, native_tilde_string, prefix='Flags     ', when=lambda owner: bool(owner.flags)))
-	unknown = field(default=Factory(list), type=List[SwrUnknown], native=NativeField(8, native_records, suffix=''))
+	door = area_reader.schema.field(default='', type=str, native=NativeField(1, native_tilde_string, prefix='Direction '))
+	destination = area_reader.schema.field(default=0, type=int, native=NativeField(2, native_number, prefix='ToRoom    '))
+	key = area_reader.schema.field(default=0, type=int, native=NativeField(3, native_number, prefix='Key       ', when=lambda owner: owner.key > 0))
+	distance = area_reader.schema.field(default=0, type=int, native=NativeField(4, native_number, prefix='Distance  ', when=lambda owner: owner.distance != 0))
+	description = area_reader.schema.field(default='', type=str, native=NativeField(5, native_tilde_string, prefix='Desc      ', when=lambda owner: bool(owner.description)))
+	keyword = area_reader.schema.field(default='', type=str, native=NativeField(6, native_tilde_string, prefix='Keywords  ', when=lambda owner: bool(owner.keyword)))
+	flags = area_reader.schema.field(default='', type=str, native=NativeField(7, native_tilde_string, prefix='Flags     ', when=lambda owner: bool(owner.flags)))
+	unknown = area_reader.schema.field(default=Factory(list), type=List[SwrUnknown], native=NativeField(8, native_records, suffix=''))
 
 
 @attributes
 class SwrReset(object):
 	NATIVE_PREFIX = 'Reset '
 
-	command = field(default='', type=Letter, native=NativeField(1, native_word, suffix=' '))
-	if_flag = field(default=0, type=int, native=NativeField(2, native_number, suffix=' '))
-	arg1 = field(default=0, type=int, native=NativeField(3, native_number, suffix=' '))
-	arg2 = field(default=0, type=int, native=NativeField(4, native_number, suffix=native_swr_reset_arg2_suffix))
-	arg3 = field(default=0, type=int, native=NativeField(5, native_number, suffix='', when=lambda owner: owner.command not in ('G', 'R')))
-	comment = field(default='', type=str, native=NativeField(6, native_comment))
+	command = area_reader.schema.field(default='', type=area_reader.values.Letter, native=NativeField(1, native_word, suffix=' '))
+	if_flag = area_reader.schema.field(default=0, type=int, native=NativeField(2, native_number, suffix=' '))
+	arg1 = area_reader.schema.field(default=0, type=int, native=NativeField(3, native_number, suffix=' '))
+	arg2 = area_reader.schema.field(default=0, type=int, native=NativeField(4, native_number, suffix=native_swr_reset_arg2_suffix))
+	arg3 = area_reader.schema.field(default=0, type=int, native=NativeField(5, native_number, suffix='', when=lambda owner: owner.command not in ('G', 'R')))
+	comment = area_reader.schema.field(default='', type=str, native=NativeField(6, area_reader.model.native_comment))
 
 	@classmethod
 	def read(cls, reader, letter):
@@ -1596,101 +1297,101 @@ class SwrMobile(RomCharacter):
 	NATIVE_PREFIX = '#MOBILE\n'
 	NATIVE_SUFFIX = '#ENDMOBILE\n\n'
 
-	vnum = field(default=0, type=VNum, read=False, native=NativeField(1, native_number, prefix='Vnum       '))
-	name = field(default='', type=str, native=NativeField(2, native_tilde_string, prefix='Keywords   '))
-	short_desc = field(default='', type=str, native=NativeField(3, native_tilde_string, prefix='Short      '))
-	long_desc = field(default='', type=str, native=NativeField(4, native_tilde_string, prefix='Long       ', when=lambda owner: bool(owner.long_desc)))
-	description = field(default='', type=str, native=NativeField(5, native_tilde_string, prefix='Desc       ', when=lambda owner: bool(owner.description)))
-	race = field(default='', type=str, native=NativeField(6, native_tilde_string, prefix='Race       '))
-	position = field(default='', type=str, native=NativeField(7, native_tilde_string, prefix='Position   '))
-	default_position = field(default='', type=str, native=NativeField(8, native_tilde_string, prefix='DefPos     '))
-	specfun = field(default='', type=str, native=NativeField(9, native_tilde_string, prefix='Specfun    ', when=lambda owner: bool(owner.specfun)))
-	specfun2 = field(default='', type=str, native=NativeField(10, native_tilde_string, prefix='Specfun2   ', when=lambda owner: bool(owner.specfun2)))
-	gender = field(default='', type=str, native=NativeField(11, native_tilde_string, prefix='Gender     '))
-	actflags = field(default='', type=str, native=NativeField(12, native_tilde_string, prefix='Actflags   '))
-	affected = field(default='', type=str, native=NativeField(13, native_tilde_string, prefix='Affected   ', when=lambda owner: bool(owner.affected)))
+	vnum = area_reader.schema.field(default=0, type=area_reader.values.VNum, read=False, native=NativeField(1, native_number, prefix='Vnum       '))
+	name = area_reader.schema.field(default='', type=str, native=NativeField(2, native_tilde_string, prefix='Keywords   '))
+	short_desc = area_reader.schema.field(default='', type=str, native=NativeField(3, native_tilde_string, prefix='Short      '))
+	long_desc = area_reader.schema.field(default='', type=str, native=NativeField(4, native_tilde_string, prefix='Long       ', when=lambda owner: bool(owner.long_desc)))
+	description = area_reader.schema.field(default='', type=str, native=NativeField(5, native_tilde_string, prefix='Desc       ', when=lambda owner: bool(owner.description)))
+	race = area_reader.schema.field(default='', type=str, native=NativeField(6, native_tilde_string, prefix='Race       '))
+	position = area_reader.schema.field(default='', type=str, native=NativeField(7, native_tilde_string, prefix='Position   '))
+	default_position = area_reader.schema.field(default='', type=str, native=NativeField(8, native_tilde_string, prefix='DefPos     '))
+	specfun = area_reader.schema.field(default='', type=str, native=NativeField(9, native_tilde_string, prefix='Specfun    ', when=lambda owner: bool(owner.specfun)))
+	specfun2 = area_reader.schema.field(default='', type=str, native=NativeField(10, native_tilde_string, prefix='Specfun2   ', when=lambda owner: bool(owner.specfun2)))
+	gender = area_reader.schema.field(default='', type=str, native=NativeField(11, native_tilde_string, prefix='Gender     '))
+	actflags = area_reader.schema.field(default='', type=str, native=NativeField(12, native_tilde_string, prefix='Actflags   '))
+	affected = area_reader.schema.field(default='', type=str, native=NativeField(13, native_tilde_string, prefix='Affected   ', when=lambda owner: bool(owner.affected)))
 	stats1 = attr(default=Factory(list), type=list, eq=False)
 	stats2 = attr(default=Factory(list), type=list, eq=False)
 	stats3 = attr(default=Factory(list), type=list, eq=False)
 	stats4 = attr(default=Factory(list), type=list, eq=False)
-	alignment = field(default=0, type=int, native=NativeField(14, native_number, prefix='Stats1     ', suffix=' '))
-	level = field(default=0, type=int, native=NativeField(15, native_number, suffix=' '))
-	thac0 = field(default=0, type=int, native=NativeField(16, native_number, suffix=' '))
-	ac = field(default=Factory(RomArmorClass), type=RomArmorClass, native=NativeField(17, native_swr_armor_class, suffix=' '))
-	wealth = field(default=0, type=int, native=NativeField(18, native_number, suffix=' '))
-	experience = field(default=0, type=int, native=NativeField(19, native_number))
-	hit = field(default=Factory(Dice), type=Dice, native=NativeField(20, native_swr_dice, prefix='Stats2     '))
-	damage = field(default=Factory(Dice), type=Dice, native=NativeField(21, native_swr_dice, prefix='Stats3     '))
-	height = field(default=0, type=int, native=NativeField(22, native_number, prefix='Stats4     ', suffix=' '))
-	weight = field(default=0, type=int, native=NativeField(23, native_number, suffix=' '))
-	numattacks = field(default=0, type=int, native=NativeField(24, native_number, suffix=' '))
-	hitroll = field(default=0, type=int, native=NativeField(25, native_number, suffix=' '))
-	damroll = field(default=0, type=int, native=NativeField(26, native_number))
-	attribs = field(default=Factory(list), type=list, native=NativeField(27, native_numbers, prefix='Attribs    ', when=lambda owner: bool(owner.attribs)))
-	saves = field(default=Factory(list), type=list, native=NativeField(28, native_numbers, prefix='Saves      ', when=lambda owner: bool(owner.saves)))
-	speaks = field(default='', type=str, native=NativeField(29, native_tilde_string, prefix='Speaks     ', when=lambda owner: bool(owner.speaks)))
-	speaking = field(default='', type=str, native=NativeField(30, native_tilde_string, prefix='Speaking   ', when=lambda owner: bool(owner.speaking)))
-	bodyparts = field(default='', type=str, native=NativeField(31, native_tilde_string, prefix='Bodyparts  ', when=lambda owner: bool(owner.bodyparts)))
-	resist = field(default='', type=str, native=NativeField(32, native_tilde_string, prefix='Resist     ', when=lambda owner: bool(owner.resist)))
-	immune = field(default='', type=str, native=NativeField(33, native_tilde_string, prefix='Immune     ', when=lambda owner: bool(owner.immune)))
-	suscept = field(default='', type=str, native=NativeField(34, native_tilde_string, prefix='Suscept    ', when=lambda owner: bool(owner.suscept)))
-	attacks = field(default='', type=str, native=NativeField(35, native_tilde_string, prefix='Attacks    ', when=lambda owner: bool(owner.attacks)))
-	defenses = field(default='', type=str, native=NativeField(36, native_tilde_string, prefix='Defenses   ', when=lambda owner: bool(owner.defenses)))
-	vip_flags = field(default='', type=str, native=NativeField(37, native_tilde_string, prefix='VIPFlags   ', when=lambda owner: bool(owner.vip_flags)))
-	shop_data = field(default=Factory(list), type=list, native=NativeField(38, native_numbers, prefix='ShopData   ', when=lambda owner: bool(owner.shop_data)))
-	repair_data = field(default=Factory(list), type=list, native=NativeField(39, native_numbers, prefix='RepairData ', when=lambda owner: bool(owner.repair_data)))
-	programs = field(default=Factory(list), type=List[SwrProgram], native=NativeField(40, native_records, suffix=''))
-	unknown = field(default=Factory(list), type=List[SwrUnknown], native=NativeField(41, native_records, suffix=''))
+	alignment = area_reader.schema.field(default=0, type=int, native=NativeField(14, native_number, prefix='Stats1     ', suffix=' '))
+	level = area_reader.schema.field(default=0, type=int, native=NativeField(15, native_number, suffix=' '))
+	thac0 = area_reader.schema.field(default=0, type=int, native=NativeField(16, native_number, suffix=' '))
+	ac = area_reader.schema.field(default=Factory(RomArmorClass), type=RomArmorClass, native=NativeField(17, native_swr_armor_class, suffix=' '))
+	wealth = area_reader.schema.field(default=0, type=int, native=NativeField(18, native_number, suffix=' '))
+	experience = area_reader.schema.field(default=0, type=int, native=NativeField(19, native_number))
+	hit = area_reader.schema.field(default=Factory(area_reader.model.Dice), type=area_reader.model.Dice, native=NativeField(20, native_swr_dice, prefix='Stats2     '))
+	damage = area_reader.schema.field(default=Factory(area_reader.model.Dice), type=area_reader.model.Dice, native=NativeField(21, native_swr_dice, prefix='Stats3     '))
+	height = area_reader.schema.field(default=0, type=int, native=NativeField(22, native_number, prefix='Stats4     ', suffix=' '))
+	weight = area_reader.schema.field(default=0, type=int, native=NativeField(23, native_number, suffix=' '))
+	numattacks = area_reader.schema.field(default=0, type=int, native=NativeField(24, native_number, suffix=' '))
+	hitroll = area_reader.schema.field(default=0, type=int, native=NativeField(25, native_number, suffix=' '))
+	damroll = area_reader.schema.field(default=0, type=int, native=NativeField(26, native_number))
+	attribs = area_reader.schema.field(default=Factory(list), type=list, native=NativeField(27, native_numbers, prefix='Attribs    ', when=lambda owner: bool(owner.attribs)))
+	saves = area_reader.schema.field(default=Factory(list), type=list, native=NativeField(28, native_numbers, prefix='Saves      ', when=lambda owner: bool(owner.saves)))
+	speaks = area_reader.schema.field(default='', type=str, native=NativeField(29, native_tilde_string, prefix='Speaks     ', when=lambda owner: bool(owner.speaks)))
+	speaking = area_reader.schema.field(default='', type=str, native=NativeField(30, native_tilde_string, prefix='Speaking   ', when=lambda owner: bool(owner.speaking)))
+	bodyparts = area_reader.schema.field(default='', type=str, native=NativeField(31, native_tilde_string, prefix='Bodyparts  ', when=lambda owner: bool(owner.bodyparts)))
+	resist = area_reader.schema.field(default='', type=str, native=NativeField(32, native_tilde_string, prefix='Resist     ', when=lambda owner: bool(owner.resist)))
+	immune = area_reader.schema.field(default='', type=str, native=NativeField(33, native_tilde_string, prefix='Immune     ', when=lambda owner: bool(owner.immune)))
+	suscept = area_reader.schema.field(default='', type=str, native=NativeField(34, native_tilde_string, prefix='Suscept    ', when=lambda owner: bool(owner.suscept)))
+	attacks = area_reader.schema.field(default='', type=str, native=NativeField(35, native_tilde_string, prefix='Attacks    ', when=lambda owner: bool(owner.attacks)))
+	defenses = area_reader.schema.field(default='', type=str, native=NativeField(36, native_tilde_string, prefix='Defenses   ', when=lambda owner: bool(owner.defenses)))
+	vip_flags = area_reader.schema.field(default='', type=str, native=NativeField(37, native_tilde_string, prefix='VIPFlags   ', when=lambda owner: bool(owner.vip_flags)))
+	shop_data = area_reader.schema.field(default=Factory(list), type=list, native=NativeField(38, native_numbers, prefix='ShopData   ', when=lambda owner: bool(owner.shop_data)))
+	repair_data = area_reader.schema.field(default=Factory(list), type=list, native=NativeField(39, native_numbers, prefix='RepairData ', when=lambda owner: bool(owner.repair_data)))
+	programs = area_reader.schema.field(default=Factory(list), type=List[SwrProgram], native=NativeField(40, native_records, suffix=''))
+	unknown = area_reader.schema.field(default=Factory(list), type=List[SwrUnknown], native=NativeField(41, native_records, suffix=''))
 	start_pos = attr(default='', type=str)
 	default_pos = attr(default='', type=str)
 	sex = attr(default='', type=str)
 
 
 @attributes
-class SwrObject(Item):
+class SwrObject(area_reader.model.Item):
 	NATIVE_PREFIX = '#OBJECT\n'
 	NATIVE_SUFFIX = '#ENDOBJECT\n\n'
 
-	vnum = field(default=0, type=VNum, read=False, native=NativeField(1, native_number, prefix='Vnum     '))
-	name = field(default='', type=str, native=NativeField(2, native_tilde_string, prefix='Keywords '))
-	type_name = field(default='', type=str, native=NativeField(3, native_tilde_string, prefix='Type     ', when=lambda owner: bool(owner.type_name)))
-	short_desc = field(default='', type=str, native=NativeField(4, native_tilde_string, prefix='Short    '))
-	description = field(default='', type=str, native=NativeField(5, native_tilde_string, prefix='Long     ', when=lambda owner: bool(owner.description)))
-	action_description = field(default='', type=str, native=NativeField(6, native_tilde_string, prefix='Action   ', when=lambda owner: bool(owner.action_description)))
-	flags = field(default='', type=str, native=NativeField(7, native_tilde_string, prefix='Flags    ', when=lambda owner: bool(owner.flags)))
-	wflags = field(default='', type=str, native=NativeField(8, native_tilde_string, prefix='WFlags   ', when=lambda owner: bool(owner.wflags)))
-	value = field(default=Factory(list), type=List, native=NativeField(9, native_numbers, prefix='Values   '))
+	vnum = area_reader.schema.field(default=0, type=area_reader.values.VNum, read=False, native=NativeField(1, native_number, prefix='Vnum     '))
+	name = area_reader.schema.field(default='', type=str, native=NativeField(2, native_tilde_string, prefix='Keywords '))
+	type_name = area_reader.schema.field(default='', type=str, native=NativeField(3, native_tilde_string, prefix='Type     ', when=lambda owner: bool(owner.type_name)))
+	short_desc = area_reader.schema.field(default='', type=str, native=NativeField(4, native_tilde_string, prefix='Short    '))
+	description = area_reader.schema.field(default='', type=str, native=NativeField(5, native_tilde_string, prefix='Long     ', when=lambda owner: bool(owner.description)))
+	action_description = area_reader.schema.field(default='', type=str, native=NativeField(6, native_tilde_string, prefix='Action   ', when=lambda owner: bool(owner.action_description)))
+	flags = area_reader.schema.field(default='', type=str, native=NativeField(7, native_tilde_string, prefix='Flags    ', when=lambda owner: bool(owner.flags)))
+	wflags = area_reader.schema.field(default='', type=str, native=NativeField(8, native_tilde_string, prefix='WFlags   ', when=lambda owner: bool(owner.wflags)))
+	value = area_reader.schema.field(default=Factory(list), type=List, native=NativeField(9, native_numbers, prefix='Values   '))
 	stats = attr(default=Factory(list), type=list, eq=False)
-	weight = field(default=0, type=int, native=NativeField(10, native_number, prefix='Stats    ', suffix=' '))
-	cost = field(default=0, type=int, native=NativeField(11, native_number, suffix=' '))
-	rent = field(default=0, type=int, native=NativeField(12, native_number, suffix=' '))
-	level = field(default=0, type=int, native=NativeField(13, native_number, suffix=' '))
-	layers = field(default=0, type=int, native=NativeField(14, native_number))
-	spells = field(default='', type=str, native=NativeField(15, native_raw, prefix='Spells   ', when=lambda owner: bool(owner.spells)))
-	extra_descriptions = field(default=Factory(list), type=List[SwrExtraDescription], native=NativeField(16, native_records, suffix=''))
-	programs = field(default=Factory(list), type=List[SwrProgram], native=NativeField(17, native_records, suffix=''))
-	unknown = field(default=Factory(list), type=List[SwrUnknown], native=NativeField(18, native_records, suffix=''))
+	weight = area_reader.schema.field(default=0, type=int, native=NativeField(10, native_number, prefix='Stats    ', suffix=' '))
+	cost = area_reader.schema.field(default=0, type=int, native=NativeField(11, native_number, suffix=' '))
+	rent = area_reader.schema.field(default=0, type=int, native=NativeField(12, native_number, suffix=' '))
+	level = area_reader.schema.field(default=0, type=int, native=NativeField(13, native_number, suffix=' '))
+	layers = area_reader.schema.field(default=0, type=int, native=NativeField(14, native_number))
+	spells = area_reader.schema.field(default='', type=str, native=NativeField(15, native_raw, prefix='Spells   ', when=lambda owner: bool(owner.spells)))
+	extra_descriptions = area_reader.schema.field(default=Factory(list), type=List[SwrExtraDescription], native=NativeField(16, native_records, suffix=''))
+	programs = area_reader.schema.field(default=Factory(list), type=List[SwrProgram], native=NativeField(17, native_records, suffix=''))
+	unknown = area_reader.schema.field(default=Factory(list), type=List[SwrUnknown], native=NativeField(18, native_records, suffix=''))
 
 
 @attributes
-class SwrRoom(MudBase):
+class SwrRoom(area_reader.model.MudBase):
 	NATIVE_PREFIX = '#ROOM\n'
 	NATIVE_SUFFIX = '#ENDROOM\n\n'
 
-	vnum = field(default=0, type=VNum, read=False, native=NativeField(1, native_number, prefix='Vnum     '))
-	name = field(default='', type=str, native=NativeField(2, native_tilde_string, prefix='Name     '))
-	sector = field(default='', type=str, native=NativeField(3, native_tilde_string, prefix='Sector   '))
-	flags = field(default='', type=str, native=NativeField(4, native_tilde_string, prefix='Flags    ', when=lambda owner: bool(owner.flags)))
+	vnum = area_reader.schema.field(default=0, type=area_reader.values.VNum, read=False, native=NativeField(1, native_number, prefix='Vnum     '))
+	name = area_reader.schema.field(default='', type=str, native=NativeField(2, native_tilde_string, prefix='Name     '))
+	sector = area_reader.schema.field(default='', type=str, native=NativeField(3, native_tilde_string, prefix='Sector   '))
+	flags = area_reader.schema.field(default='', type=str, native=NativeField(4, native_tilde_string, prefix='Flags    ', when=lambda owner: bool(owner.flags)))
 	stats = attr(default=Factory(list), type=list, eq=False)
-	tele_delay = field(default=0, type=int, native=NativeField(5, native_number, prefix='Stats    ', suffix=' ', when=lambda owner: any((owner.tele_delay, owner.tele_vnum, owner.tunnel))))
-	tele_vnum = field(default=0, type=int, native=NativeField(6, native_number, suffix=' ', when=lambda owner: any((owner.tele_delay, owner.tele_vnum, owner.tunnel))))
-	tunnel = field(default=0, type=int, native=NativeField(7, native_number, when=lambda owner: any((owner.tele_delay, owner.tele_vnum, owner.tunnel))))
-	description = field(default='', type=str, native=NativeField(8, native_tilde_string, prefix='Desc     ', when=lambda owner: bool(owner.description)))
-	exits = field(default=Factory(list), type=List[SwrExit], native=NativeField(9, native_records, suffix=''))
-	resets = field(default=Factory(list), type=List[SwrReset], native=NativeField(10, native_records, suffix=''))
-	extra_descriptions = field(default=Factory(list), type=List[SwrExtraDescription], native=NativeField(11, native_records, suffix=''))
-	programs = field(default=Factory(list), type=List[SwrProgram], native=NativeField(12, native_records, suffix=''))
-	unknown = field(default=Factory(list), type=List[SwrUnknown], native=NativeField(13, native_records, suffix=''))
+	tele_delay = area_reader.schema.field(default=0, type=int, native=NativeField(5, native_number, prefix='Stats    ', suffix=' ', when=lambda owner: any((owner.tele_delay, owner.tele_vnum, owner.tunnel))))
+	tele_vnum = area_reader.schema.field(default=0, type=int, native=NativeField(6, native_number, suffix=' ', when=lambda owner: any((owner.tele_delay, owner.tele_vnum, owner.tunnel))))
+	tunnel = area_reader.schema.field(default=0, type=int, native=NativeField(7, native_number, when=lambda owner: any((owner.tele_delay, owner.tele_vnum, owner.tunnel))))
+	description = area_reader.schema.field(default='', type=str, native=NativeField(8, native_tilde_string, prefix='Desc     ', when=lambda owner: bool(owner.description)))
+	exits = area_reader.schema.field(default=Factory(list), type=List[SwrExit], native=NativeField(9, native_records, suffix=''))
+	resets = area_reader.schema.field(default=Factory(list), type=List[SwrReset], native=NativeField(10, native_records, suffix=''))
+	extra_descriptions = area_reader.schema.field(default=Factory(list), type=List[SwrExtraDescription], native=NativeField(11, native_records, suffix=''))
+	programs = area_reader.schema.field(default=Factory(list), type=List[SwrProgram], native=NativeField(12, native_records, suffix=''))
+	unknown = area_reader.schema.field(default=Factory(list), type=List[SwrUnknown], native=NativeField(13, native_records, suffix=''))
 
 
 @attributes
@@ -1704,19 +1405,19 @@ class SwrArea(SmaugArea):
 		NativeSection('ROOM', collection='rooms', mapping=True, emit_header=False),
 	)
 
-	version = field(default=0, type=int, native=NativeField(1, native_number, prefix='Version    ', section='area'))
-	name = field(default='', type=str, native=NativeField(2, native_tilde_string, prefix='Name       ', section='area'))
-	author = field(default='', type=str, native=NativeField(3, native_tilde_string, prefix='Author     ', section='area'))
-	low_soft_range = field(default=0, type=int, native=NativeField(4, native_number, prefix='Ranges     ', suffix=' ', section='area'))
-	high_soft_range = field(default=0, type=int, native=NativeField(5, native_number, suffix=' ', section='area'))
-	low_hard_range = field(default=0, type=int, native=NativeField(6, native_number, suffix=' ', section='area'))
-	high_hard_range = field(default=0, type=int, native=NativeField(7, native_number, section='area'))
-	high_economy = field(default=0, type=int, native=NativeField(8, native_number, prefix='Economy    ', suffix=' ', section='area'))
-	low_economy = field(default=0, type=int, native=NativeField(9, native_number, section='area'))
-	resetmsg = field(default='', type=str, native=NativeField(10, native_tilde_string, prefix='ResetMsg   ', section='area', when=lambda owner: bool(owner.resetmsg)))
-	reset_frequency = field(default=0, type=int, native=NativeField(11, native_number, prefix='ResetFreq  ', section='area', when=lambda owner: owner.reset_frequency != 0))
-	flags = field(default='', native=NativeField(12, native_tilde_string, prefix='Flags      ', section='area', when=lambda owner: bool(owner.flags)))
-	unknown = field(default=Factory(list), type=List[SwrUnknown], native=NativeField(13, native_records, section='area', suffix=''))
+	version = area_reader.schema.field(default=0, type=int, native=NativeField(1, native_number, prefix='Version    ', section='area'))
+	name = area_reader.schema.field(default='', type=str, native=NativeField(2, native_tilde_string, prefix='Name       ', section='area'))
+	author = area_reader.schema.field(default='', type=str, native=NativeField(3, native_tilde_string, prefix='Author     ', section='area'))
+	low_soft_range = area_reader.schema.field(default=0, type=int, native=NativeField(4, native_number, prefix='Ranges     ', suffix=' ', section='area'))
+	high_soft_range = area_reader.schema.field(default=0, type=int, native=NativeField(5, native_number, suffix=' ', section='area'))
+	low_hard_range = area_reader.schema.field(default=0, type=int, native=NativeField(6, native_number, suffix=' ', section='area'))
+	high_hard_range = area_reader.schema.field(default=0, type=int, native=NativeField(7, native_number, section='area'))
+	high_economy = area_reader.schema.field(default=0, type=int, native=NativeField(8, native_number, prefix='Economy    ', suffix=' ', section='area'))
+	low_economy = area_reader.schema.field(default=0, type=int, native=NativeField(9, native_number, section='area'))
+	resetmsg = area_reader.schema.field(default='', type=str, native=NativeField(10, native_tilde_string, prefix='ResetMsg   ', section='area', when=lambda owner: bool(owner.resetmsg)))
+	reset_frequency = area_reader.schema.field(default=0, type=int, native=NativeField(11, native_number, prefix='ResetFreq  ', section='area', when=lambda owner: owner.reset_frequency != 0))
+	flags = area_reader.schema.field(default='', native=NativeField(12, native_tilde_string, prefix='Flags      ', section='area', when=lambda owner: bool(owner.flags)))
+	unknown = area_reader.schema.field(default=Factory(list), type=List[SwrUnknown], native=NativeField(13, native_records, section='area', suffix=''))
 	mobs = attr(default=Factory(OrderedDict), type=Dict[int, SwrMobile])
 	objects = attr(default=Factory(OrderedDict), type=Dict[int, SwrObject])
 	rooms = attr(default=Factory(OrderedDict), type=Dict[int, SwrRoom])
@@ -1728,26 +1429,26 @@ def native_merc_reset_arg2_suffix(owner):
 
 @attributes
 class MercReset(object):
-	command = field(default=None, native=NativeField(1, native_reset_command, suffix=native_reset_command_suffix))
-	if_flag = field(
+	command = area_reader.schema.field(default=None, native=NativeField(1, area_reader.model.native_reset_command, suffix=area_reader.model.native_reset_command_suffix))
+	if_flag = area_reader.schema.field(
 		default=0,
 		native=NativeField(2, native_number, suffix=' ', when=lambda owner: owner.command is not None),
 	)
-	arg1 = field(
+	arg1 = area_reader.schema.field(
 		default=None,
 		native=NativeField(3, native_number, suffix=' ', when=lambda owner: owner.command is not None),
 	)
-	arg2 = field(
+	arg2 = area_reader.schema.field(
 		default=None,
 		native=NativeField(4, native_number, suffix=native_merc_reset_arg2_suffix, when=lambda owner: owner.command is not None),
 	)
-	arg3 = field(
+	arg3 = area_reader.schema.field(
 		default=None,
 		native=NativeField(5, native_number, suffix='', when=lambda owner: owner.command not in (None, 'G', 'R')),
 	)
 	arg4 = attr(default=None)
 	arg5 = attr(default=None)
-	comment = field(default=None, native=NativeField(6, native_comment))
+	comment = area_reader.schema.field(default=None, native=NativeField(6, area_reader.model.native_comment))
 
 	@classmethod
 	def read(cls, reader, letter):
@@ -1764,43 +1465,43 @@ class MercReset(object):
 
 @attributes
 class MercMob(RomMob):
-	vnum = field(default=0, type=VNum, read=False, native=NativeField(0, native_number, prefix='#'))
-	name = field(default='', type=str, native=NativeField(1, native_tilde_string))
-	short_desc = field(default='', type=str, native=NativeField(2, native_tilde_string))
-	long_desc = field(default='', type=str, native=NativeField(3, native_tilde_string))
-	description = field(default='', type=str, native=NativeField(4, native_tilde_string))
-	extra_descriptions = attr(default=Factory(list), type=List[ExtraDescription])
+	vnum = area_reader.schema.field(default=0, type=area_reader.values.VNum, read=False, native=NativeField(0, native_number, prefix='#'))
+	name = area_reader.schema.field(default='', type=str, native=NativeField(1, native_tilde_string))
+	short_desc = area_reader.schema.field(default='', type=str, native=NativeField(2, native_tilde_string))
+	long_desc = area_reader.schema.field(default='', type=str, native=NativeField(3, native_tilde_string))
+	description = area_reader.schema.field(default='', type=str, native=NativeField(4, native_tilde_string))
+	extra_descriptions = attr(default=Factory(list), type=List[area_reader.model.ExtraDescription])
 	race = attr(default='', type=str)
 	group = attr(default=0, type=int)
-	act = field(
+	act = area_reader.schema.field(
 		default=MERC_ACT_TYPES.IS_NPC.value,
 		type=MERC_ACT_TYPES,
 		converter=MERC_ACT_TYPES,
 		native=NativeField(5, native_flag),
 	)
-	affected_by = field(default=0, type=AFFECTED_BY, converter=AFFECTED_BY, native=NativeField(6, native_flag))
-	alignment = field(default=0, type=int, native=NativeField(7, native_number))
-	level = field(default=0, type=int, native=NativeField(8, native_number, prefix='S\n'))
-	hitroll = field(default=0, type=int, native=NativeField(9, native_number))
-	ac = field(default=0, type=int, native=NativeField(10, native_number))
-	hit = field(default=Factory(Dice), type=Dice, native=NativeField(11, native_nested))
-	damage = field(default=Factory(Dice), type=Dice, native=NativeField(12, native_nested))
-	mana = attr(default=Factory(Dice), type=Dice)
-	damtype = attr(default='', type=Word)
+	affected_by = area_reader.schema.field(default=0, type=AFFECTED_BY, converter=AFFECTED_BY, native=NativeField(6, native_flag))
+	alignment = area_reader.schema.field(default=0, type=int, native=NativeField(7, native_number))
+	level = area_reader.schema.field(default=0, type=int, native=NativeField(8, native_number, prefix='S\n'))
+	hitroll = area_reader.schema.field(default=0, type=int, native=NativeField(9, native_number))
+	ac = area_reader.schema.field(default=0, type=int, native=NativeField(10, native_number))
+	hit = area_reader.schema.field(default=Factory(area_reader.model.Dice), type=area_reader.model.Dice, native=NativeField(11, native_nested))
+	damage = area_reader.schema.field(default=Factory(area_reader.model.Dice), type=area_reader.model.Dice, native=NativeField(12, native_nested))
+	mana = attr(default=Factory(area_reader.model.Dice), type=area_reader.model.Dice)
+	damtype = attr(default='', type=area_reader.values.Word)
 	material = attr(default='', type=str)
-	wealth = field(default=0, type=int, native=NativeField(13, native_number))
-	xp = field(default=0, type=int, native=NativeField(14, native_number))
-	default_pos = field(default=0, type=int, native=NativeField(15, native_number))
-	start_pos = field(default=0, type=int, native=NativeField(16, native_number))
-	sex = field(default=0, type=int, native=NativeField(17, native_number))
+	wealth = area_reader.schema.field(default=0, type=int, native=NativeField(13, native_number))
+	xp = area_reader.schema.field(default=0, type=int, native=NativeField(14, native_number))
+	default_pos = area_reader.schema.field(default=0, type=int, native=NativeField(15, native_number))
+	start_pos = area_reader.schema.field(default=0, type=int, native=NativeField(16, native_number))
+	sex = area_reader.schema.field(default=0, type=int, native=NativeField(17, native_number))
 	off_flags = attr(default=0, type=OFFENSE, converter=OFFENSE)
 	imm_flags = attr(default=0, type=IMM_FLAGS, converter=IMM_FLAGS)
 	res_flags = attr(default=0, type=IMM_FLAGS, converter=IMM_FLAGS)
 	vuln_flags = attr(default=0, type=IMM_FLAGS, converter=IMM_FLAGS)
 	form = attr(default=0, type=FORMS, converter=FORMS)
 	parts = attr(default=0, type=PARTS, converter=PARTS)
-	size = attr(default=None, type=Word)
-	mprogs = field(default=Factory(list), type=Optional[List[RomMobprog]])
+	size = attr(default=None, type=area_reader.values.Word)
+	mprogs = area_reader.schema.field(default=Factory(list), type=Optional[List[RomMobprog]])
 
 	@classmethod
 	def read(cls, reader, vnum):
@@ -1816,8 +1517,8 @@ class MercMob(RomMob):
 		level = reader.read_number()
 		hitroll = reader.read_number()
 		ac = reader.read_number()
-		hit = Dice.read(reader=reader)
-		damage = Dice.read(reader=reader)
+		hit = area_reader.model.Dice.read(reader=reader)
+		damage = area_reader.model.Dice.read(reader=reader)
 		wealth = reader.read_number()
 		xp = reader.read_number()
 		default_pos = reader.read_number() # position
@@ -1828,22 +1529,22 @@ class MercMob(RomMob):
 		return cls(vnum=vnum, name=name, short_desc=short_desc, long_desc=long_desc, description=description, act=act, affected_by=affected_by, alignment=alignment, level=level, hitroll=hitroll, ac=ac, hit=hit, damage=damage, wealth=wealth, xp=xp, start_pos=start_pos, default_pos=default_pos, sex=sex)
 
 @attributes
-class MercItem(Item):
-	vnum = field(default=0, type=VNum, read=False, native=NativeField(0, native_number, prefix='#'))
-	name = field(default='', type=str, native=NativeField(1, native_tilde_string))
-	short_desc = field(default='', type=str, native=NativeField(2, native_tilde_string))
-	description = field(default='', type=str, native=NativeField(3, native_tilde_string))
-	action_description = field(default='', type=str, native=NativeField(4, native_tilde_string))
-	item_type = field(default=-1, type=int, native=NativeField(5, native_number))
-	extra_flags = field(default=0, type=int, native=NativeField(6, native_number))
-	wear_flags = field(default=0, type=WEAR_FLAGS, converter=WEAR_FLAGS, native=NativeField(7, native_number))
-	value = field(default=Factory(list), type=List, native=NativeField(8, native_four_numbers))
-	weight = field(default=0, type=int, native=NativeField(9, native_number))
-	cost = field(default=0, type=int, native=NativeField(10, native_number))
-	cost_per_day = field(default=0, type=int, native=NativeField(11, native_number))
+class MercItem(area_reader.model.Item):
+	vnum = area_reader.schema.field(default=0, type=area_reader.values.VNum, read=False, native=NativeField(0, native_number, prefix='#'))
+	name = area_reader.schema.field(default='', type=str, native=NativeField(1, native_tilde_string))
+	short_desc = area_reader.schema.field(default='', type=str, native=NativeField(2, native_tilde_string))
+	description = area_reader.schema.field(default='', type=str, native=NativeField(3, native_tilde_string))
+	action_description = area_reader.schema.field(default='', type=str, native=NativeField(4, native_tilde_string))
+	item_type = area_reader.schema.field(default=-1, type=int, native=NativeField(5, native_number))
+	extra_flags = area_reader.schema.field(default=0, type=int, native=NativeField(6, native_number))
+	wear_flags = area_reader.schema.field(default=0, type=WEAR_FLAGS, converter=WEAR_FLAGS, native=NativeField(7, native_number))
+	value = area_reader.schema.field(default=Factory(list), type=List, native=NativeField(8, native_four_numbers))
+	weight = area_reader.schema.field(default=0, type=int, native=NativeField(9, native_number))
+	cost = area_reader.schema.field(default=0, type=int, native=NativeField(10, native_number))
+	cost_per_day = area_reader.schema.field(default=0, type=int, native=NativeField(11, native_number))
 	level = attr(default=0, type=int)
-	affected = field(default=Factory(list), native=NativeField(12, native_records, suffix=''))
-	extra_descriptions = field(default=Factory(list), type=List[ExtraDescription], native=NativeField(13, native_records, suffix=''))
+	affected = area_reader.schema.field(default=Factory(list), native=NativeField(12, native_records, suffix=''))
+	extra_descriptions = area_reader.schema.field(default=Factory(list), type=List[area_reader.model.ExtraDescription], native=NativeField(13, native_records, suffix=''))
 
 	@classmethod
 	def read(cls, reader, vnum):
@@ -1871,7 +1572,7 @@ class MercItem(Item):
 				aff.location = reader.read_number()
 				aff.modifier = reader.read_number()
 			elif letter == 'E':
-				extra_descriptions.append(reader.read_object(ExtraDescription))
+				extra_descriptions.append(reader.read_object(area_reader.model.ExtraDescription))
 			else:
 				reader.index -= 1
 				break
@@ -2038,7 +1739,7 @@ class SmaugAreaFile(RomAreaFile):
 
 	def load_room(self, vnum):
 		logger.debug("Reading room %d" % vnum)
-		room = Room(vnum=vnum)
+		room = area_reader.model.Room(vnum=vnum)
 		room.name = self.read_string()
 		room.description = self.read_string()
 		room.area_number = self.read_number()
@@ -2274,8 +1975,8 @@ class SwrAreaFile(SmaugAreaFile):
 		mob.ac = RomArmorClass(pierce=stats1[3], bash=stats1[3], slash=stats1[3], exotic=stats1[3])
 		mob.wealth = stats1[4]
 		mob.experience = stats1[5]
-		mob.hit = Dice(number=stats2[0], sides=stats2[1], bonus=stats2[2])
-		mob.damage = Dice(number=stats3[0], sides=stats3[1], bonus=stats3[2])
+		mob.hit = area_reader.model.Dice(number=stats2[0], sides=stats2[1], bonus=stats2[2])
+		mob.damage = area_reader.model.Dice(number=stats3[0], sides=stats3[1], bonus=stats3[2])
 		mob.height = stats4[0]
 		mob.weight = stats4[1]
 		mob.numattacks = stats4[2]
@@ -2462,7 +2163,7 @@ def native_circle_messages(value, owner):
 
 def native_circle_dice(value, owner):
 	del owner
-	if not isinstance(value, Dice):
+	if not isinstance(value, area_reader.model.Dice):
 		raise NativeWriteError("Expected Circle dice")
 	return '%dd%d%+d' % (value.number, value.sides, value.bonus)
 
@@ -2560,51 +2261,51 @@ class CircleMobFlags(enum.IntFlag):
 
 @attributes
 class CircleExit(object):
-	door = field(default=0, native=NativeField(1, native_number, prefix='D'))
-	description = field(default='', native=NativeField(2, native_tilde_string))
-	keyword = field(default='', native=NativeField(3, native_tilde_string))
-	exit_info = field(default=EXIT_FLAGS.NONE, type=EXIT_FLAGS, converter=EXIT_FLAGS, native=NativeField(4, native_circle_exit_lock, suffix=' '))
-	key = field(default=-1, native=NativeField(5, native_number, suffix=' '))
-	destination = field(default=-1, native=NativeField(6, native_number))
+	door = area_reader.schema.field(default=0, native=NativeField(1, native_number, prefix='D'))
+	description = area_reader.schema.field(default='', native=NativeField(2, native_tilde_string))
+	keyword = area_reader.schema.field(default='', native=NativeField(3, native_tilde_string))
+	exit_info = area_reader.schema.field(default=EXIT_FLAGS.NONE, type=EXIT_FLAGS, converter=EXIT_FLAGS, native=NativeField(4, native_circle_exit_lock, suffix=' '))
+	key = area_reader.schema.field(default=-1, native=NativeField(5, native_number, suffix=' '))
+	destination = area_reader.schema.field(default=-1, native=NativeField(6, native_number))
 
 
 @attributes
-class CircleRoom(MudBase):
+class CircleRoom(area_reader.model.MudBase):
 	NATIVE_SUFFIX = 'S\n'
 
-	vnum = field(default=0, type=VNum, read=False, native=NativeField(1, native_number, prefix='#'))
-	name = field(default='', type=str, native=NativeField(2, native_tilde_string))
-	description = field(default='', type=str, native=NativeField(3, native_tilde_string))
-	zone_number = field(default=0, native=NativeField(4, native_number, suffix=' '))
-	room_flags = field(default=0, native=NativeField(5, native_flag, suffix=' '))
-	sector_type = field(default=0, native=NativeField(6, native_number))
-	extra_descriptions = field(default=Factory(list), type=List[ExtraDescription], native=NativeField(7, native_records, suffix=''))
-	exits = field(default=Factory(dict), native=NativeField(8, native_circle_mapping_records, suffix=''))
+	vnum = area_reader.schema.field(default=0, type=area_reader.values.VNum, read=False, native=NativeField(1, native_number, prefix='#'))
+	name = area_reader.schema.field(default='', type=str, native=NativeField(2, native_tilde_string))
+	description = area_reader.schema.field(default='', type=str, native=NativeField(3, native_tilde_string))
+	zone_number = area_reader.schema.field(default=0, native=NativeField(4, native_number, suffix=' '))
+	room_flags = area_reader.schema.field(default=0, native=NativeField(5, native_flag, suffix=' '))
+	sector_type = area_reader.schema.field(default=0, native=NativeField(6, native_number))
+	extra_descriptions = area_reader.schema.field(default=Factory(list), type=List[area_reader.model.ExtraDescription], native=NativeField(7, native_records, suffix=''))
+	exits = area_reader.schema.field(default=Factory(dict), native=NativeField(8, native_circle_mapping_records, suffix=''))
 	source_file = attr(default='', type=str)
 
 
 @attributes
 class CircleMob(RomCharacter):
-	vnum = field(default=0, type=VNum, read=False, native=NativeField(1, native_number, prefix='#'))
-	name = field(default='', type=str, native=NativeField(2, native_tilde_string))
-	short_desc = field(default='', type=str, native=NativeField(3, native_tilde_string))
-	long_desc = field(default='', type=str, native=NativeField(4, native_tilde_string))
-	description = field(default='', type=str, native=NativeField(5, native_tilde_string))
-	act = field(default=CircleMobFlags.ISNPC.value, type=CircleMobFlags, converter=CircleMobFlags, native=NativeField(6, native_flag, suffix=' '))
-	affected_by = field(default=0, native=NativeField(7, native_flag, suffix=' '))
-	alignment = field(default=0, native=NativeField(8, native_number, suffix=' '))
-	mob_type = field(default='S', type=str, native=NativeField(9, native_circle_mobile_type))
-	level = field(default=0, type=int, native=NativeField(10, native_number, suffix=' '))
-	hitroll = field(default=0, type=int, native=NativeField(11, native_circle_hitroll, suffix=' '))
-	ac = field(default=0, native=NativeField(12, native_circle_armor_class, suffix=' '))
-	hit = field(default=Factory(Dice), type=Dice, native=NativeField(13, native_circle_dice, suffix=' '))
-	damage = field(default=Factory(Dice), type=Dice, native=NativeField(14, native_circle_dice))
-	wealth = field(default=0, native=NativeField(15, native_number, suffix=' '))
-	exp = field(default=0, native=NativeField(16, native_number))
-	default_pos = field(default=0, native=NativeField(17, native_number, suffix=' '))
-	start_pos = field(default=0, native=NativeField(18, native_number, suffix=' '))
-	sex = field(default=0, native=NativeField(19, native_number))
-	especs = field(default=Factory(dict), native=NativeField(20, native_circle_especs, suffix='E\n', when=lambda owner: owner.mob_type == 'E'))
+	vnum = area_reader.schema.field(default=0, type=area_reader.values.VNum, read=False, native=NativeField(1, native_number, prefix='#'))
+	name = area_reader.schema.field(default='', type=str, native=NativeField(2, native_tilde_string))
+	short_desc = area_reader.schema.field(default='', type=str, native=NativeField(3, native_tilde_string))
+	long_desc = area_reader.schema.field(default='', type=str, native=NativeField(4, native_tilde_string))
+	description = area_reader.schema.field(default='', type=str, native=NativeField(5, native_tilde_string))
+	act = area_reader.schema.field(default=CircleMobFlags.ISNPC.value, type=CircleMobFlags, converter=CircleMobFlags, native=NativeField(6, native_flag, suffix=' '))
+	affected_by = area_reader.schema.field(default=0, native=NativeField(7, native_flag, suffix=' '))
+	alignment = area_reader.schema.field(default=0, native=NativeField(8, native_number, suffix=' '))
+	mob_type = area_reader.schema.field(default='S', type=str, native=NativeField(9, native_circle_mobile_type))
+	level = area_reader.schema.field(default=0, type=int, native=NativeField(10, native_number, suffix=' '))
+	hitroll = area_reader.schema.field(default=0, type=int, native=NativeField(11, native_circle_hitroll, suffix=' '))
+	ac = area_reader.schema.field(default=0, native=NativeField(12, native_circle_armor_class, suffix=' '))
+	hit = area_reader.schema.field(default=Factory(area_reader.model.Dice), type=area_reader.model.Dice, native=NativeField(13, native_circle_dice, suffix=' '))
+	damage = area_reader.schema.field(default=Factory(area_reader.model.Dice), type=area_reader.model.Dice, native=NativeField(14, native_circle_dice))
+	wealth = area_reader.schema.field(default=0, native=NativeField(15, native_number, suffix=' '))
+	exp = area_reader.schema.field(default=0, native=NativeField(16, native_number))
+	default_pos = area_reader.schema.field(default=0, native=NativeField(17, native_number, suffix=' '))
+	start_pos = area_reader.schema.field(default=0, native=NativeField(18, native_number, suffix=' '))
+	sex = area_reader.schema.field(default=0, native=NativeField(19, native_number))
+	especs = area_reader.schema.field(default=Factory(dict), native=NativeField(20, native_circle_especs, suffix='E\n', when=lambda owner: owner.mob_type == 'E'))
 	source_file = attr(default='', type=str)
 
 
@@ -2612,70 +2313,70 @@ class CircleMob(RomCharacter):
 class CircleAffectData(object):
 	NATIVE_PREFIX = 'A\n'
 
-	location = field(default=0, native=NativeField(1, native_number, suffix=' '))
-	modifier = field(default=0, native=NativeField(2, native_number))
+	location = area_reader.schema.field(default=0, native=NativeField(1, native_number, suffix=' '))
+	modifier = area_reader.schema.field(default=0, native=NativeField(2, native_number))
 
 
 @attributes
-class CircleItem(Item):
-	vnum = field(default=0, type=VNum, read=False, native=NativeField(1, native_number, prefix='#'))
-	name = field(default='', type=str, native=NativeField(2, native_tilde_string))
-	short_desc = field(default='', type=str, native=NativeField(3, native_tilde_string))
-	description = field(default='', type=str, native=NativeField(4, native_tilde_string))
-	action_description = field(default='', native=NativeField(5, native_tilde_string))
-	item_type = field(default=-1, type=int, native=NativeField(6, native_number, suffix=' '))
-	extra_flags = field(default=0, type=int, native=NativeField(7, native_flag, suffix=' '))
-	wear_flags = field(default=0, type=WEAR_FLAGS, converter=WEAR_FLAGS, native=NativeField(8, native_flag))
-	value = field(default=Factory(list), type=List, native=NativeField(9, native_circle_numbers))
-	weight = field(default=0, type=int, native=NativeField(10, native_number, suffix=' '))
-	cost = field(default=0, type=int, native=NativeField(11, native_number, suffix=' '))
-	rent = field(default=0, native=NativeField(12, native_number))
-	extra_descriptions = field(default=Factory(list), type=List[ExtraDescription], native=NativeField(13, native_records, suffix=''))
-	affected = field(default=Factory(list), native=NativeField(14, native_records, suffix=''))
+class CircleItem(area_reader.model.Item):
+	vnum = area_reader.schema.field(default=0, type=area_reader.values.VNum, read=False, native=NativeField(1, native_number, prefix='#'))
+	name = area_reader.schema.field(default='', type=str, native=NativeField(2, native_tilde_string))
+	short_desc = area_reader.schema.field(default='', type=str, native=NativeField(3, native_tilde_string))
+	description = area_reader.schema.field(default='', type=str, native=NativeField(4, native_tilde_string))
+	action_description = area_reader.schema.field(default='', native=NativeField(5, native_tilde_string))
+	item_type = area_reader.schema.field(default=-1, type=int, native=NativeField(6, native_number, suffix=' '))
+	extra_flags = area_reader.schema.field(default=0, type=int, native=NativeField(7, native_flag, suffix=' '))
+	wear_flags = area_reader.schema.field(default=0, type=WEAR_FLAGS, converter=WEAR_FLAGS, native=NativeField(8, native_flag))
+	value = area_reader.schema.field(default=Factory(list), type=List, native=NativeField(9, native_circle_numbers))
+	weight = area_reader.schema.field(default=0, type=int, native=NativeField(10, native_number, suffix=' '))
+	cost = area_reader.schema.field(default=0, type=int, native=NativeField(11, native_number, suffix=' '))
+	rent = area_reader.schema.field(default=0, native=NativeField(12, native_number))
+	extra_descriptions = area_reader.schema.field(default=Factory(list), type=List[area_reader.model.ExtraDescription], native=NativeField(13, native_records, suffix=''))
+	affected = area_reader.schema.field(default=Factory(list), native=NativeField(14, native_records, suffix=''))
 	level = attr(default=0, type=int)
 	source_file = attr(default='', type=str)
 
 
 @attributes
 class CircleReset(object):
-	command = field(default='', native=NativeField(1, native_circle_reset_command, suffix=' '))
-	if_flag = field(default=0, native=NativeField(2, native_number, suffix=' '))
-	arg1 = field(default=0, native=NativeField(3, native_number, suffix=' '))
-	arg2 = field(default=0, native=NativeField(4, native_number, suffix=lambda owner: '\n' if owner.command in ('G', 'R') else ' '))
-	arg3 = field(default=None, native=NativeField(5, native_number, when=lambda owner: owner.command not in ('G', 'R')))
+	command = area_reader.schema.field(default='', native=NativeField(1, native_circle_reset_command, suffix=' '))
+	if_flag = area_reader.schema.field(default=0, native=NativeField(2, native_number, suffix=' '))
+	arg1 = area_reader.schema.field(default=0, native=NativeField(3, native_number, suffix=' '))
+	arg2 = area_reader.schema.field(default=0, native=NativeField(4, native_number, suffix=lambda owner: '\n' if owner.command in ('G', 'R') else ' '))
+	arg3 = area_reader.schema.field(default=None, native=NativeField(5, native_number, when=lambda owner: owner.command not in ('G', 'R')))
 
 
 @attributes
 class CircleZone(object):
 	NATIVE_SUFFIX = 'S\n'
 
-	vnum = field(default=0, native=NativeField(1, native_number, prefix='#'))
-	name = field(default='', native=NativeField(2, native_tilde_string))
-	bot = field(default=0, native=NativeField(3, native_number, suffix=' '))
-	top = field(default=0, native=NativeField(4, native_number, suffix=' '))
-	lifespan = field(default=0, native=NativeField(5, native_number, suffix=' '))
-	reset_mode = field(default=0, native=NativeField(6, native_number))
-	resets = field(default=Factory(list), native=NativeField(7, native_records, suffix=''))
+	vnum = area_reader.schema.field(default=0, native=NativeField(1, native_number, prefix='#'))
+	name = area_reader.schema.field(default='', native=NativeField(2, native_tilde_string))
+	bot = area_reader.schema.field(default=0, native=NativeField(3, native_number, suffix=' '))
+	top = area_reader.schema.field(default=0, native=NativeField(4, native_number, suffix=' '))
+	lifespan = area_reader.schema.field(default=0, native=NativeField(5, native_number, suffix=' '))
+	reset_mode = area_reader.schema.field(default=0, native=NativeField(6, native_number))
+	resets = area_reader.schema.field(default=Factory(list), native=NativeField(7, native_records, suffix=''))
 	source_file = attr(default='', type=str)
 
 
 @attributes
 class CircleShop(object):
-	vnum = field(default=0, native=NativeField(1, native_number, prefix='#', suffix='~\n'))
-	products = field(default=Factory(list), native=NativeField(2, native_circle_number_lines, suffix='-1\n'))
-	profit_buy = field(default=0.0, native=NativeField(3, native_circle_float))
-	profit_sell = field(default=0.0, native=NativeField(4, native_circle_float))
-	buy_type = field(default=Factory(list), native=NativeField(5, native_circle_text_lines, suffix='-1\n'))
-	messages = field(default=Factory(list), native=NativeField(6, native_circle_messages, suffix=''))
-	temper = field(default=0, native=NativeField(7, native_number))
-	bitvector = field(default=0, native=NativeField(8, native_number))
-	keeper = field(default=0, native=NativeField(9, native_number))
-	with_who = field(default=0, native=NativeField(10, native_number))
-	rooms = field(default=Factory(list), native=NativeField(11, native_circle_number_lines, suffix='-1\n'))
-	open_hour = field(default=0, native=NativeField(12, native_number))
-	close_hour = field(default=0, native=NativeField(13, native_number))
-	open_hour_2 = field(default=0, native=NativeField(14, native_number))
-	close_hour_2 = field(default=0, native=NativeField(15, native_number))
+	vnum = area_reader.schema.field(default=0, native=NativeField(1, native_number, prefix='#', suffix='~\n'))
+	products = area_reader.schema.field(default=Factory(list), native=NativeField(2, native_circle_number_lines, suffix='-1\n'))
+	profit_buy = area_reader.schema.field(default=0.0, native=NativeField(3, native_circle_float))
+	profit_sell = area_reader.schema.field(default=0.0, native=NativeField(4, native_circle_float))
+	buy_type = area_reader.schema.field(default=Factory(list), native=NativeField(5, native_circle_text_lines, suffix='-1\n'))
+	messages = area_reader.schema.field(default=Factory(list), native=NativeField(6, native_circle_messages, suffix=''))
+	temper = area_reader.schema.field(default=0, native=NativeField(7, native_number))
+	bitvector = area_reader.schema.field(default=0, native=NativeField(8, native_number))
+	keeper = area_reader.schema.field(default=0, native=NativeField(9, native_number))
+	with_who = area_reader.schema.field(default=0, native=NativeField(10, native_number))
+	rooms = area_reader.schema.field(default=Factory(list), native=NativeField(11, native_circle_number_lines, suffix='-1\n'))
+	open_hour = area_reader.schema.field(default=0, native=NativeField(12, native_number))
+	close_hour = area_reader.schema.field(default=0, native=NativeField(13, native_number))
+	open_hour_2 = area_reader.schema.field(default=0, native=NativeField(14, native_number))
+	close_hour_2 = area_reader.schema.field(default=0, native=NativeField(15, native_number))
 	source_file = attr(default='', type=str)
 
 
@@ -2882,7 +2583,7 @@ class CircleAreaFile(object):
 		else:
 			sides = rest
 			bonus = 0
-		return Dice(number=int(number), sides=int(sides), bonus=bonus)
+		return area_reader.model.Dice(number=int(number), sides=int(sides), bonus=bonus)
 
 	def load_zone_file(self, path):
 		self.open_circle_file(path)
@@ -2934,7 +2635,7 @@ class CircleAreaFile(object):
 				exit = self.read_exit(int(line[1:]))
 				room.exits[exit.door] = exit
 			elif line == 'E':
-				room.extra_descriptions.append(ExtraDescription(keyword=self.read_string(), description=self.read_string()))
+				room.extra_descriptions.append(area_reader.model.ExtraDescription(keyword=self.read_string(), description=self.read_string()))
 			else:
 				self.parse_fail("Unknown room metadata %r" % line)
 
@@ -3029,7 +2730,7 @@ class CircleAreaFile(object):
 				break
 			line = self.read_line().strip()
 			if line == 'E':
-				extra_descriptions.append(ExtraDescription(keyword=self.read_string(), description=self.read_string()))
+				extra_descriptions.append(area_reader.model.ExtraDescription(keyword=self.read_string(), description=self.read_string()))
 			elif line == 'A':
 				location, modifier = self.read_int_list()
 				affected.append(CircleAffectData(location=location, modifier=modifier))
@@ -3256,9 +2957,9 @@ class CoffeeMudBehavior(object):
 	NATIVE_PREFIX = '<BHAVE>'
 	NATIVE_SUFFIX = '</BHAVE>'
 
-	class_id = field(default='', native=NativeField(1, native_xml_text, prefix='<BCLASS>', suffix='</BCLASS>'))
-	parameters = field(default='', native=NativeField(2, native_xml_text, prefix='<BPARMS>', suffix='</BPARMS>'))
-	residual = field(default=Factory(list), native=NativeField(3, native_coffee_residuals, suffix=''))
+	class_id = area_reader.schema.field(default='', native=NativeField(1, native_xml_text, prefix='<BCLASS>', suffix='</BCLASS>'))
+	parameters = area_reader.schema.field(default='', native=NativeField(2, native_xml_text, prefix='<BPARMS>', suffix='</BPARMS>'))
+	residual = area_reader.schema.field(default=Factory(list), native=NativeField(3, native_coffee_residuals, suffix=''))
 
 
 @attributes
@@ -3266,9 +2967,9 @@ class CoffeeMudAffect(object):
 	NATIVE_PREFIX = '<AFF>'
 	NATIVE_SUFFIX = '</AFF>'
 
-	class_id = field(default='', native=NativeField(1, native_xml_text, prefix='<ACLASS>', suffix='</ACLASS>'))
-	text = field(default='', native=NativeField(2, native_xml_text, prefix='<ATEXT>', suffix='</ATEXT>'))
-	residual = field(default=Factory(list), native=NativeField(3, native_coffee_residuals, suffix=''))
+	class_id = area_reader.schema.field(default='', native=NativeField(1, native_xml_text, prefix='<ACLASS>', suffix='</ACLASS>'))
+	text = area_reader.schema.field(default='', native=NativeField(2, native_xml_text, prefix='<ATEXT>', suffix='</ATEXT>'))
+	residual = area_reader.schema.field(default=Factory(list), native=NativeField(3, native_coffee_residuals, suffix=''))
 
 
 @attributes
@@ -3276,11 +2977,11 @@ class CoffeeMudAbility(object):
 	NATIVE_PREFIX = '<ABLTY>'
 	NATIVE_SUFFIX = '</ABLTY>'
 
-	class_id = field(default='', native=NativeField(1, native_xml_text, prefix='<ACLASS>', suffix='</ACLASS>'))
-	proficiency = field(default=0, native=NativeField(2, native_xml_number, prefix='<APROF>', suffix='</APROF>'))
-	data_xml = field(default='', native=NativeField(3, native_raw, prefix='<ADATA>', suffix='</ADATA>'))
+	class_id = area_reader.schema.field(default='', native=NativeField(1, native_xml_text, prefix='<ACLASS>', suffix='</ACLASS>'))
+	proficiency = area_reader.schema.field(default=0, native=NativeField(2, native_xml_number, prefix='<APROF>', suffix='</APROF>'))
+	data_xml = area_reader.schema.field(default='', native=NativeField(3, native_raw, prefix='<ADATA>', suffix='</ADATA>'))
 	data = attr(default='', eq=False)
-	residual = field(default=Factory(list), native=NativeField(4, native_coffee_residuals, suffix=''))
+	residual = area_reader.schema.field(default=Factory(list), native=NativeField(4, native_coffee_residuals, suffix=''))
 
 
 @attributes
@@ -3288,25 +2989,25 @@ class CoffeeMudMob(object):
 	NATIVE_PREFIX = native_coffee_mob_prefix
 	NATIVE_SUFFIX = native_coffee_mob_suffix
 
-	class_id = field(default='', native=NativeField(1, native_xml_text, prefix='<MCLAS>', suffix='</MCLAS>'))
-	level = field(default=0, native=NativeField(2, native_xml_number, prefix='<MLEVL>', suffix='</MLEVL>'))
-	ability = field(default=0, native=NativeField(3, native_xml_number, prefix='<MABLE>', suffix='</MABLE>'))
-	rejuv = field(default=0, native=NativeField(4, native_xml_number, prefix='<MREJV>', suffix='</MREJV>'))
-	raw_text = field(default='', eq=False, native=NativeField(5, native_coffee_payload, prefix='<MTEXT>', suffix='</MTEXT>'))
-	outer_residual = field(default=Factory(list), native=NativeField(6, native_coffee_residuals, suffix=''))
-	name = field(default='', native=NativeField(1, native_xml_text, prefix='<NAME>', suffix='</NAME>', section='inner'))
-	description = field(default='', native=NativeField(2, native_xml_text, prefix='<DESC>', suffix='</DESC>', section='inner'))
-	display = field(default='', native=NativeField(3, native_xml_text, prefix='<DISP>', suffix='</DISP>', section='inner'))
-	behaviors = field(default=Factory(list), native=NativeField(4, native_coffee_behaviors, section='inner'))
-	affects = field(default=Factory(list), native=NativeField(5, native_coffee_affects, section='inner'))
-	flag = field(default=0, native=NativeField(6, native_xml_number, prefix='<FLAG>', suffix='</FLAG>', section='inner'))
-	money = field(default=0, native=NativeField(7, native_xml_number, prefix='<MONEY>', suffix='</MONEY>', section='inner'))
-	variable_money = field(default=0.0, native=NativeField(8, native_xml_float, prefix='<VARMONEY>', suffix='</VARMONEY>', section='inner'))
-	gender = field(default='', native=NativeField(9, native_xml_text, prefix='<GENDER>', suffix='</GENDER>', section='inner'))
-	race = field(default='', native=NativeField(10, native_xml_text, prefix='<MRACE>', suffix='</MRACE>', section='inner'))
-	factions = field(default=Factory(dict), native=NativeField(11, native_coffee_factions, section='inner'))
-	abilities = field(default=Factory(list), native=NativeField(12, native_coffee_abilities, section='inner'))
-	inner_residual = field(default=Factory(list), native=NativeField(13, native_coffee_residuals, section='inner', suffix=''))
+	class_id = area_reader.schema.field(default='', native=NativeField(1, native_xml_text, prefix='<MCLAS>', suffix='</MCLAS>'))
+	level = area_reader.schema.field(default=0, native=NativeField(2, native_xml_number, prefix='<MLEVL>', suffix='</MLEVL>'))
+	ability = area_reader.schema.field(default=0, native=NativeField(3, native_xml_number, prefix='<MABLE>', suffix='</MABLE>'))
+	rejuv = area_reader.schema.field(default=0, native=NativeField(4, native_xml_number, prefix='<MREJV>', suffix='</MREJV>'))
+	raw_text = area_reader.schema.field(default='', eq=False, native=NativeField(5, native_coffee_payload, prefix='<MTEXT>', suffix='</MTEXT>'))
+	outer_residual = area_reader.schema.field(default=Factory(list), native=NativeField(6, native_coffee_residuals, suffix=''))
+	name = area_reader.schema.field(default='', native=NativeField(1, native_xml_text, prefix='<NAME>', suffix='</NAME>', section='inner'))
+	description = area_reader.schema.field(default='', native=NativeField(2, native_xml_text, prefix='<DESC>', suffix='</DESC>', section='inner'))
+	display = area_reader.schema.field(default='', native=NativeField(3, native_xml_text, prefix='<DISP>', suffix='</DISP>', section='inner'))
+	behaviors = area_reader.schema.field(default=Factory(list), native=NativeField(4, native_coffee_behaviors, section='inner'))
+	affects = area_reader.schema.field(default=Factory(list), native=NativeField(5, native_coffee_affects, section='inner'))
+	flag = area_reader.schema.field(default=0, native=NativeField(6, native_xml_number, prefix='<FLAG>', suffix='</FLAG>', section='inner'))
+	money = area_reader.schema.field(default=0, native=NativeField(7, native_xml_number, prefix='<MONEY>', suffix='</MONEY>', section='inner'))
+	variable_money = area_reader.schema.field(default=0.0, native=NativeField(8, native_xml_float, prefix='<VARMONEY>', suffix='</VARMONEY>', section='inner'))
+	gender = area_reader.schema.field(default='', native=NativeField(9, native_xml_text, prefix='<GENDER>', suffix='</GENDER>', section='inner'))
+	race = area_reader.schema.field(default='', native=NativeField(10, native_xml_text, prefix='<MRACE>', suffix='</MRACE>', section='inner'))
+	factions = area_reader.schema.field(default=Factory(dict), native=NativeField(11, native_coffee_factions, section='inner'))
+	abilities = area_reader.schema.field(default=Factory(list), native=NativeField(12, native_coffee_abilities, section='inner'))
+	inner_residual = area_reader.schema.field(default=Factory(list), native=NativeField(13, native_coffee_residuals, section='inner', suffix=''))
 	raw_data = attr(default=Factory(dict), eq=False)
 	native_tag = attr(default='MOB', type=str)
 
@@ -3316,31 +3017,31 @@ class CoffeeMudItem(object):
 	NATIVE_PREFIX = native_coffee_item_prefix
 	NATIVE_SUFFIX = native_coffee_item_suffix
 
-	class_id = field(default='', native=NativeField(1, native_xml_text, prefix='<ICLAS>', suffix='</ICLAS>'))
-	ident = field(default='', native=NativeField(2, native_xml_text, prefix='<IIDEN>', suffix='</IIDEN>'))
-	location = field(default='', native=NativeField(3, native_xml_text, prefix='<ILOCA>', suffix='</ILOCA>'))
-	uses = field(default=0, native=NativeField(4, native_xml_number, prefix='<IUSES>', suffix='</IUSES>'))
-	level = field(default=0, native=NativeField(5, native_xml_number, prefix='<ILEVL>', suffix='</ILEVL>'))
-	ability = field(default=0, native=NativeField(6, native_xml_number, prefix='<IABLE>', suffix='</IABLE>'))
-	rejuv = field(default=0, native=NativeField(7, native_xml_number, prefix='<IREJV>', suffix='</IREJV>'))
-	raw_text = field(default='', eq=False, native=NativeField(8, native_coffee_payload, prefix='<ITEXT>', suffix='</ITEXT>'))
-	outer_residual = field(default=Factory(list), native=NativeField(9, native_coffee_residuals, suffix=''))
-	name = field(default='', native=NativeField(1, native_xml_text, prefix='<NAME>', suffix='</NAME>', section='inner'))
-	description = field(default='', native=NativeField(2, native_xml_text, prefix='<DESC>', suffix='</DESC>', section='inner'))
-	display = field(default='', native=NativeField(3, native_xml_text, prefix='<DISP>', suffix='</DISP>', section='inner'))
-	prop = field(default='', native=NativeField(4, native_xml_text, prefix='<PROP>', suffix='</PROP>', section='inner'))
-	affects = field(default=Factory(list), native=NativeField(5, native_coffee_affects, section='inner'))
-	flag = field(default=0, native=NativeField(6, native_xml_number, prefix='<FLAG>', suffix='</FLAG>', section='inner'))
-	value = field(default=0, native=NativeField(7, native_xml_number, prefix='<VALUE>', suffix='</VALUE>', section='inner'))
-	material = field(default=0, native=NativeField(8, native_xml_number, prefix='<MTRAL>', suffix='</MTRAL>', section='inner'))
-	read_text = field(default='', native=NativeField(9, native_xml_text, prefix='<READ>', suffix='</READ>', section='inner'))
-	worn_location = field(default='', native=NativeField(10, native_xml_text, prefix='<WORNL>', suffix='</WORNL>', section='inner'))
-	worn_bitmap = field(default=0, native=NativeField(11, native_xml_number, prefix='<WORNB>', suffix='</WORNB>', section='inner'))
-	capacity = field(default=0, native=NativeField(12, native_xml_number, prefix='<CAPA>', suffix='</CAPA>', section='inner'))
-	container_flags = field(default=0, native=NativeField(13, native_xml_number, prefix='<CONT>', suffix='</CONT>', section='inner'))
-	open_ticks = field(default=0, native=NativeField(14, native_xml_number, prefix='<OPENTK>', suffix='</OPENTK>', section='inner'))
-	nested_area = field(default=None, native=NativeField(15, native_coffee_nested_area, section='inner', when=lambda owner: owner.nested_area is not None))
-	inner_residual = field(default=Factory(list), native=NativeField(16, native_coffee_residuals, section='inner', suffix=''))
+	class_id = area_reader.schema.field(default='', native=NativeField(1, native_xml_text, prefix='<ICLAS>', suffix='</ICLAS>'))
+	ident = area_reader.schema.field(default='', native=NativeField(2, native_xml_text, prefix='<IIDEN>', suffix='</IIDEN>'))
+	location = area_reader.schema.field(default='', native=NativeField(3, native_xml_text, prefix='<ILOCA>', suffix='</ILOCA>'))
+	uses = area_reader.schema.field(default=0, native=NativeField(4, native_xml_number, prefix='<IUSES>', suffix='</IUSES>'))
+	level = area_reader.schema.field(default=0, native=NativeField(5, native_xml_number, prefix='<ILEVL>', suffix='</ILEVL>'))
+	ability = area_reader.schema.field(default=0, native=NativeField(6, native_xml_number, prefix='<IABLE>', suffix='</IABLE>'))
+	rejuv = area_reader.schema.field(default=0, native=NativeField(7, native_xml_number, prefix='<IREJV>', suffix='</IREJV>'))
+	raw_text = area_reader.schema.field(default='', eq=False, native=NativeField(8, native_coffee_payload, prefix='<ITEXT>', suffix='</ITEXT>'))
+	outer_residual = area_reader.schema.field(default=Factory(list), native=NativeField(9, native_coffee_residuals, suffix=''))
+	name = area_reader.schema.field(default='', native=NativeField(1, native_xml_text, prefix='<NAME>', suffix='</NAME>', section='inner'))
+	description = area_reader.schema.field(default='', native=NativeField(2, native_xml_text, prefix='<DESC>', suffix='</DESC>', section='inner'))
+	display = area_reader.schema.field(default='', native=NativeField(3, native_xml_text, prefix='<DISP>', suffix='</DISP>', section='inner'))
+	prop = area_reader.schema.field(default='', native=NativeField(4, native_xml_text, prefix='<PROP>', suffix='</PROP>', section='inner'))
+	affects = area_reader.schema.field(default=Factory(list), native=NativeField(5, native_coffee_affects, section='inner'))
+	flag = area_reader.schema.field(default=0, native=NativeField(6, native_xml_number, prefix='<FLAG>', suffix='</FLAG>', section='inner'))
+	value = area_reader.schema.field(default=0, native=NativeField(7, native_xml_number, prefix='<VALUE>', suffix='</VALUE>', section='inner'))
+	material = area_reader.schema.field(default=0, native=NativeField(8, native_xml_number, prefix='<MTRAL>', suffix='</MTRAL>', section='inner'))
+	read_text = area_reader.schema.field(default='', native=NativeField(9, native_xml_text, prefix='<READ>', suffix='</READ>', section='inner'))
+	worn_location = area_reader.schema.field(default='', native=NativeField(10, native_xml_text, prefix='<WORNL>', suffix='</WORNL>', section='inner'))
+	worn_bitmap = area_reader.schema.field(default=0, native=NativeField(11, native_xml_number, prefix='<WORNB>', suffix='</WORNB>', section='inner'))
+	capacity = area_reader.schema.field(default=0, native=NativeField(12, native_xml_number, prefix='<CAPA>', suffix='</CAPA>', section='inner'))
+	container_flags = area_reader.schema.field(default=0, native=NativeField(13, native_xml_number, prefix='<CONT>', suffix='</CONT>', section='inner'))
+	open_ticks = area_reader.schema.field(default=0, native=NativeField(14, native_xml_number, prefix='<OPENTK>', suffix='</OPENTK>', section='inner'))
+	nested_area = area_reader.schema.field(default=None, native=NativeField(15, native_coffee_nested_area, section='inner', when=lambda owner: owner.nested_area is not None))
+	inner_residual = area_reader.schema.field(default=Factory(list), native=NativeField(16, native_coffee_residuals, section='inner', suffix=''))
 	count = attr(default=1)
 	raw_data = attr(default=Factory(dict), eq=False)
 	native_tag = attr(default='ITEM', type=str)
@@ -3351,10 +3052,10 @@ class CoffeeMudExit(object):
 	NATIVE_PREFIX = '<REXIT>'
 	NATIVE_SUFFIX = '</REXIT>'
 
-	direction = field(default=0, native=NativeField(1, native_xml_number, prefix='<XDIRE>', suffix='</XDIRE>'))
-	target_room_id = field(default='', native=NativeField(2, native_xml_text, prefix='<XDOOR>', suffix='</XDOOR>'))
-	class_id = field(default='', native=NativeField(3, native_coffee_exit_data, suffix=''))
-	outer_residual = field(default=Factory(list), native=NativeField(4, native_coffee_residuals, suffix=''))
+	direction = area_reader.schema.field(default=0, native=NativeField(1, native_xml_number, prefix='<XDIRE>', suffix='</XDIRE>'))
+	target_room_id = area_reader.schema.field(default='', native=NativeField(2, native_xml_text, prefix='<XDOOR>', suffix='</XDOOR>'))
+	class_id = area_reader.schema.field(default='', native=NativeField(3, native_coffee_exit_data, suffix=''))
+	outer_residual = area_reader.schema.field(default=Factory(list), native=NativeField(4, native_coffee_residuals, suffix=''))
 	inner_residual = attr(default=Factory(list))
 	xexit_residual = attr(default=Factory(list))
 	raw_data = attr(default=Factory(dict), eq=False)
@@ -3365,18 +3066,18 @@ class CoffeeMudRoom(object):
 	NATIVE_PREFIX = '<AROOM>'
 	NATIVE_SUFFIX = '</AROOM>'
 
-	room_id = field(default='', native=NativeField(1, native_xml_text, prefix='<ROOMID>', suffix='</ROOMID>'))
-	area = field(default='', native=NativeField(2, native_xml_text, prefix='<RAREA>', suffix='</RAREA>'))
-	class_id = field(default='', native=NativeField(3, native_xml_text, prefix='<RCLAS>', suffix='</RCLAS>'))
-	display = field(default='', native=NativeField(4, native_xml_text, prefix='<RDISP>', suffix='</RDISP>'))
-	description = field(default='', native=NativeField(5, native_xml_text, prefix='<RDESC>', suffix='</RDESC>'))
-	raw_text = field(default='', eq=False, native=NativeField(6, native_coffee_payload, prefix='<RTEXT>', suffix='</RTEXT>'))
-	exits = field(default=Factory(list), native=NativeField(7, native_coffee_exits, suffix=''))
-	items = field(default=Factory(list), native=NativeField(8, native_coffee_content, suffix=''))
-	outer_residual = field(default=Factory(list), native=NativeField(9, native_coffee_residuals, suffix=''))
-	climate = field(default=0, native=NativeField(1, native_xml_number, prefix='<RCLIM>', suffix='</RCLIM>', section='inner'))
-	atmosphere = field(default=0, native=NativeField(2, native_xml_number, prefix='<RATMO>', suffix='</RATMO>', section='inner'))
-	inner_residual = field(default=Factory(list), native=NativeField(3, native_coffee_residuals, section='inner', suffix=''))
+	room_id = area_reader.schema.field(default='', native=NativeField(1, native_xml_text, prefix='<ROOMID>', suffix='</ROOMID>'))
+	area = area_reader.schema.field(default='', native=NativeField(2, native_xml_text, prefix='<RAREA>', suffix='</RAREA>'))
+	class_id = area_reader.schema.field(default='', native=NativeField(3, native_xml_text, prefix='<RCLAS>', suffix='</RCLAS>'))
+	display = area_reader.schema.field(default='', native=NativeField(4, native_xml_text, prefix='<RDISP>', suffix='</RDISP>'))
+	description = area_reader.schema.field(default='', native=NativeField(5, native_xml_text, prefix='<RDESC>', suffix='</RDESC>'))
+	raw_text = area_reader.schema.field(default='', eq=False, native=NativeField(6, native_coffee_payload, prefix='<RTEXT>', suffix='</RTEXT>'))
+	exits = area_reader.schema.field(default=Factory(list), native=NativeField(7, native_coffee_exits, suffix=''))
+	items = area_reader.schema.field(default=Factory(list), native=NativeField(8, native_coffee_content, suffix=''))
+	outer_residual = area_reader.schema.field(default=Factory(list), native=NativeField(9, native_coffee_residuals, suffix=''))
+	climate = area_reader.schema.field(default=0, native=NativeField(1, native_xml_number, prefix='<RCLIM>', suffix='</RCLIM>', section='inner'))
+	atmosphere = area_reader.schema.field(default=0, native=NativeField(2, native_xml_number, prefix='<RATMO>', suffix='</RATMO>', section='inner'))
+	inner_residual = area_reader.schema.field(default=Factory(list), native=NativeField(3, native_coffee_residuals, section='inner', suffix=''))
 	mobs = attr(default=Factory(list))
 	raw_data = attr(default=Factory(dict), eq=False)
 
@@ -3387,15 +3088,15 @@ class CoffeeMudArea(object):
 	NATIVE_SUFFIX = '</AREA>'
 
 	top_level = attr(default='')
-	class_id = field(default='', native=NativeField(1, native_xml_text, prefix='<ACLAS>', suffix='</ACLAS>'))
-	name = field(default='', native=NativeField(2, native_xml_text, prefix='<ANAME>', suffix='</ANAME>'))
-	description = field(default='', native=NativeField(3, native_xml_text, prefix='<ADESC>', suffix='</ADESC>'))
-	climate = field(default=0, native=NativeField(4, native_xml_number, prefix='<ACLIM>', suffix='</ACLIM>'))
-	sub_ops = field(default='', native=NativeField(5, native_xml_text, prefix='<ASUBS>', suffix='</ASUBS>'))
-	theme = field(default=0, native=NativeField(6, native_xml_number, prefix='<ATECH>', suffix='</ATECH>'))
-	raw_data = field(default=Factory(dict), eq=False, native=NativeField(7, native_coffee_area_data, suffix=''))
-	rooms = field(default=Factory(OrderedDict), native=NativeField(8, native_coffee_room_records, prefix='<AROOMS>', suffix='</AROOMS>'))
-	outer_residual = field(default=Factory(list), native=NativeField(9, native_coffee_residuals, suffix=''))
+	class_id = area_reader.schema.field(default='', native=NativeField(1, native_xml_text, prefix='<ACLAS>', suffix='</ACLAS>'))
+	name = area_reader.schema.field(default='', native=NativeField(2, native_xml_text, prefix='<ANAME>', suffix='</ANAME>'))
+	description = area_reader.schema.field(default='', native=NativeField(3, native_xml_text, prefix='<ADESC>', suffix='</ADESC>'))
+	climate = area_reader.schema.field(default=0, native=NativeField(4, native_xml_number, prefix='<ACLIM>', suffix='</ACLIM>'))
+	sub_ops = area_reader.schema.field(default='', native=NativeField(5, native_xml_text, prefix='<ASUBS>', suffix='</ASUBS>'))
+	theme = area_reader.schema.field(default=0, native=NativeField(6, native_xml_number, prefix='<ATECH>', suffix='</ATECH>'))
+	raw_data = area_reader.schema.field(default=Factory(dict), eq=False, native=NativeField(7, native_coffee_area_data, suffix=''))
+	rooms = area_reader.schema.field(default=Factory(OrderedDict), native=NativeField(8, native_coffee_room_records, prefix='<AROOMS>', suffix='</AROOMS>'))
+	outer_residual = area_reader.schema.field(default=Factory(list), native=NativeField(9, native_coffee_residuals, suffix=''))
 	inner_residual = attr(default=Factory(list))
 	mobs = attr(default=Factory(list))
 	items = attr(default=Factory(list))

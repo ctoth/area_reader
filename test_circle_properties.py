@@ -4,7 +4,7 @@ from pathlib import Path
 
 from hypothesis import given, settings, strategies as st
 
-import area_reader
+import area_reader.model
 
 
 def circle_reader_with_data(text: str) -> area_reader.CircleAreaFile:
@@ -56,7 +56,7 @@ def test_circle_dice_parser_preserves_every_supported_token_form(
 
 	reader = circle_reader_with_data("")
 
-	assert reader.parse_dice_token(token) == area_reader.Dice(
+	assert reader.parse_dice_token(token) == area_reader.model.Dice(
 		number=number,
 		sides=sides,
 		bonus=expected_bonus,
@@ -166,8 +166,8 @@ def test_circle_mobile_native_transform_is_bijective(
 		level=level,
 		hitroll=hitroll,
 		ac=source_ac * 10,
-		hit=area_reader.Dice(number=hit_number, sides=hit_sides, bonus=hit_bonus),
-		damage=area_reader.Dice(
+		hit=area_reader.model.Dice(number=hit_number, sides=hit_sides, bonus=hit_bonus),
+		damage=area_reader.model.Dice(
 			number=damage_number,
 			sides=damage_sides,
 			bonus=damage_bonus,

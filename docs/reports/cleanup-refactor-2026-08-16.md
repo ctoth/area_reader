@@ -84,7 +84,50 @@ Gate results:
 - Pass: `git diff --check` -> no output.
 
 Commit:
-- `Extract serialization owner` (this iteration's commit).
+- `6703e81 Extract serialization owner`.
 
 Next slice:
 - Shared model and parser ownership, beginning with leaf value/model symbols.
+
+## Iteration 3 - `shared schema, values, and semantic models`
+
+Slice read:
+- `area_reader/__init__.py:39-424`
+- Former common model and codec definitions in `area_reader/__init__.py`
+- Shared-model callers in grammar, property, JSONification, and writer tests
+
+Surfaces:
+- Declarative attrs field factory
+  - Disposition: move
+  - Owner after cleanup: `area_reader.schema`
+  - Action: moved `field()` out of the monolith and model graph.
+  - Evidence: schema metadata is infrastructure used by every dialect, not a semantic model.
+- Scalar parser value types
+  - Disposition: move
+  - Owner after cleanup: `area_reader.values`
+  - Action: moved `Letter`, `Word`, and `VNum` to a dependency-free leaf module.
+  - Evidence: model definitions and parser dispatch both consume these types.
+- Shared Diku models and native codecs
+  - Disposition: move
+  - Owner after cleanup: `area_reader.model`
+  - Action: moved `ExtraDescription`, `MudBase`, `Item`, `Dice`, `Help`, `Exit`, `Room`, `Reset`, and `Special` plus their native codecs.
+  - Evidence: these are cross-dialect semantic models; direct constants/native/schema/value imports eliminate package-root cycles.
+- Accidental `area_reader.random` exposure
+  - Disposition: delete
+  - Owner after cleanup: `area_reader.model.random`, as the private dependency of `Dice`.
+  - Action: updated the RNG test to patch the real owner and did not add a package re-export.
+
+Gate results:
+- Pass: focused shared-model/property tests -> `687 passed in 7.94s`.
+- Pass: common owner import smoke -> all complex common types report `area_reader.model`.
+- Pass: Ruff on `model.py`, `schema.py`, and `values.py` -> `All checks passed!`.
+- Pass: baseline/current node-ID comparison -> `current=945 baseline=945` with no differences.
+- Pass: `uv run --locked --extra test --group refactor pytest -q` -> `945 passed in 71.43s`, total coverage `93%`.
+- Pass: ownership searches find each moved surface only in its new owner.
+- Pass: `git diff --check` -> no output.
+
+Commit:
+- `Extract shared schema and models` (this iteration's commit).
+
+Next slice:
+- ROM dialect owner, then dependent Merc/SMAUG/SWR owners.
