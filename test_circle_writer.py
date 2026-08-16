@@ -1,11 +1,10 @@
 from pathlib import Path
 
-from attr import fields
 import pytest
+from attr import fields
 
-import area_reader
+import area_reader.dialects.circle
 from area_reader.native import NativeWriteError, render_record
-
 
 UPSTREAM_CIRCLE = Path(r"C:\Users\Q\src\circlemud")
 
@@ -101,11 +100,11 @@ def test_circle_fields_are_declarative_and_editable(tmp_path: Path) -> None:
 
 	assert reparsed.area == source.area
 	for record_type, field_names in (
-		(area_reader.CircleRoom, ("vnum", "name", "description", "exits")),
-		(area_reader.CircleMob, ("vnum", "name", "hitroll", "ac", "especs")),
-		(area_reader.CircleItem, ("vnum", "name", "value", "affected")),
-		(area_reader.CircleZone, ("vnum", "name", "resets")),
-		(area_reader.CircleShop, ("vnum", "products", "messages", "rooms")),
+		(area_reader.dialects.circle.CircleRoom, ("vnum", "name", "description", "exits")),
+		(area_reader.dialects.circle.CircleMob, ("vnum", "name", "hitroll", "ac", "especs")),
+		(area_reader.dialects.circle.CircleItem, ("vnum", "name", "value", "affected")),
+		(area_reader.dialects.circle.CircleZone, ("vnum", "name", "resets")),
+		(area_reader.dialects.circle.CircleShop, ("vnum", "products", "messages", "rooms")),
 	):
 		declarations = {attribute.name: attribute.metadata.get("native") for attribute in fields(record_type)}
 		assert all(declarations[name] is not None for name in field_names)
@@ -127,7 +126,7 @@ def test_circle_native_loss_ledger_has_executable_comment_witness(tmp_path: Path
 		zone.mkdir(parents=True)
 		(zone / "index").write_text("1.zon\n$\n", encoding="latin-1")
 		(zone / "1.zon").write_text(
-			"#1\nA Zone~\n100 199 30 2\n* %s\nS\n$\n" % comment,
+			f"#1\nA Zone~\n100 199 30 2\n* {comment}\nS\n$\n",
 			encoding="latin-1",
 		)
 		areas.append(load_circle(tmp_path / name))
@@ -144,21 +143,21 @@ def test_circle_native_loss_ledger_has_executable_comment_witness(tmp_path: Path
 	),
 )
 def test_circle_exit_rejects_flags_without_a_native_lock_code(exit_info) -> None:
-	exit = area_reader.CircleExit(exit_info=exit_info)
+	exit = area_reader.dialects.circle.CircleExit(exit_info=exit_info)
 
 	with pytest.raises(NativeWriteError):
 		render_record(exit)
 
 
 def test_circle_mobile_rejects_non_integral_source_armor_class() -> None:
-	mob = area_reader.CircleMob(ac=15)
+	mob = area_reader.dialects.circle.CircleMob(ac=15)
 
 	with pytest.raises(NativeWriteError):
 		render_record(mob)
 
 
 def test_circle_object_rejects_a_non_native_value_shape() -> None:
-	item = area_reader.CircleItem(value=[1, 2, 3])
+	item = area_reader.dialects.circle.CircleItem(value=[1, 2, 3])
 
 	with pytest.raises(NativeWriteError, match="exactly four integers"):
 		render_record(item)
@@ -167,9 +166,9 @@ def test_circle_object_rejects_a_non_native_value_shape() -> None:
 @pytest.mark.parametrize(
 	("reset", "message"),
 	(
-		(area_reader.CircleReset(command="G", arg3=1), "must omit arg3"),
-		(area_reader.CircleReset(command="M", arg3=None), "requires arg3"),
-		(area_reader.CircleReset(command="X", arg3=None), "unsupported"),
+		(area_reader.dialects.circle.CircleReset(command="G", arg3=1), "must omit arg3"),
+		(area_reader.dialects.circle.CircleReset(command="M", arg3=None), "requires arg3"),
+		(area_reader.dialects.circle.CircleReset(command="X", arg3=None), "unsupported"),
 	),
 )
 def test_circle_reset_rejects_non_native_command_shapes(reset, message) -> None:

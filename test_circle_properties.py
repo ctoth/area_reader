@@ -2,8 +2,10 @@ import string
 import tempfile
 from pathlib import Path
 
-from hypothesis import given, settings, strategies as st
+from hypothesis import given, settings
+from hypothesis import strategies as st
 
+import area_reader.dialects.circle
 import area_reader.model
 
 
@@ -22,13 +24,13 @@ def test_circle_ascii_flags_map_letters_to_engine_bit_positions(flags):
 		index = ord(flag) - ord("a") if flag.islower() else 26 + ord(flag) - ord("A")
 		expected |= 1 << index
 
-	assert area_reader.circle_asciiflag_conv(flags) == expected
+	assert area_reader.dialects.circle.circle_asciiflag_conv(flags) == expected
 
 
 @given(value=st.integers(min_value=0, max_value=2**31 - 1))
 @settings(max_examples=30, deadline=None)
 def test_circle_ascii_flags_preserve_numeric_bitvectors(value):
-	assert area_reader.circle_asciiflag_conv(str(value)) == value
+	assert area_reader.dialects.circle.circle_asciiflag_conv(str(value)) == value
 
 
 @given(
@@ -155,13 +157,13 @@ def test_circle_mobile_native_transform_is_bijective(
 	damage_sides,
 	damage_bonus,
 ):
-	mob = area_reader.CircleMob(
+	mob = area_reader.dialects.circle.CircleMob(
 		vnum=1,
 		name="generated",
 		short_desc="a generated mobile",
 		long_desc="A generated mobile is here.",
 		description="A generated mobile.",
-		act=area_reader.CircleMobFlags.ISNPC,
+		act=area_reader.dialects.circle.CircleMobFlags.ISNPC,
 		mob_type="S",
 		level=level,
 		hitroll=hitroll,

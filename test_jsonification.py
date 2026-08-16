@@ -5,6 +5,7 @@ from typing import get_args
 import pytest
 from attr import fields, has
 
+import area_reader.dialects.circle
 import area_reader.dialects.merc
 import area_reader.dialects.rom
 import area_reader.dialects.smaug
@@ -13,11 +14,22 @@ import area_reader.model
 import area_reader.serialization
 from area_reader import constants
 
+OWNER_MODULES = (
+    area_reader,
+    constants,
+    area_reader.model,
+    area_reader.dialects.rom,
+    area_reader.dialects.merc,
+    area_reader.dialects.smaug,
+    area_reader.dialects.swr,
+    area_reader.dialects.circle,
+)
+
 
 def enum_types():
     types = {
         value
-        for module in (area_reader, constants)
+        for module in OWNER_MODULES
         for value in vars(module).values()
         if isinstance(value, type) and issubclass(value, enum.Enum)
     }
@@ -49,14 +61,7 @@ def enum_type_in(annotation):
 def attrs_enum_fields():
     classes = {
         value
-        for module in (
-            area_reader,
-            area_reader.model,
-            area_reader.dialects.rom,
-            area_reader.dialects.merc,
-            area_reader.dialects.smaug,
-            area_reader.dialects.swr,
-        )
+        for module in OWNER_MODULES
         for value in vars(module).values()
         if isinstance(value, type) and has(value)
     }

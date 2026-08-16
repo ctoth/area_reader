@@ -261,3 +261,34 @@ Commit:
 
 Next slice:
 - CircleMUD owner, then CoffeeMud XML owner.
+
+## Iteration 8 - `CircleMUD semantic owner`
+
+Slice read:
+- Former CircleMUD model and codec definitions in `area_reader/__init__.py`
+- Circle grammar/property/writer, parser characterization, and JSONification callers
+
+Surfaces:
+- CircleMUD semantic models and native codecs
+  - Disposition: move
+  - Owner after cleanup: `area_reader.dialects.circle`
+  - Action: moved the ten Circle semantic classes, `CircleMobFlags`, and fourteen Circle-native conversion/rendering functions with Rope.
+  - Evidence: the resulting owner imports ROM ancestry and common owners directly, with explicit constants and no package-root dependency.
+- JSONification enum and attrs discovery
+  - Disposition: consolidate
+  - Owner after cleanup: one explicit `OWNER_MODULES` tuple.
+  - Action: made both enum and attrs discovery traverse real owners, including Circle.
+  - Evidence: an intermediate audit exposed `502 tests collected`; the repaired contract restores `524 tests collected`.
+
+Gate results:
+- Pass: Circle owner import smoke -> `area_reader.dialects.circle` for `CircleArea` and `CircleItem`.
+- Pass: locked Circle/parser/JSON/error tests -> `713 passed in 9.11s`.
+- Pass: Ruff on the changed owner and callers -> `All checks passed!`.
+- Pass: ownership search finds Circle semantic classes and codecs only in `area_reader.dialects.circle`.
+- Pass: `git diff --check` -> no output.
+
+Commit:
+- `Extract CircleMUD semantic models` (this iteration's commit).
+
+Next slice:
+- CoffeeMud XML semantic owner.

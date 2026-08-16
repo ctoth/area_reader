@@ -6,6 +6,7 @@ import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
+import area_reader.dialects.circle
 import area_reader.dialects.merc
 import area_reader.dialects.smaug
 import area_reader.model
@@ -771,7 +772,7 @@ $
 
 		room = af.area.rooms[3001]
 		assert room.name == "Temple"
-		assert room.room_flags == area_reader.circle_asciiflag_conv("dJ")
+		assert room.room_flags == area_reader.dialects.circle.circle_asciiflag_conv("dJ")
 		assert room.sector_type == 0
 		assert room.exits[0].description == "A northern road.\n"
 		assert room.exits[0].keyword == "gate"
@@ -802,7 +803,7 @@ $
 
 		mob = af.area.mobs[10]
 		assert mob.name == "clone"
-		assert mob.act == area_reader.circle_asciiflag_conv("b") | area_reader.CircleMobFlags.ISNPC
+		assert mob.act == area_reader.dialects.circle.circle_asciiflag_conv("b") | area_reader.dialects.circle.CircleMobFlags.ISNPC
 		assert mob.affected_by == 0
 		assert mob.alignment == -25
 		assert mob.level == 7
@@ -876,7 +877,7 @@ $
 		assert sorted(af.area.objects) == [10, 11]
 		item = af.area.objects[10]
 		assert item.item_type == 19
-		assert item.extra_flags == area_reader.circle_asciiflag_conv("g")
+		assert item.extra_flags == area_reader.dialects.circle.circle_asciiflag_conv("g")
 		assert item.wear_flags == 1
 		assert item.value == [24, 0, 0, 0]
 		assert item.weight == 1

@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-import area_reader
+import area_reader.dialects.circle
 
 
 def write_circle_family(
@@ -116,7 +116,7 @@ $""",
 	reader.load_objects()
 
 	assert reader.area.objects[10].affected == [
-		area_reader.CircleAffectData(location=17, modifier=-3),
+		area_reader.dialects.circle.CircleAffectData(location=17, modifier=-3),
 	]
 
 
