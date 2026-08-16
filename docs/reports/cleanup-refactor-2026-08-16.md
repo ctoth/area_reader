@@ -323,3 +323,36 @@ Commit:
 
 Next slice:
 - Neutral shared parser, then dialect reader owners.
+
+## Iteration 10 - `neutral shared parser`
+
+Slice read:
+- `ParseError` and `AreaFile` in `area_reader/__init__.py`
+- Direct parser callers across lexical, grammar, writer, error, and JSON tests
+
+Surfaces:
+- Shared lexical/object parser
+  - Disposition: move and rewrite
+  - Owner after cleanup: `area_reader.parser`
+  - Action: made construction neutral, moved SMAUG program parsing to its reader, moved `AreaFile` and `ParseError` with Rope, and replaced generated root/wildcard imports with direct shared owners.
+  - Evidence: `parser.py` has no dialect or package-root import; `RomAreaFile` now explicitly declares `RomArea` as its model owner.
+- Parser source file lifetime
+  - Disposition: rewrite
+  - Owner after cleanup: `AreaFile.__init__`
+  - Action: replaced the manually opened/stored/closed file with a context manager and retained only parsed data plus filename.
+  - Evidence: no later method uses a file handle.
+
+Gate results:
+- Pass: parser owner import smoke -> `area_reader.parser` for `AreaFile` and `ParseError`.
+- Pass: direct parser/reader characterization -> `244 passed in 11.09s`.
+- Pass: locked complete no-coverage suite -> `950 passed in 27.55s`.
+- Pass: exact node-ID comparison against `c682de6` -> `current=950 baseline=950` with no differences.
+- Pass: Ruff on the parser and changed callers -> `All checks passed!`.
+- Pass: parser root/wildcard/dialect dependency searches -> no output.
+- Pass: temporary detached worktree removal -> `exists_after=False`.
+
+Commit:
+- `Extract neutral shared parser` (this iteration's commit).
+
+Next slice:
+- Move all six reader classes to their dialect owners.

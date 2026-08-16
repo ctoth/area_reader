@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-import area_reader
+import area_reader.parser
 
 
 def write_area(tmp_path: Path, text: str, name: str = "broken.are") -> Path:
@@ -17,7 +17,7 @@ def test_rom_section_error_keeps_the_specific_parse_message(tmp_path):
 	path = write_area(tmp_path, "#MOBILES\n#3000\nguard~\nA guard\n")
 	reader = area_reader.RomAreaFile(path)
 
-	with pytest.raises(area_reader.ParseError) as caught:
+	with pytest.raises(area_reader.parser.ParseError) as caught:
 		reader.load_sections()
 
 	assert "Unterminated string" in str(caught.value)
@@ -28,7 +28,7 @@ def test_smaug_section_error_keeps_the_specific_parse_message(tmp_path):
 	path = write_area(tmp_path, "#MOBILES\n#3000\nguard~\nA guard\n")
 	reader = area_reader.SmaugAreaFile(path)
 
-	with pytest.raises(area_reader.ParseError) as caught:
+	with pytest.raises(area_reader.parser.ParseError) as caught:
 		reader.load_sections()
 
 	assert "Unterminated string" in str(caught.value)
@@ -44,7 +44,7 @@ def test_non_parse_errors_are_reported_with_the_original_error(tmp_path, monkeyp
 
 	monkeypatch.setattr(reader, "load_mobiles", exploding_reader)
 
-	with pytest.raises(area_reader.ParseError) as caught:
+	with pytest.raises(area_reader.parser.ParseError) as caught:
 		reader.load_sections()
 
 	assert "Error reading section 'mobiles'" in str(caught.value)
@@ -67,5 +67,5 @@ def test_circle_record_header_rejects_a_non_numeric_vnum(tmp_path):
 	reader = area_reader.CircleAreaFile(tmp_path)
 	reader.open_circle_file(path)
 
-	with pytest.raises(area_reader.ParseError, match="Expected numeric record header"):
+	with pytest.raises(area_reader.parser.ParseError, match="Expected numeric record header"):
 		reader.read_record_header()

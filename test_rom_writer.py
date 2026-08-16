@@ -4,6 +4,7 @@ import pytest
 
 import area_reader.dialects.rom
 import area_reader.model
+import area_reader.parser
 from area_reader.native import NativeWriteError, render_record
 
 ROM_CORPUS = tuple(sorted(Path("test/rom").glob("*.are")))
@@ -181,7 +182,7 @@ wave wildly~
 def test_rom_mobprog_annotations_are_bidirectional(tmp_path: Path) -> None:
     path = tmp_path / "mobprog.txt"
     path.write_text("act_prog 123 greet~", encoding="latin-1")
-    reader = area_reader.AreaFile(path)
+    reader = area_reader.parser.AreaFile(path)
 
     program = reader.read_object_by_fields(area_reader.dialects.rom.RomMobprog)
 

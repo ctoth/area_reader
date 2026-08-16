@@ -2,17 +2,18 @@ import string
 import tempfile
 from pathlib import Path
 
-from hypothesis import given, settings, strategies as st
 import pytest
+from hypothesis import given, settings
+from hypothesis import strategies as st
 
-import area_reader
+import area_reader.parser
 
 
-def reader_for(text: str) -> area_reader.AreaFile:
+def reader_for(text: str) -> area_reader.parser.AreaFile:
 	with tempfile.TemporaryDirectory() as directory:
 		path = Path(directory) / "grammar.are"
 		path.write_text(text, encoding="latin-1")
-		return area_reader.AreaFile(path)
+		return area_reader.parser.AreaFile(path)
 
 
 @given(
@@ -90,7 +91,7 @@ def test_fread_string_preserves_generated_tilde_terminated_payloads(payload):
 def test_fread_string_rejects_eof_before_tilde(payload):
 	reader = reader_for(payload)
 
-	with pytest.raises(area_reader.ParseError, match="Unterminated string"):
+	with pytest.raises(area_reader.parser.ParseError, match="Unterminated string"):
 		reader.read_string()
 
 
@@ -99,7 +100,7 @@ def test_fread_string_rejects_eof_before_tilde(payload):
 def test_fread_word_rejects_eof_inside_quotes(payload):
 	reader = reader_for("'" + payload)
 
-	with pytest.raises(area_reader.ParseError, match="Unterminated quoted word"):
+	with pytest.raises(area_reader.parser.ParseError, match="Unterminated quoted word"):
 		reader.read_word()
 
 
@@ -121,7 +122,7 @@ invalid_number_token = st.one_of(
 def test_fread_number_rejects_tokens_without_digits(token, leading_whitespace):
 	reader = reader_for(leading_whitespace + token)
 
-	with pytest.raises(area_reader.ParseError, match="Expected number"):
+	with pytest.raises(area_reader.parser.ParseError, match="Expected number"):
 		reader.read_number()
 
 
@@ -133,5 +134,5 @@ def test_fread_number_rejects_tokens_without_digits(token, leading_whitespace):
 def test_fread_number_rejects_invalid_composed_terms(left, invalid_right):
 	reader = reader_for(f"{left}|{invalid_right}")
 
-	with pytest.raises(area_reader.ParseError, match="Expected number"):
+	with pytest.raises(area_reader.parser.ParseError, match="Expected number"):
 		reader.read_number()

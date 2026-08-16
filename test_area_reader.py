@@ -10,6 +10,7 @@ import area_reader.dialects.circle
 import area_reader.dialects.merc
 import area_reader.dialects.smaug
 import area_reader.model
+import area_reader.parser
 
 
 def write_area(directory, text):
@@ -940,7 +941,7 @@ M 0 3000 1 3001
 			return line
 
 		monkeypatch.setattr(af, "read_line", bounded_read_line)
-		with pytest.raises(area_reader.ParseError, match="premature end of file"):
+		with pytest.raises(area_reader.parser.ParseError, match="premature end of file"):
 			af.load_zones()
 
 

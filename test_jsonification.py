@@ -13,7 +13,7 @@ import area_reader.dialects.smaug
 import area_reader.dialects.swr
 import area_reader.model
 import area_reader.serialization
-from area_reader import constants
+from area_reader import constants, parser
 
 OWNER_MODULES = (
     area_reader,
@@ -216,7 +216,7 @@ def test_smaug_area_uses_smaug_room_and_exit_json_shapes():
 
 
 def test_save_as_json_uses_the_same_enum_safe_representation(tmp_path):
-    area_file = object.__new__(area_reader.AreaFile)
+    area_file = object.__new__(parser.AreaFile)
     area_file.filename = str(tmp_path / "enum-area.are")
     area_file.area = area_reader.dialects.rom.RomArea(
         mobs={

@@ -3,12 +3,13 @@ from pathlib import Path
 import pytest
 
 import area_reader.dialects.rom
+import area_reader.parser
 
 
-def make_reader(tmp_path: Path, text: str) -> area_reader.AreaFile:
+def make_reader(tmp_path: Path, text: str) -> area_reader.parser.AreaFile:
     path = tmp_path / "grammar.are"
     path.write_text(text, encoding="latin-1")
-    return area_reader.AreaFile(path)
+    return area_reader.parser.AreaFile(path)
 
 
 def test_fread_word_accepts_both_engine_quote_styles(tmp_path):
@@ -111,7 +112,7 @@ def test_rom_object_rejects_unknown_flag_affect_destination(tmp_path):
     reader = make_reader(tmp_path, rom_object_with_affect("F X 7 -2 C"))
     reader.current_section_name = "objects"
 
-    with pytest.raises(area_reader.ParseError, match="Bad where on flag set"):
+    with pytest.raises(area_reader.parser.ParseError, match="Bad where on flag set"):
         reader.read_object(area_reader.dialects.rom.RomItem, vnum=100)
 
 

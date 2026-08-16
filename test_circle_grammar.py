@@ -3,6 +3,7 @@ from pathlib import Path
 import pytest
 
 import area_reader.dialects.circle
+import area_reader.parser
 
 
 def write_circle_family(
@@ -173,7 +174,7 @@ $""",
 	)
 	reader = area_reader.CircleAreaFile(root)
 
-	with pytest.raises(area_reader.ParseError, match="Unknown room metadata 'X'"):
+	with pytest.raises(area_reader.parser.ParseError, match="Unknown room metadata 'X'"):
 		reader.load_rooms()
 
 
@@ -194,7 +195,7 @@ $""",
 	)
 	reader = area_reader.CircleAreaFile(root)
 
-	with pytest.raises(area_reader.ParseError, match="Unknown object metadata 'X'"):
+	with pytest.raises(area_reader.parser.ParseError, match="Unknown object metadata 'X'"):
 		reader.load_objects()
 
 
@@ -204,5 +205,5 @@ def test_circle_unterminated_string_reports_parse_location(tmp_path):
 	reader = area_reader.CircleAreaFile(tmp_path)
 	reader.open_circle_file(path)
 
-	with pytest.raises(area_reader.ParseError, match=r"broken\.wld line 1 col -1: Unterminated string"):
+	with pytest.raises(area_reader.parser.ParseError, match=r"broken\.wld line 1 col -1: Unterminated string"):
 		reader.read_string()
