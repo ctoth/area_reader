@@ -5,7 +5,7 @@ from typing import get_args
 import pytest
 from attr import fields, has
 
-import area_reader
+import area_reader.serialization
 import area_reader.constants as constants
 
 
@@ -77,7 +77,7 @@ def test_every_enum_member_unstructures_to_its_qualified_name(
 	member_name,
 	member,
 ):
-	result = area_reader.EnumNameConverter().unstructure(member)
+	result = area_reader.serialization.EnumNameConverter().unstructure(member)
 
 	assert result == f"{enum_type.__name__}.{member.name}"
 	assert json.loads(json.dumps(result)) == result
@@ -89,7 +89,7 @@ def test_every_enum_member_unstructures_to_its_qualified_name(
 	ids=lambda flag_type: flag_type.__name__,
 )
 def test_every_int_flag_type_jsonifies_zero(flag_type):
-	result = area_reader.EnumNameConverter().unstructure(flag_type(0))
+	result = area_reader.serialization.EnumNameConverter().unstructure(flag_type(0))
 
 	assert result == f"{flag_type.__name__}.{flag_type(0).name or 0}"
 	assert json.loads(json.dumps(result)) == result
@@ -113,7 +113,7 @@ def test_every_int_flag_type_jsonifies_named_combinations(flag_type):
 		pytest.skip("flag type has fewer than two single-bit members")
 	value = bits[0] | bits[1]
 
-	result = area_reader.EnumNameConverter().unstructure(value)
+	result = area_reader.serialization.EnumNameConverter().unstructure(value)
 
 	assert result == f"{flag_type.__name__}.{bits[0].name}|{bits[1].name}"
 	assert json.loads(json.dumps(result)) == result
@@ -128,7 +128,7 @@ def test_every_int_flag_type_preserves_an_unnamed_value(flag_type):
 	unknown_value = 1 << max(member.value.bit_length() for member in flag_type)
 	value = flag_type(unknown_value)
 
-	result = area_reader.EnumNameConverter().unstructure(value)
+	result = area_reader.serialization.EnumNameConverter().unstructure(value)
 
 	assert result == f"{flag_type.__name__}.{unknown_value}"
 	assert json.loads(json.dumps(result)) == result
@@ -151,7 +151,7 @@ def test_every_enum_typed_attrs_field_jsonifies_recursively(
 	instance = owner()
 	setattr(instance, attribute.name, member)
 
-	result = area_reader.EnumNameConverter().unstructure(instance)
+	result = area_reader.serialization.EnumNameConverter().unstructure(instance)
 
 	assert result[attribute.name] == (
 		f"{enum_type.__name__}.{member.name}"
@@ -167,7 +167,7 @@ def test_enums_jsonify_recursively_in_mixed_containers_and_mapping_keys():
 		],
 	}
 
-	result = area_reader.EnumNameConverter().unstructure(payload)
+	result = area_reader.serialization.EnumNameConverter().unstructure(payload)
 
 	assert result == {
 		"EXIT_DIRECTIONS.NORTH": [
@@ -182,7 +182,7 @@ def test_enums_jsonify_recursively_in_mixed_containers_and_mapping_keys():
 def test_scalar_armor_class_jsonifies_through_its_attrs_model(mob_type):
 	mob = mob_type(ac=-37)
 
-	result = area_reader.EnumNameConverter().unstructure(mob)
+	result = area_reader.serialization.EnumNameConverter().unstructure(mob)
 
 	assert result["ac"] == -37
 	assert json.loads(json.dumps(result)) == result
@@ -198,7 +198,7 @@ def test_smaug_area_uses_smaug_room_and_exit_json_shapes():
 		},
 	)
 
-	result = area_reader.EnumNameConverter().unstructure(area)
+	result = area_reader.serialization.EnumNameConverter().unstructure(area)
 	json_result = json.loads(json.dumps(result))
 
 	assert result["rooms"][1]["sector_type"] == 7

@@ -1,8 +1,6 @@
 #! /usr/bin/env python3.11
 
 import logging
-logger = logging.getLogger('area_reader')
-logging.basicConfig(level=logging.INFO)
 
 from collections import OrderedDict
 import enum
@@ -16,7 +14,6 @@ import sys
 import xml.etree.ElementTree as ET
 from typing import List, Dict, Optional
 from attr import attr, attributes, Factory, fields
-from cattr import converters
 from operator import setitem
 
 from area_reader.constants import *
@@ -35,6 +32,10 @@ from area_reader.native import (
 	tilde_string as native_tilde_string,
 	word as native_word,
 )
+import area_reader.serialization
+
+logger = logging.getLogger('area_reader')
+logging.basicConfig(level=logging.INFO)
 
 def field(type=None, read=True, on_read=None, original_type=None, only_if=None, native=None, *args, **kwargs):
 	metadata = dict(read=read)
@@ -413,7 +414,7 @@ class AreaFile(object):
 		return self.data[self.index-window:self.index+window]
 
 	def as_dict(self):
-		return EnumNameConverter().unstructure(self.area)
+		return area_reader.serialization.EnumNameConverter().unstructure(self.area)
 
 	def as_json(self, indent=None):
 		return json.dumps(self.as_dict(), indent=indent)
@@ -3102,7 +3103,7 @@ class CircleAreaFile(object):
 		return CircleShop(vnum=vnum, products=products, profit_buy=profit_buy, profit_sell=profit_sell, buy_type=buy_type, messages=messages, temper=temper, bitvector=bitvector, keeper=keeper, with_who=with_who, rooms=rooms, open_hour=open_hour, close_hour=close_hour, open_hour_2=open_hour_2, close_hour_2=close_hour_2)
 
 	def as_dict(self):
-		return EnumNameConverter().unstructure(self.area)
+		return area_reader.serialization.EnumNameConverter().unstructure(self.area)
 
 	def as_json(self, indent=None):
 		return json.dumps(self.as_dict(), indent=indent)
@@ -3896,44 +3897,10 @@ class CoffeeMudAreaFile(object):
 			return default
 
 	def as_dict(self):
-		return EnumNameConverter().unstructure(self.area)
+		return area_reader.serialization.EnumNameConverter().unstructure(self.area)
 
 	def as_json(self, indent=None):
 		return json.dumps(self.as_dict(), indent=indent)
-
-
-class EnumNameConverter(converters.Converter):
-	def __init__(self, *args, **kwargs):
-		super().__init__(*args, **kwargs)
-		self.register_unstructure_hook_func(
-			lambda field_type: (
-				isinstance(field_type, type)
-				and issubclass(field_type, enum.Enum)
-			),
-			self._unstructure_enum,
-		)
-
-	def _unstructure_enum(self, obj):
-		# Composite Flag values have no .name before Python 3.11; decompose
-		# into single-bit member names in ascending bit order, matching the
-		# names 3.11+ produces, so JSON output is identical on every version.
-		name = obj.name
-		if name is None and isinstance(obj, enum.Flag):
-			bits = {
-				member.value: member.name
-				for member in type(obj).__members__.values()
-				if member.value and not member.value & (member.value - 1)
-			}
-			names = [bits[bit] for bit in sorted(bits) if obj.value & bit]
-			covered = 0
-			for bit in bits:
-				if obj.value & bit:
-					covered |= bit
-			if names and covered == obj.value:
-				name = "|".join(names)
-		if name is None:
-			name = str(obj.value)
-		return obj.__class__.__name__ + "." + name
 
 
 def print_area(area_file_path, area_type=RomAreaFile):

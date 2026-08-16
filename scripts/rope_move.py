@@ -28,7 +28,10 @@ def symbol_offset(source: Path, symbol: str) -> int:
     )
     if node is None:
         raise SystemExit(f"top-level symbol {symbol!r} not found in {source}")
-    return len("".join(text.splitlines(keepends=True)[: node.lineno - 1]).encode("utf-8"))
+    lines = text.splitlines(keepends=True)
+    definition_line = lines[node.lineno - 1]
+    name_column = definition_line.index(node.name, node.col_offset)
+    return len("".join(lines[: node.lineno - 1])) + name_column
 
 
 def main() -> int:

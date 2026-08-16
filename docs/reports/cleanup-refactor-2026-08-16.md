@@ -53,7 +53,38 @@ Gate results:
 - Pass: `git diff --check` -> no output.
 
 Commit:
-- `Add locked refactoring tools` (this iteration's commit).
+- `b71a024 Add locked refactoring tools`.
 
 Next slice:
 - Public API contract and shared parser ownership.
+
+## Iteration 2 - `serialization leaf owner`
+
+Slice read:
+- `area_reader/__init__.py:3905-3936`
+- `test_jsonification.py`
+
+Surfaces:
+- `EnumNameConverter`
+  - Disposition: move
+  - Owner after cleanup: `area_reader.serialization`
+  - Action: moved the converter with Rope and updated all callers to the real owner.
+  - Evidence: serialization is independent of parser and dialect ownership.
+- Rope symbol offset selection
+  - Disposition: rewrite
+  - Owner after cleanup: `scripts/rope_move.py`
+  - Action: select the AST definition name rather than the `class` or `def` keyword.
+  - Evidence: the original preview failed with `BadIdentifierError`; the corrected preview produced the intended global move.
+
+Gate results:
+- Pass: Rope preview showed only converter ownership and caller import changes.
+- Pass: `uv run --locked --extra test --group refactor pytest -q test_jsonification.py --no-cov` -> `524 passed in 1.29s`.
+- Pass: `uv run --locked --group refactor ruff check area_reader/serialization.py scripts/rope_move.py` -> `All checks passed!`.
+- Pass: import smoke -> `area_reader.serialization`.
+- Pass: `git diff --check` -> no output.
+
+Commit:
+- `Extract serialization owner` (this iteration's commit).
+
+Next slice:
+- Shared model and parser ownership, beginning with leaf value/model symbols.
