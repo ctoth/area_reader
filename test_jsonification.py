@@ -77,6 +77,27 @@ INT_FLAG_TYPES = int_flag_types()
 ATTRS_ENUM_FIELDS = attrs_enum_fields()
 
 
+def test_exported_flag_member_names_have_no_dialect_artifact_underscores():
+    artifact_names = {
+        f"{enum_type.__name__}.{member_name}"
+        for enum_type in INT_FLAG_TYPES
+        for member_name in enum_type.__members__
+        if member_name.startswith("_") or member_name.endswith("_")
+    }
+
+    assert artifact_names == set()
+
+
+def test_merc_act_flag_member_names_match_rom_for_shared_bits():
+    merc_names_by_value = {member.value: member.name for member in constants.MERC_ACT_TYPES}
+    rom_names_by_value = {
+        member.value: member.name for member in constants.ROM_ACT_TYPES if member.value in merc_names_by_value
+    }
+
+    assert merc_names_by_value == rom_names_by_value
+    assert constants.MERC_ACT_TYPES.SENTINEL.name == "SENTINEL"
+
+
 @pytest.mark.parametrize(
     ("enum_type", "member_name", "member"),
     ENUM_MEMBERS,

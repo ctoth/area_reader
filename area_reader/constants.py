@@ -62,16 +62,16 @@ BITFLAGS = {
 
 class MERC_ACT_TYPES(enum.IntFlag):
     IS_NPC = BITFLAGS["A"]  # Auto set for mobs
-    SENTINEL_ = BITFLAGS["B"]  # Stays in one room
-    SCAVENGER_ = BITFLAGS["C"]  # Picks  up objects
+    SENTINEL = BITFLAGS["B"]  # Stays in one room
+    SCAVENGER = BITFLAGS["C"]  # Picks  up objects
     UNUSED1 = BITFLAGS["D"]
     UNUSED2 = BITFLAGS["E"]
-    AGGRESSIVE_ = BITFLAGS["F"]  # Attacks  PC s
+    AGGRESSIVE = BITFLAGS["F"]  # Attacks  PC s
     STAY_AREA = BITFLAGS["G"]  # Won't leave area
     WIMPY = BITFLAGS["H"]
     PET = BITFLAGS["I"]  # Auto set for pets
     TRAIN = BITFLAGS["J"]  # Can train PC s
-    _PRACTICE = BITFLAGS["K"]  # Can practice PC s
+    PRACTICE = BITFLAGS["K"]  # Can practice PC s
     UNUSED3 = BITFLAGS["L"]
     UNUSED4 = BITFLAGS["M"]
 
@@ -87,13 +87,13 @@ class ROM_ACT_TYPES(enum.IntFlag):
     WIMPY = BITFLAGS["H"]
     PET = BITFLAGS["I"]  # Auto set for pets
     TRAIN = BITFLAGS["J"]  # Can train PC s
-    _PRACTICE = BITFLAGS["K"]  # Can practice PC s
+    PRACTICE = BITFLAGS["K"]  # Can practice PC s
     UNUSED3 = BITFLAGS["L"]
     UNUSED4 = BITFLAGS["M"]
     UNUSED5 = BITFLAGS["N"]
-    _UNDEAD = BITFLAGS["O"]
+    UNDEAD = BITFLAGS["O"]
     UNUSED6 = BITFLAGS["P"]
-    _CLERIC = BITFLAGS["Q"]
+    CLERIC = BITFLAGS["Q"]
     MAGE = BITFLAGS["R"]
     THIEF = BITFLAGS["S"]
     WARRIOR = BITFLAGS["T"]
@@ -179,9 +179,9 @@ class OFFENSE(enum.IntFlag):
     KICK_DIRT = BITFLAGS["J"]
     PARRY = BITFLAGS["K"]
     RESCUE = BITFLAGS["L"]
-    TAIL_ = BITFLAGS["M"]
-    TRIP_ = BITFLAGS["N"]
-    CRUSH_ = BITFLAGS["O"]
+    TAIL = BITFLAGS["M"]
+    TRIP = BITFLAGS["N"]
+    CRUSH = BITFLAGS["O"]
     ASSIST_ALL = BITFLAGS["P"]
     ASSIST_ALIGN = BITFLAGS["Q"]
     ASSIST_RACE = BITFLAGS["R"]
