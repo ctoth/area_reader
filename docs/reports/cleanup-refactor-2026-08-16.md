@@ -127,7 +127,44 @@ Gate results:
 - Pass: `git diff --check` -> no output.
 
 Commit:
-- `Extract shared schema and models` (this iteration's commit).
+- `64fe286 Extract shared schema and models`.
 
 Next slice:
 - ROM dialect owner, then dependent Merc/SMAUG/SWR owners.
+
+## Iteration 4 - `ROM semantic owner`
+
+Slice read:
+- Former ROM model and codec definitions in `area_reader/__init__.py`
+- ROM grammar, writer, JSONification, and SWR armor-class callers
+
+Surfaces:
+- ROM semantic models and native codecs
+  - Disposition: move
+  - Owner after cleanup: `area_reader.dialects.rom`
+  - Action: moved `RomArea`, `RomMob`, `RomCharacter`, `RomMobprog`, `RomArmorClass`, `RomItem`, `RomAffectData`, and their ROM-only codecs with Rope.
+  - Evidence: direct shared-owner and explicit constant imports leave the dialect module independent of the package root.
+- ROM/Merc shop record
+  - Disposition: move
+  - Owner after cleanup: `area_reader.model.RomShop`
+  - Action: moved the shared shop record and trade-type codec to the common semantic owner.
+  - Evidence: both ROM and Merc readers use the same record and five-slot native contract.
+- Root-only conversion lambdas
+  - Disposition: delete
+  - Owner after cleanup: `area_reader.dialects.rom.multiply_10`; no owner for unused `mark_as_npc`.
+  - Action: replaced the armor converter with a named dialect-local function and deleted the unused NPC lambda.
+
+Gate results:
+- Pass: ROM owner import smoke -> `area_reader.dialects.rom` for `RomArea` and `RomItem`.
+- Pass: focused ROM/error tests -> `91 passed in 4.16s`.
+- Pass: locked affected ROM/JSON/SWR tests -> `659 passed in 7.47s`.
+- Pass: JSONification contract discovery remains `524 tests collected` after moving it to the real model owners.
+- Pass: Ruff on the changed production and test files -> `All checks passed!`.
+- Pass: ownership search finds ROM semantic classes and codecs only in `area_reader.dialects.rom`.
+- Pass: `git diff --check` -> no output.
+
+Commit:
+- `Extract ROM semantic models` (this iteration's commit).
+
+Next slice:
+- Merc semantic owner, followed by SMAUG and SWR dependency owners.

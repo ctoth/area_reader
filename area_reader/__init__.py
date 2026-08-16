@@ -21,6 +21,7 @@ import area_reader.serialization
 import area_reader.model
 import area_reader.schema
 import area_reader.values
+import area_reader.dialects.rom
 
 logger = logging.getLogger('area_reader')
 logging.basicConfig(level=logging.INFO)
@@ -38,7 +39,7 @@ class AreaFile(object):
 		self.data = self.file.read()
 		self.filename = filename
 		self.file.close()
-		area_type = self.area_type or RomArea
+		area_type = self.area_type or area_reader.dialects.rom.RomArea
 		self.area = area_type()
 		self.skipped_sections = []
 		self.current_section_name = "N/A"
@@ -50,7 +51,7 @@ class AreaFile(object):
 			int: self.read_number,
 			area_reader.values.VNum: self.read_number,
 			enum.IntFlag: self.read_flag,
-			RomArmorClass: lambda: self.read_object_from_fields(RomArmorClass),
+			area_reader.dialects.rom.RomArmorClass: lambda: self.read_object_from_fields(area_reader.dialects.rom.RomArmorClass),
 		}
 
 	def read_letter(self):
@@ -346,7 +347,7 @@ class AreaFile(object):
 			if keeper == 0:
 				break
 			logger.debug("Reading shop with keeper %d", keeper)
-			shop = RomShop(keeper=keeper)
+			shop = area_reader.model.RomShop(keeper=keeper)
 			for iTrade in range(self.MAX_TRADES):
 				shop.buy_type.append(self.read_number())
 			shop.profit_buy = self.read_number()
@@ -400,11 +401,11 @@ class RomAreaFile(AreaFile):
 			area_file.write(self.dumps())
 
 	def load_mobiles(self):
-		for mob in self.load_vnum_section(RomMob):
+		for mob in self.load_vnum_section(area_reader.dialects.rom.RomMob):
 			setitem(self.area.mobs, mob.vnum, mob)
 
 	def load_objects(self):
-		for item in self.load_vnum_section(RomItem):
+		for item in self.load_vnum_section(area_reader.dialects.rom.RomItem):
 			setitem(self.area.objects, item.vnum, item)
 
 	def read_area_metadata(self):
@@ -413,50 +414,6 @@ class RomAreaFile(AreaFile):
 		self.area.metadata = self.read_string()
 		self.area.first_vnum = self.read_number()
 		self.area.last_vnum = self.read_number()
-
-
-def native_divide_by_ten(value, owner):
-	del owner
-	if value % 10:
-		raise NativeWriteError("Armor class %r is not divisible by ten" % value)
-	return str(value // 10)
-
-
-def native_condition(value, owner):
-	del owner
-	conditions = {
-		100: 'P',
-		90: 'G',
-		75: 'A',
-		50: 'W',
-		25: 'D',
-		10: 'B',
-		0: 'R',
-	}
-	try:
-		return conditions[value]
-	except KeyError:
-		raise NativeWriteError("ROM condition %r has no native letter" % value)
-
-
-def native_item_values(value, owner):
-	if len(value) != 5:
-		raise NativeWriteError("ROM object values must contain five entries")
-	word_positions = {
-		'weapon': {0, 3},
-		'drink': {2},
-		'fountain': {2},
-		'wand': {3},
-		'staff': {3},
-		'potion': {1, 2, 3, 4},
-		'pill': {1, 2, 3, 4},
-		'scroll': {1, 2, 3, 4},
-	}.get(owner.item_type, set())
-	encoded = []
-	for index, item in enumerate(value):
-		encoder = native_word if index in word_positions else native_flag
-		encoded.append(encoder(item, owner))
-	return ' '.join(encoded)
 
 
 def native_four_numbers(value, owner):
@@ -476,13 +433,6 @@ def native_merc_exit_lock(value, owner):
 		return str(locks[int(value)])
 	except KeyError:
 		raise NativeWriteError("Merc exit flags %r have no native lock code" % value)
-
-
-def native_trade_types(value, owner):
-	del owner
-	if len(value) != AreaFile.MAX_TRADES:
-		raise NativeWriteError("ROM shops require exactly five trade types")
-	return ' '.join(str(item) for item in value)
 
 
 def native_numbers(value, owner):
@@ -542,275 +492,6 @@ class MercAffectData(object):
 	location = area_reader.schema.field(default=-1, native=NativeField(1, native_number, prefix='A\n'))
 	modifier = area_reader.schema.field(default=-1, native=NativeField(2, native_number))
 	bitvector = attr(default=0)
-
-@attributes
-class RomItem(area_reader.model.Item):
-
-	@staticmethod
-	def convert_condition(letter):
-		condition = -1
-		conditions = {
-			'P': 100,
-			'G': 90,
-			'A': 75,
-			'W': 50,
-			'D': 25,
-			'B': 10,
-			'R': 0,
-		}
-		condition = conditions[letter]
-		return condition
-
-	vnum = area_reader.schema.field(default=0, type=area_reader.values.VNum, read=False, native=NativeField(0, native_number, prefix='#'))
-	name = area_reader.schema.field(default='', type=str, native=NativeField(1, native_tilde_string))
-	short_desc = area_reader.schema.field(default='', type=str, native=NativeField(2, native_tilde_string))
-	description = area_reader.schema.field(default='', type=str, native=NativeField(3, native_tilde_string))
-	material = area_reader.schema.field(default='', type=str, native=NativeField(4, native_tilde_string))
-	item_type = area_reader.schema.field(default=-1, type=int, native=NativeField(5, native_word))
-	extra_flags = area_reader.schema.field(default=0, type=int, native=NativeField(6, native_flag))
-	wear_flags = area_reader.schema.field(default=0, type=WEAR_FLAGS, converter=WEAR_FLAGS, native=NativeField(7, native_flag))
-	value = area_reader.schema.field(default=Factory(list), type=List, native=NativeField(8, native_item_values))
-	level = area_reader.schema.field(default=0, type=int, native=NativeField(9, native_number))
-	weight = area_reader.schema.field(default=0, type=int, native=NativeField(10, native_number))
-	cost = area_reader.schema.field(default=0, type=int, native=NativeField(11, native_number))
-	condition = area_reader.schema.field(default=100, type=int, original_type=area_reader.values.Letter, on_read=convert_condition, native=NativeField(12, native_condition))
-	affected = area_reader.schema.field(default=Factory(list), native=NativeField(13, native_records, suffix=''))
-	extra_descriptions = area_reader.schema.field(default=Factory(list), type=List[area_reader.model.ExtraDescription], native=NativeField(14, native_records, suffix=''))
-
-	@classmethod
-	def read(cls, reader, vnum=None, **kwargs):
-		logger.debug("Reading object %d", vnum)
-		name = reader.read_string()
-		short_desc = reader.read_string()
-		description = reader.read_string()
-		material = reader.read_string()
-		item_type = reader.read_word()
-		extra_flags = reader.read_flag()
-		wear_flags = reader.read_flag()
-		if item_type == 'weapon':
-			value = [reader.read_word(), reader.read_number(), reader.read_number(), reader.read_word(), reader.read_flag(), ]
-		elif item_type == 'container':
-			value = [reader.read_number(), reader.read_flag(), reader.read_number(), reader.read_number(), reader.read_number(), ]
-		elif item_type == 'drink' or item_type == 'fountain':
-			value = [reader.read_number(), reader.read_number(), reader.read_word(), reader.read_number(), reader.read_number(), ]
-		elif item_type == 'wand' or item_type == 'staff':
-			value = [reader.read_number(), reader.read_number(), reader.read_number(), reader.read_word(), reader.read_number(), ]
-		elif item_type in ('potion', 'pill', 'scroll'):
-			value = [reader.read_number(), reader.read_word(), reader.read_word(), reader.read_word(), reader.read_word(), ]
-		else:
-			value = [reader.read_flag(), reader.read_flag(), reader.read_flag(), reader.read_flag(), reader.read_flag(), ]
-		level = reader.read_number()
-		weight = reader.read_number()
-		cost = reader.read_number()
-		condition = cls.convert_condition(reader.read_letter())
-		affected = []
-		extra_descriptions = []
-		while True:
-			letter = reader.read_letter()
-			if letter == 'A':
-				af = RomAffectData()
-				af.where = 'TO_OBJECT'
-				af.type = -1
-				af.level = level
-				af.duration = -1
-				af.location = reader.read_number()
-				af.modifier = reader.read_number()
-				affected.append(af)
-			elif letter == 'F':
-				af = RomAffectData()
-				letter = reader.read_letter()
-				if letter == 'A':
-					af.where = 'TO_AFFECTS'
-				elif letter == 'I':
-					af.where = 'TO_IMMUNE'
-				elif letter == 'R':
-					af.where = 'TO_RESIST'
-				elif letter == 'V':
-					af.where = 'TO_VULN'
-				else:
-					reader.parse_fail("Bad where on flag set")
-				af.type = -1
-				af.level = level
-				af.duration = -1
-				af.location = reader.read_number()
-				af.modifier = reader.read_number()
-				af.bitvector = reader.read_flag()
-				affected.append(af)
-			elif letter == 'E':
-				extra_descriptions.append(reader.read_object(area_reader.model.ExtraDescription))
-			else:
-				reader.index -= 1
-				break
-		return cls(vnum=vnum, name=name, short_desc=short_desc, description=description, material=material, item_type=item_type, extra_flags=extra_flags, wear_flags=wear_flags, value=value, level=level, weight=weight, cost=cost, condition=condition, affected=affected, extra_descriptions=extra_descriptions)
-
-
-multiply_10 = lambda n: n * 10
-
-@attributes
-class RomArmorClass(object):
-	pierce = area_reader.schema.field(default=0, type=int, on_read=multiply_10, native=NativeField(1, native_divide_by_ten))
-	bash = area_reader.schema.field(default=0, type=int, on_read=multiply_10, native=NativeField(2, native_divide_by_ten))
-	slash = area_reader.schema.field(default=0, type=int, on_read=multiply_10, native=NativeField(3, native_divide_by_ten))
-	exotic = area_reader.schema.field(default=0, type=int, on_read=multiply_10, native=NativeField(4, native_divide_by_ten))
-
-@attributes
-class RomMobprog(object):
-	trig_type = area_reader.schema.field(default=None, type=area_reader.values.Word, native=NativeField(1, native_word, prefix='M ', suffix=' '))
-	vnum = area_reader.schema.field(default=-1, type=area_reader.values.VNum, native=NativeField(2, native_number, suffix=' '))
-	trig_phrase = area_reader.schema.field(default=None, type=str, native=NativeField(3, native_tilde_string))
-
-@attributes
-class RomCharacter(area_reader.model.MudBase):
-	short_desc = area_reader.schema.field(default='', type=str)
-	long_desc = attr(default="", type=str)
-	level = area_reader.schema.field(default=0, type=int)
-	race = attr(default="", type=str)
-	group = attr(default=0, type=int)
-	hitroll = attr(default=0, type=int)
-	hit = attr(default=Factory(area_reader.model.Dice), type=area_reader.model.Dice)
-	mana = attr(default=Factory(area_reader.model.Dice), type=area_reader.model.Dice)
-	material = area_reader.schema.field(default='', type=str)
-	damage = attr(default=Factory(area_reader.model.Dice), type=area_reader.model.Dice)
-	damtype = attr(default='', type=area_reader.values.Word)
-	ac = attr(default=Factory(RomArmorClass), type=RomArmorClass)
-	act = attr(default=ROM_ACT_TYPES.IS_NPC.value, type=ROM_ACT_TYPES, converter=ROM_ACT_TYPES)
-	affected_by = attr(default=0, type=AFFECTED_BY, converter=AFFECTED_BY)
-
-mark_as_npc = lambda act_flags: ROM_ACT_TYPES(act_flags) | ROM_ACT_TYPES.IS_NPC
-
-@attributes
-class RomMob(RomCharacter):
-	vnum = area_reader.schema.field(default=0, type=area_reader.values.VNum, read=False, native=NativeField(0, native_number, prefix='#'))
-	name = area_reader.schema.field(default='', type=str, native=NativeField(1, native_tilde_string))
-	short_desc = area_reader.schema.field(default='', type=str, native=NativeField(2, native_tilde_string))
-	long_desc = area_reader.schema.field(default='', type=str, native=NativeField(3, native_tilde_string))
-	description = area_reader.schema.field(default='', type=str, native=NativeField(4, native_tilde_string))
-	race = area_reader.schema.field(default='', type=str, native=NativeField(5, native_tilde_string))
-	act = area_reader.schema.field(default=0, type=ROM_ACT_TYPES, converter=ROM_ACT_TYPES, native=NativeField(6, native_flag))
-	affected_by = area_reader.schema.field(default=0, type=AFFECTED_BY, converter=AFFECTED_BY, native=NativeField(7, native_flag))
-	alignment = area_reader.schema.field(default=0, type=int, native=NativeField(8, native_number))
-	group = area_reader.schema.field(default=0, type=int, native=NativeField(9, native_number))
-	level = area_reader.schema.field(default=0, type=int, native=NativeField(10, native_number))
-	hitroll = area_reader.schema.field(default=0, type=int, native=NativeField(11, native_number))
-	hit = area_reader.schema.field(default=Factory(area_reader.model.Dice), type=area_reader.model.Dice, native=NativeField(12, native_nested))
-	mana = area_reader.schema.field(default=Factory(area_reader.model.Dice), type=area_reader.model.Dice, native=NativeField(13, native_nested))
-	damage = area_reader.schema.field(default=Factory(area_reader.model.Dice), type=area_reader.model.Dice, native=NativeField(14, native_nested))
-	damtype = area_reader.schema.field(default='', type=area_reader.values.Word, native=NativeField(15, native_word))
-	ac = area_reader.schema.field(default=Factory(RomArmorClass), type=RomArmorClass, native=NativeField(16, native_nested))
-	shop = area_reader.schema.field(default=None, read=False)
-	off_flags = area_reader.schema.field(default=0, type=OFFENSE, converter=OFFENSE, native=NativeField(17, native_flag))
-	imm_flags = area_reader.schema.field(default=0, type=IMM_FLAGS, converter=IMM_FLAGS, native=NativeField(18, native_flag))
-	res_flags = area_reader.schema.field(default=0, type=IMM_FLAGS, converter=IMM_FLAGS, native=NativeField(19, native_flag))
-	vuln_flags = area_reader.schema.field(default=0, type=IMM_FLAGS, converter=IMM_FLAGS, native=NativeField(20, native_flag))
-	start_pos = area_reader.schema.field(default=None, type=area_reader.values.Word, native=NativeField(21, native_word))
-	default_pos = area_reader.schema.field(default=None, type=area_reader.values.Word, native=NativeField(22, native_word))
-	sex = area_reader.schema.field(default='', type=area_reader.values.Word, native=NativeField(23, native_word))
-	wealth = area_reader.schema.field(default=0, type=int, native=NativeField(24, native_number))
-	form = area_reader.schema.field(default=0, type=FORMS, converter=FORMS, native=NativeField(25, native_flag))
-	parts = area_reader.schema.field(default=0, type=PARTS, converter=PARTS, native=NativeField(26, native_flag))
-	size = area_reader.schema.field(default=None, type=area_reader.values.Word, native=NativeField(27, native_word))
-	material = area_reader.schema.field(default='', type=str, native=NativeField(28, native_word))
-	mprogs = area_reader.schema.field(default=Factory(list), type=Optional[List[RomMobprog]], native=NativeField(29, native_records))
-
-	@classmethod
-	def read(cls, reader, vnum, **kwargs):
-		logger.debug("Reading mob %d" % vnum)
-		name = reader.read_string()
-		short_desc = reader.read_string()
-		long_desc = reader.read_string()
-		description = reader.read_string()
-		race = reader.read_string()
-		act = ROM_ACT_TYPES(reader.read_flag()) | ROM_ACT_TYPES.IS_NPC
-		affected_by = reader.read_flag()
-		alignment = reader.read_number()
-		group = reader.read_number()
-		level = reader.read_number()
-		hitroll = reader.read_number()
-		hit = area_reader.model.Dice.read(reader=reader)
-		mana = area_reader.model.Dice.read(reader=reader)
-		damage = area_reader.model.Dice.read(reader=reader)
-		damtype = reader.read_word()
-		ac = reader.read_object(RomArmorClass)
-		off_flags = reader.read_flag()
-		imm_flags = reader.read_flag()
-		res_flags = reader.read_flag()
-		vuln_flags = reader.read_flag()
-		start_pos = reader.read_word()
-		default_pos = reader.read_word()
-		sex = reader.read_word()
-		wealth = reader.read_number()
-		form = reader.read_flag()
-		parts = reader.read_flag()
-		size = reader.read_word()
-		material = reader.read_word()
-		mprogs = []
-		while True:
-			letter = reader.read_letter()
-			if letter == 'F':
-				word = reader.read_word()
-				vector = reader.read_flag()
-				if word.startswith('act'):
-					act = remove_bit(act, vector)
-				elif word.startswith('aff'):
-					affected_by = remove_bit(affected_by, vector)
-				elif word.startswith('off'):
-					off_flags = remove_bit(off_flags, vector)
-				elif word.startswith('imm'):
-					imm_flags = remove_bit(imm_flags, vector)
-				elif word.startswith('res'):
-					res_flags = remove_bit(res_flags, vector)
-				elif word.startswith('vul'):
-					vuln_flags = remove_bit(vuln_flags, vector)
-				elif word.startswith('for'):
-					form = remove_bit(form, vector)
-				elif word.startswith('par'):
-					parts = remove_bit(parts, vector)
-				else:
-					reader.parse_fail("Flag remove: flag not found: %s" % word)
-			elif letter == 'M':
-				mprogs.append(reader.read_object_by_fields(RomMobprog))
-			else:
-				reader.index -= 1
-				break
-		return cls(vnum=vnum, name=name, short_desc=short_desc, long_desc=long_desc, description=description, race=race, act=act, affected_by=affected_by, alignment=alignment, group=group, level=level, hitroll=hitroll, hit=hit, mana=mana, damage=damage, damtype=damtype, ac=ac, off_flags=off_flags, imm_flags=imm_flags, res_flags=res_flags, vuln_flags=vuln_flags, start_pos=start_pos, default_pos=default_pos, sex=sex, wealth=wealth, form=form, parts=parts, size=size, material=material, mprogs=mprogs)
-
-
-def native_affect_prefix(owner):
-	if owner.where == 'TO_OBJECT':
-		return 'A\n'
-	letters = {
-		'TO_AFFECTS': 'A',
-		'TO_IMMUNE': 'I',
-		'TO_RESIST': 'R',
-		'TO_VULN': 'V',
-	}
-	try:
-		return 'F%s ' % letters[owner.where]
-	except KeyError:
-		raise NativeWriteError("ROM affect target %r has no native tag" % owner.where)
-
-
-def native_affect_modifier_suffix(owner):
-	return '\n' if owner.where == 'TO_OBJECT' else ' '
-
-
-@attributes
-class RomAffectData(object):
-	where = attr(default=None)
-	type = attr(default=None)
-	level = attr(default=None)
-	duration = attr(default=None)
-	location = area_reader.schema.field(default=None, native=NativeField(1, native_number, prefix=native_affect_prefix, suffix=' '))
-	modifier = area_reader.schema.field(default=None, native=NativeField(2, native_number, suffix=native_affect_modifier_suffix))
-	bitvector = area_reader.schema.field(
-		default=0,
-		native=NativeField(
-			3,
-			native_flag,
-			when=lambda owner: owner.where != 'TO_OBJECT',
-		),
-	)
-
 
 @attributes
 class MercArea(object):
@@ -888,33 +569,6 @@ class SmaugExit(area_reader.model.Exit):
 	pull = area_reader.schema.field(default=0, type=int, native=NativeField(9, native_number))
 
 @attributes
-class RomArea(object):
-	NATIVE_SECTIONS = (
-		NativeSection('AREA', owner_section='area'),
-		NativeSection('HELPS', collection='helps', end='0 $~\n'),
-		NativeSection('MOBILES', collection='mobs', end='#0\n', mapping=True),
-		NativeSection('OBJECTS', collection='objects', end='#0\n', mapping=True),
-		NativeSection('ROOMS', collection='rooms', end='#0\n', mapping=True),
-		NativeSection('RESETS', collection='resets', end='S\n'),
-		NativeSection('SHOPS', collection='shops', end='0\n'),
-		NativeSection('SPECIALS', collection='specials', end='S\n'),
-	)
-
-	name = area_reader.schema.field(default='', native=NativeField(2, native_tilde_string, section='area'))
-	metadata = area_reader.schema.field(default='', native=NativeField(3, native_tilde_string, section='area'))
-	original_filename = area_reader.schema.field(default='', native=NativeField(1, native_tilde_string, section='area'))
-	first_vnum = area_reader.schema.field(default=-1, native=NativeField(4, native_number, section='area'))
-	last_vnum = area_reader.schema.field(default=-1, native=NativeField(5, native_number, section='area'))
-	helps = attr(default=Factory(list), type=List[area_reader.model.Help])
-	rooms = attr(default=Factory(OrderedDict), type=Dict[int, area_reader.model.Room])
-	mobs = attr(default=Factory(OrderedDict))
-	objects = attr(default=Factory(OrderedDict))
-	resets = attr(default=Factory(list), type=List[area_reader.model.Reset])
-	specials = attr(default=Factory(list), type=List[area_reader.model.Special])
-	shops = attr(default=Factory(list))
-	mobprogs = attr(default=Factory(OrderedDict))
-
-@attributes
 class MercRoom(area_reader.model.Room):
 	owner = attr(default=None, type=str)
 	clan = attr(default='', type=str)
@@ -942,17 +596,7 @@ class MercRoom(area_reader.model.Room):
 				reader.parse_fail("room %d has flag %s not DES" % (self.vnum, letter))
 
 @attributes
-class RomShop(object):
-	keeper = area_reader.schema.field(default=0, type=int, native=NativeField(1, native_number, suffix=' '))
-	buy_type = area_reader.schema.field(default=Factory(list), type=list, native=NativeField(2, native_trade_types, suffix=' '))
-	profit_buy = area_reader.schema.field(default=0, type=int, native=NativeField(3, native_number, suffix=' '))
-	profit_sell = area_reader.schema.field(default=0, type=int, native=NativeField(4, native_number, suffix=' '))
-	open_hour = area_reader.schema.field(default=0, type=int, native=NativeField(5, native_number, suffix=' '))
-	close_hour = area_reader.schema.field(default=0, type=int, native=NativeField(6, native_number, suffix=''))
-	comment = area_reader.schema.field(default='', type=str, native=NativeField(7, area_reader.model.native_comment))
-
-@attributes
-class SmaugMob(RomMob):
+class SmaugMob(area_reader.dialects.rom.RomMob):
 	vnum = area_reader.schema.field(default=0, type=area_reader.values.VNum, read=False, native=NativeField(0, native_number, prefix='#'))
 	name = area_reader.schema.field(default='', type=str, native=NativeField(1, native_tilde_string))
 	short_desc = area_reader.schema.field(default='', type=str, native=NativeField(2, native_tilde_string))
@@ -986,7 +630,7 @@ class SmaugMob(RomMob):
 	parts = attr(default=0, type=PARTS, converter=PARTS)
 	size = attr(default=None, type=area_reader.values.Word)
 	material = attr(default='', type=str)
-	mprogs = attr(default=Factory(list), type=Optional[List[RomMobprog]])
+	mprogs = attr(default=Factory(list), type=Optional[List[area_reader.dialects.rom.RomMobprog]])
 	programs = area_reader.schema.field(default=Factory(list), type=List[SmaugProgram], native=NativeField(17, native_smaug_programs, suffix=''))
 
 	@classmethod
@@ -1105,7 +749,7 @@ class SmaugItem(area_reader.model.Item):
 		return cls(vnum=vnum, name=name, short_desc=short_desc, description=description, action_description=action_description, item_type=item_type, extra_flags=extra_flags, wear_flags=wear_flags, header_tail=header, value=value, level=level, weight=weight, cost=cost, cost_tail=cost_tail, spell_words=spell_words, affected=affected, extra_descriptions=extra_descriptions, layers=layers, programs=programs)
 
 @attributes
-class SmaugArea(RomArea):
+class SmaugArea(area_reader.dialects.rom.RomArea):
 	NATIVE_SECTIONS = (
 		NativeSection('AREA', owner_section='area'),
 		NativeSection('VERSION', owner_section='version', when=lambda area: area.version != 0),
@@ -1293,7 +937,7 @@ class SwrReset(object):
 
 
 @attributes
-class SwrMobile(RomCharacter):
+class SwrMobile(area_reader.dialects.rom.RomCharacter):
 	NATIVE_PREFIX = '#MOBILE\n'
 	NATIVE_SUFFIX = '#ENDMOBILE\n\n'
 
@@ -1317,7 +961,7 @@ class SwrMobile(RomCharacter):
 	alignment = area_reader.schema.field(default=0, type=int, native=NativeField(14, native_number, prefix='Stats1     ', suffix=' '))
 	level = area_reader.schema.field(default=0, type=int, native=NativeField(15, native_number, suffix=' '))
 	thac0 = area_reader.schema.field(default=0, type=int, native=NativeField(16, native_number, suffix=' '))
-	ac = area_reader.schema.field(default=Factory(RomArmorClass), type=RomArmorClass, native=NativeField(17, native_swr_armor_class, suffix=' '))
+	ac = area_reader.schema.field(default=Factory(area_reader.dialects.rom.RomArmorClass), type=area_reader.dialects.rom.RomArmorClass, native=NativeField(17, native_swr_armor_class, suffix=' '))
 	wealth = area_reader.schema.field(default=0, type=int, native=NativeField(18, native_number, suffix=' '))
 	experience = area_reader.schema.field(default=0, type=int, native=NativeField(19, native_number))
 	hit = area_reader.schema.field(default=Factory(area_reader.model.Dice), type=area_reader.model.Dice, native=NativeField(20, native_swr_dice, prefix='Stats2     '))
@@ -1464,7 +1108,7 @@ class MercReset(object):
 		return cls(command=command, if_flag=if_flag, arg1=arg1, arg2=arg2, arg3=arg3, comment=comment)
 
 @attributes
-class MercMob(RomMob):
+class MercMob(area_reader.dialects.rom.RomMob):
 	vnum = area_reader.schema.field(default=0, type=area_reader.values.VNum, read=False, native=NativeField(0, native_number, prefix='#'))
 	name = area_reader.schema.field(default='', type=str, native=NativeField(1, native_tilde_string))
 	short_desc = area_reader.schema.field(default='', type=str, native=NativeField(2, native_tilde_string))
@@ -1501,7 +1145,7 @@ class MercMob(RomMob):
 	form = attr(default=0, type=FORMS, converter=FORMS)
 	parts = attr(default=0, type=PARTS, converter=PARTS)
 	size = attr(default=None, type=area_reader.values.Word)
-	mprogs = area_reader.schema.field(default=Factory(list), type=Optional[List[RomMobprog]])
+	mprogs = area_reader.schema.field(default=Factory(list), type=Optional[List[area_reader.dialects.rom.RomMobprog]])
 
 	@classmethod
 	def read(cls, reader, vnum):
@@ -1972,7 +1616,7 @@ class SwrAreaFile(SmaugAreaFile):
 		mob.alignment = stats1[0]
 		mob.level = stats1[1]
 		mob.thac0 = stats1[2]
-		mob.ac = RomArmorClass(pierce=stats1[3], bash=stats1[3], slash=stats1[3], exotic=stats1[3])
+		mob.ac = area_reader.dialects.rom.RomArmorClass(pierce=stats1[3], bash=stats1[3], slash=stats1[3], exotic=stats1[3])
 		mob.wealth = stats1[4]
 		mob.experience = stats1[5]
 		mob.hit = area_reader.model.Dice(number=stats2[0], sides=stats2[1], bonus=stats2[2])
@@ -2285,7 +1929,7 @@ class CircleRoom(area_reader.model.MudBase):
 
 
 @attributes
-class CircleMob(RomCharacter):
+class CircleMob(area_reader.dialects.rom.RomCharacter):
 	vnum = area_reader.schema.field(default=0, type=area_reader.values.VNum, read=False, native=NativeField(1, native_number, prefix='#'))
 	name = area_reader.schema.field(default='', type=str, native=NativeField(2, native_tilde_string))
 	short_desc = area_reader.schema.field(default='', type=str, native=NativeField(3, native_tilde_string))

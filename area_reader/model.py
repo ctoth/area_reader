@@ -6,30 +6,25 @@ import random
 from attr import Factory, attr, attributes
 
 from area_reader.constants import EXIT_DIRECTIONS, EXIT_FLAGS, ROM_ROOM_FLAGS, SECTOR_TYPES, WEAR_FLAGS
-from area_reader.native import (
-    NativeField,
-    NativeWriteError,
-)
-from area_reader.native import (
-    flag as native_flag,
-)
-from area_reader.native import (
-    number as native_number,
-)
-from area_reader.native import (
-    records as native_records,
-)
-from area_reader.native import (
-    signed_number as native_signed_number,
-)
-from area_reader.native import (
-    tilde_string as native_tilde_string,
-)
-from area_reader.native import (
-    word as native_word,
-)
+from area_reader.native import NativeField, NativeWriteError
+from area_reader.native import flag as native_flag
+from area_reader.native import number as native_number
+from area_reader.native import records as native_records
+from area_reader.native import signed_number as native_signed_number
+from area_reader.native import tilde_string as native_tilde_string
+from area_reader.native import word as native_word
 from area_reader.schema import field
 from area_reader.values import Letter, VNum, Word
+
+MAX_TRADE_TYPES = 5
+
+
+def native_trade_types(value, owner):
+    del owner
+    if len(value) != MAX_TRADE_TYPES:
+        raise NativeWriteError("ROM shops require exactly five trade types")
+    return " ".join(str(item) for item in value)
+
 
 logger = logging.getLogger("area_reader")
 
@@ -211,7 +206,9 @@ class Reset:
     )
     arg2 = field(
         default=None,
-        native=NativeField(4, native_number, suffix=native_reset_arg2_suffix, when=lambda owner: owner.command is not None),
+        native=NativeField(
+            4, native_number, suffix=native_reset_arg2_suffix, when=lambda owner: owner.command is not None
+        ),
     )
     arg3 = field(
         default=None,
@@ -326,3 +323,14 @@ class Room(MudBase):
                 self.owner = reader.read_string()
             else:
                 reader.parse_fail(f"Don't know how to process room attribute: {letter}")
+
+
+@attributes
+class RomShop:
+    keeper = field(default=0, type=int, native=NativeField(1, native_number, suffix=" "))
+    buy_type = field(default=Factory(list), type=list, native=NativeField(2, native_trade_types, suffix=" "))
+    profit_buy = field(default=0, type=int, native=NativeField(3, native_number, suffix=" "))
+    profit_sell = field(default=0, type=int, native=NativeField(4, native_number, suffix=" "))
+    open_hour = field(default=0, type=int, native=NativeField(5, native_number, suffix=" "))
+    close_hour = field(default=0, type=int, native=NativeField(6, native_number, suffix=""))
+    comment = field(default="", type=str, native=NativeField(7, native_comment))
