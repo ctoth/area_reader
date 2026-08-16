@@ -311,7 +311,7 @@ class CircleAreaFile:
         affected_by = circle_asciiflag_conv(affected_flags)
         level, source_hitroll, source_ac, hit_token, damage_token = self.read_line().split()
         wealth, exp = self.read_int_list()
-        default_pos, start_pos, sex = self.read_int_list()
+        start_pos, default_pos, sex = self.read_int_list()
         especs = {}
         if mob_type.upper() == "E":
             while True:
@@ -682,8 +682,8 @@ class CircleMob(area_reader.dialects.rom.RomCharacter):
     )
     wealth = area_reader.schema.field(default=0, native=NativeField(15, native_number, suffix=" "))
     exp = area_reader.schema.field(default=0, native=NativeField(16, native_number))
-    default_pos = area_reader.schema.field(default=0, native=NativeField(17, native_number, suffix=" "))
-    start_pos = area_reader.schema.field(default=0, native=NativeField(18, native_number, suffix=" "))
+    start_pos = area_reader.schema.field(default=0, native=NativeField(17, native_number, suffix=" "))
+    default_pos = area_reader.schema.field(default=0, native=NativeField(18, native_number, suffix=" "))
     sex = area_reader.schema.field(default=0, native=NativeField(19, native_number))
     especs = area_reader.schema.field(
         default=Factory(dict),

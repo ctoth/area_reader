@@ -75,7 +75,7 @@ def test_merc_write_uses_the_canonical_rendering(tmp_path: Path) -> None:
     assert load_merc(output).area == source.area
 
 
-def test_merc_mobile_preserves_xp(tmp_path: Path) -> None:
+def test_merc_mobile_preserves_xp_and_position_semantics(tmp_path: Path) -> None:
     path = tmp_path / "mobile.are"
     path.write_text(
         """#AREA
@@ -98,7 +98,10 @@ A mob.~
 
     area_file = load_merc(path)
 
-    assert area_file.area.mobs[1].xp == 9
+    mob = area_file.area.mobs[1]
+    assert mob.xp == 9
+    assert mob.start_pos == 10
+    assert mob.default_pos == 11
     assert parse_rendered_merc(tmp_path, area_file.dumps()).area == area_file.area
 
 

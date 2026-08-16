@@ -217,8 +217,8 @@ class MercMob(area_reader.dialects.rom.RomMob):
     material = attr(default="", type=str)
     wealth = area_reader.schema.field(default=0, type=int, native=NativeField(13, native_number))
     xp = area_reader.schema.field(default=0, type=int, native=NativeField(14, native_number))
-    default_pos = area_reader.schema.field(default=0, type=int, native=NativeField(15, native_number))
-    start_pos = area_reader.schema.field(default=0, type=int, native=NativeField(16, native_number))
+    start_pos = area_reader.schema.field(default=0, type=int, native=NativeField(15, native_number))
+    default_pos = area_reader.schema.field(default=0, type=int, native=NativeField(16, native_number))
     sex = area_reader.schema.field(default=0, type=int, native=NativeField(17, native_number))
     off_flags = attr(default=0, type=OFFENSE, converter=OFFENSE)
     imm_flags = attr(default=0, type=IMM_FLAGS, converter=IMM_FLAGS)
@@ -247,8 +247,8 @@ class MercMob(area_reader.dialects.rom.RomMob):
         damage = area_reader.model.Dice.read(reader=reader)
         wealth = reader.read_number()
         xp = reader.read_number()
-        default_pos = reader.read_number()  # position
-        start_pos = reader.read_number()  # start pos
+        start_pos = reader.read_number()  # load position
+        default_pos = reader.read_number()  # default position
         sex = reader.read_number()
         if letter != "S":
             reader.parse_fail(f"Reading MOB vnum {vnum} non S: {letter}")

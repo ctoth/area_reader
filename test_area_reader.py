@@ -867,7 +867,7 @@ This clone is nothing to look at.
 b 0 -25 S
 7 3 4 2d8+11 1d4+2
 50 125
-8 5 1
+8 6 1
 $
 """,
         )
@@ -890,8 +890,8 @@ $
         assert mob.damage == area_reader.model.Dice(number=1, sides=4, bonus=2)
         assert mob.wealth == 50
         assert mob.exp == 125
-        assert mob.default_pos == 8
-        assert mob.start_pos == 5
+        assert mob.start_pos == 8
+        assert mob.default_pos == 6
         assert mob.sex == 1
 
 
