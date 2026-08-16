@@ -1,10 +1,13 @@
-import area_reader.model
 import json
-import os
-import pytest
-from pathlib import Path
 import tempfile
-from hypothesis import given, settings, strategies as st
+from pathlib import Path
+
+import pytest
+from hypothesis import given, settings
+from hypothesis import strategies as st
+
+import area_reader.dialects.merc
+import area_reader.model
 
 
 def write_area(directory, text):
@@ -379,7 +382,7 @@ S
 		af.load_sections()
 
 		room = af.area.rooms[1]
-	assert isinstance(room, area_reader.MercRoom)
+	assert isinstance(room, area_reader.dialects.merc.MercRoom)
 	assert isinstance(room.room_flags, area_reader.MERC_ROOM_FLAGS)
 
 

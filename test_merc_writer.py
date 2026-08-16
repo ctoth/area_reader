@@ -2,9 +2,8 @@ from pathlib import Path
 
 import pytest
 
-import area_reader
+import area_reader.dialects.merc
 from area_reader.native import NativeWriteError, render_record
-
 
 MERC_CORPUS = tuple(sorted(Path("test/merc").glob("*.are")))
 UPSTREAM_MERC_CORPUS = Path(r"C:\Users\Q\src\merc-mud\area")
@@ -131,7 +130,7 @@ An action.~
 
 
 def test_merc_exit_rejects_rom_only_lock_states() -> None:
-	exit = area_reader.MercExit(
+	exit = area_reader.dialects.merc.MercExit(
 		door=0,
 		exit_info=area_reader.EXIT_FLAGS.ISDOOR | area_reader.EXIT_FLAGS.NOPASS,
 	)

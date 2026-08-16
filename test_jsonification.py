@@ -5,6 +5,7 @@ from typing import get_args
 import pytest
 from attr import fields, has
 
+import area_reader.dialects.merc
 import area_reader.dialects.rom
 import area_reader.model
 import area_reader.serialization
@@ -46,7 +47,12 @@ def enum_type_in(annotation):
 def attrs_enum_fields():
     classes = {
         value
-        for module in (area_reader, area_reader.model, area_reader.dialects.rom)
+        for module in (
+            area_reader,
+            area_reader.model,
+            area_reader.dialects.rom,
+            area_reader.dialects.merc,
+        )
         for value in vars(module).values()
         if isinstance(value, type) and has(value)
     }
@@ -169,7 +175,7 @@ def test_enums_jsonify_recursively_in_mixed_containers_and_mapping_keys():
     assert json.loads(json.dumps(result)) == result
 
 
-@pytest.mark.parametrize("mob_type", [area_reader.MercMob, area_reader.SmaugMob])
+@pytest.mark.parametrize("mob_type", [area_reader.dialects.merc.MercMob, area_reader.SmaugMob])
 def test_scalar_armor_class_jsonifies_through_its_attrs_model(mob_type):
     mob = mob_type(ac=-37)
 

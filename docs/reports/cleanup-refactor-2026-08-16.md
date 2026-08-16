@@ -168,3 +168,34 @@ Commit:
 
 Next slice:
 - Merc semantic owner, followed by SMAUG and SWR dependency owners.
+
+## Iteration 5 - `Merc semantic owner`
+
+Slice read:
+- Former Merc model and codec definitions in `area_reader/__init__.py`
+- Merc writer, parser characterization, and JSONification callers
+
+Surfaces:
+- Merc semantic models and native codecs
+  - Disposition: move
+  - Owner after cleanup: `area_reader.dialects.merc`
+  - Action: moved `MercArea`, `MercItem`, `MercMob`, `MercRoom`, `MercReset`, `MercExit`, `MercAffectData`, and their three Merc-native codecs with Rope.
+  - Evidence: the resulting owner imports common semantics and ROM ancestry directly, with explicit constants and no package-root dependency.
+- JSONification attrs-class discovery
+  - Disposition: rewrite
+  - Owner after cleanup: the actual model and dialect modules under test.
+  - Action: added the Merc owner to the discovery module tuple.
+  - Evidence: the contract continues to collect `524 tests` after Merc classes leave the root.
+
+Gate results:
+- Pass: Merc owner import smoke -> `area_reader.dialects.merc` for `MercArea` and `MercItem`.
+- Pass: locked Merc/parser/JSON/error tests -> `734 passed in 8.75s`.
+- Pass: Ruff on the changed production and test files -> `All checks passed!`.
+- Pass: ownership search finds Merc semantic classes and codecs only in `area_reader.dialects.merc`.
+- Pass: `git diff --check` -> no output.
+
+Commit:
+- `Extract Merc semantic models` (this iteration's commit).
+
+Next slice:
+- SMAUG semantic owner, then SWR/FUSS semantic owner.
