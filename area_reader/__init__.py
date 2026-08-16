@@ -11,20 +11,20 @@ import re
 import os
 import sys
 import xml.etree.ElementTree as ET
-from attr import attr, attributes, Factory, fields
+from attr import fields
 from operator import setitem
 
 from area_reader.constants import *
-from area_reader.native import NativeField, NativeWriteError, number as native_number, raw as native_raw, render_document, render_record, tilde_string as native_tilde_string
+from area_reader.native import NativeWriteError, render_document, render_record, tilde_string as native_tilde_string
 import area_reader.serialization
 import area_reader.model
-import area_reader.schema
 import area_reader.values
 import area_reader.dialects.rom
 import area_reader.dialects.merc
 import area_reader.dialects.smaug
 import area_reader.dialects.swr
 import area_reader.dialects.circle
+import area_reader.dialects.coffeemud
 
 logger = logging.getLogger('area_reader')
 logging.basicConfig(level=logging.INFO)
@@ -1362,299 +1362,6 @@ class CircleAreaFile(object):
 		return json.dumps(self.as_dict(), indent=indent)
 
 
-def native_xml_text(value, owner):
-	del owner
-	return html.escape(str(value), quote=False)
-
-
-def native_xml_number(value, owner):
-	return native_xml_text(native_number(value, owner), owner)
-
-
-def native_xml_float(value, owner):
-	del owner
-	if not isinstance(value, (int, float)) or isinstance(value, bool):
-		raise NativeWriteError("Expected an XML number")
-	return html.escape(str(float(value)), quote=False)
-
-
-def native_coffee_residuals(value, owner):
-	del owner
-	chunks = []
-	for fragment in value:
-		try:
-			element = ET.fromstring(fragment)
-		except ET.ParseError as error:
-			raise NativeWriteError("Malformed CoffeeMud residual XML") from error
-		chunks.append(ET.tostring(element, encoding='unicode', short_empty_elements=True))
-	return ''.join(chunks)
-
-
-def native_coffee_payload(value, owner):
-	del value
-	return render_record(owner, section='inner')
-
-
-def native_coffee_document(value):
-	root = ET.fromstring(value)
-	payload_tags = {'MTEXT', 'ITEXT', 'RTEXT', 'EXDAT'}
-
-	def collapse_payloads(element):
-		for child in element:
-			if child.tag.upper() in payload_tags:
-				inner = child.text or ''
-				inner += ''.join(ET.tostring(part, encoding='unicode') for part in child)
-				child.clear()
-				child.text = inner
-			else:
-				collapse_payloads(child)
-
-	collapse_payloads(root)
-	return ET.tostring(root, encoding='unicode', short_empty_elements=True)
-
-
-def native_coffee_records(value, owner):
-	del owner
-	return ''.join(render_record(record) for record in value)
-
-
-def native_coffee_room_records(value, owner):
-	del owner
-	return ''.join(render_record(record) for record in value.values())
-
-
-def native_coffee_behaviors(value, owner):
-	del owner
-	return '<BEHAVES>%s</BEHAVES>' % ''.join(render_record(record) for record in value)
-
-
-def native_coffee_affects(value, owner):
-	del owner
-	return '<AFFECS>%s</AFFECS>' % ''.join(render_record(record) for record in value)
-
-
-def native_coffee_factions(value, owner):
-	del owner
-	chunks = []
-	for faction_id, amount in value.items():
-		if not isinstance(amount, int):
-			raise NativeWriteError("CoffeeMud faction values must be integers")
-		chunks.append('<FCTN ID="%s">%d</FCTN>' % (html.escape(str(faction_id), quote=True), amount))
-	return '<FACTIONS>%s</FACTIONS>' % ''.join(chunks)
-
-
-def native_coffee_abilities(value, owner):
-	del owner
-	return '<ABLTYS>%s</ABLTYS>' % ''.join(render_record(record) for record in value)
-
-
-def native_coffee_nested_area(value, owner):
-	del owner
-	return '<SSAREA>%s</SSAREA>' % render_record(value)
-
-
-def native_coffee_exits(value, owner):
-	del owner
-	return '<ROOMEXITS>%s</ROOMEXITS>' % ''.join(render_record(record) for record in value)
-
-
-def native_coffee_content(value, owner):
-	del value
-	mobs = ''.join(render_record(record) for record in owner.mobs)
-	items = ''.join(render_record(record) for record in owner.items)
-	return '<ROOMCONTENT><ROOMMOBS>%s</ROOMMOBS><ROOMITEMS>%s</ROOMITEMS></ROOMCONTENT>' % (mobs, items)
-
-
-def native_coffee_exit_data(value, owner):
-	del value
-	inner = native_coffee_residuals(owner.inner_residual, owner)
-	xexit_residual = native_coffee_residuals(owner.xexit_residual, owner)
-	return '<XEXIT><EXID>%s</EXID><EXDAT>%s</EXDAT>%s</XEXIT>' % (
-		html.escape(owner.class_id, quote=False),
-		inner,
-		xexit_residual,
-	)
-
-
-def native_coffee_area_data(value, owner):
-	del value
-	return '<ADATA>%s</ADATA>' % native_coffee_residuals(owner.inner_residual, owner)
-
-
-def native_coffee_mob_prefix(owner):
-	if owner.native_tag not in ('MOB', 'RMOB'):
-		raise NativeWriteError("CoffeeMud mob tag must be MOB or RMOB")
-	return '<%s>' % owner.native_tag
-
-
-def native_coffee_mob_suffix(owner):
-	return '</%s>' % owner.native_tag
-
-
-def native_coffee_item_prefix(owner):
-	if owner.native_tag == 'ITEM':
-		return '<ITEM>'
-	if owner.native_tag == 'RITEM':
-		return '<RITEM COUNT="%d">' % owner.count
-	else:
-		raise NativeWriteError("CoffeeMud item tag must be ITEM or RITEM")
-
-
-def native_coffee_item_suffix(owner):
-	return '</%s>' % owner.native_tag
-
-
-@attributes
-class CoffeeMudBehavior(object):
-	NATIVE_PREFIX = '<BHAVE>'
-	NATIVE_SUFFIX = '</BHAVE>'
-
-	class_id = area_reader.schema.field(default='', native=NativeField(1, native_xml_text, prefix='<BCLASS>', suffix='</BCLASS>'))
-	parameters = area_reader.schema.field(default='', native=NativeField(2, native_xml_text, prefix='<BPARMS>', suffix='</BPARMS>'))
-	residual = area_reader.schema.field(default=Factory(list), native=NativeField(3, native_coffee_residuals, suffix=''))
-
-
-@attributes
-class CoffeeMudAffect(object):
-	NATIVE_PREFIX = '<AFF>'
-	NATIVE_SUFFIX = '</AFF>'
-
-	class_id = area_reader.schema.field(default='', native=NativeField(1, native_xml_text, prefix='<ACLASS>', suffix='</ACLASS>'))
-	text = area_reader.schema.field(default='', native=NativeField(2, native_xml_text, prefix='<ATEXT>', suffix='</ATEXT>'))
-	residual = area_reader.schema.field(default=Factory(list), native=NativeField(3, native_coffee_residuals, suffix=''))
-
-
-@attributes
-class CoffeeMudAbility(object):
-	NATIVE_PREFIX = '<ABLTY>'
-	NATIVE_SUFFIX = '</ABLTY>'
-
-	class_id = area_reader.schema.field(default='', native=NativeField(1, native_xml_text, prefix='<ACLASS>', suffix='</ACLASS>'))
-	proficiency = area_reader.schema.field(default=0, native=NativeField(2, native_xml_number, prefix='<APROF>', suffix='</APROF>'))
-	data_xml = area_reader.schema.field(default='', native=NativeField(3, native_raw, prefix='<ADATA>', suffix='</ADATA>'))
-	data = attr(default='', eq=False)
-	residual = area_reader.schema.field(default=Factory(list), native=NativeField(4, native_coffee_residuals, suffix=''))
-
-
-@attributes
-class CoffeeMudMob(object):
-	NATIVE_PREFIX = native_coffee_mob_prefix
-	NATIVE_SUFFIX = native_coffee_mob_suffix
-
-	class_id = area_reader.schema.field(default='', native=NativeField(1, native_xml_text, prefix='<MCLAS>', suffix='</MCLAS>'))
-	level = area_reader.schema.field(default=0, native=NativeField(2, native_xml_number, prefix='<MLEVL>', suffix='</MLEVL>'))
-	ability = area_reader.schema.field(default=0, native=NativeField(3, native_xml_number, prefix='<MABLE>', suffix='</MABLE>'))
-	rejuv = area_reader.schema.field(default=0, native=NativeField(4, native_xml_number, prefix='<MREJV>', suffix='</MREJV>'))
-	raw_text = area_reader.schema.field(default='', eq=False, native=NativeField(5, native_coffee_payload, prefix='<MTEXT>', suffix='</MTEXT>'))
-	outer_residual = area_reader.schema.field(default=Factory(list), native=NativeField(6, native_coffee_residuals, suffix=''))
-	name = area_reader.schema.field(default='', native=NativeField(1, native_xml_text, prefix='<NAME>', suffix='</NAME>', section='inner'))
-	description = area_reader.schema.field(default='', native=NativeField(2, native_xml_text, prefix='<DESC>', suffix='</DESC>', section='inner'))
-	display = area_reader.schema.field(default='', native=NativeField(3, native_xml_text, prefix='<DISP>', suffix='</DISP>', section='inner'))
-	behaviors = area_reader.schema.field(default=Factory(list), native=NativeField(4, native_coffee_behaviors, section='inner'))
-	affects = area_reader.schema.field(default=Factory(list), native=NativeField(5, native_coffee_affects, section='inner'))
-	flag = area_reader.schema.field(default=0, native=NativeField(6, native_xml_number, prefix='<FLAG>', suffix='</FLAG>', section='inner'))
-	money = area_reader.schema.field(default=0, native=NativeField(7, native_xml_number, prefix='<MONEY>', suffix='</MONEY>', section='inner'))
-	variable_money = area_reader.schema.field(default=0.0, native=NativeField(8, native_xml_float, prefix='<VARMONEY>', suffix='</VARMONEY>', section='inner'))
-	gender = area_reader.schema.field(default='', native=NativeField(9, native_xml_text, prefix='<GENDER>', suffix='</GENDER>', section='inner'))
-	race = area_reader.schema.field(default='', native=NativeField(10, native_xml_text, prefix='<MRACE>', suffix='</MRACE>', section='inner'))
-	factions = area_reader.schema.field(default=Factory(dict), native=NativeField(11, native_coffee_factions, section='inner'))
-	abilities = area_reader.schema.field(default=Factory(list), native=NativeField(12, native_coffee_abilities, section='inner'))
-	inner_residual = area_reader.schema.field(default=Factory(list), native=NativeField(13, native_coffee_residuals, section='inner', suffix=''))
-	raw_data = attr(default=Factory(dict), eq=False)
-	native_tag = attr(default='MOB', type=str)
-
-
-@attributes
-class CoffeeMudItem(object):
-	NATIVE_PREFIX = native_coffee_item_prefix
-	NATIVE_SUFFIX = native_coffee_item_suffix
-
-	class_id = area_reader.schema.field(default='', native=NativeField(1, native_xml_text, prefix='<ICLAS>', suffix='</ICLAS>'))
-	ident = area_reader.schema.field(default='', native=NativeField(2, native_xml_text, prefix='<IIDEN>', suffix='</IIDEN>'))
-	location = area_reader.schema.field(default='', native=NativeField(3, native_xml_text, prefix='<ILOCA>', suffix='</ILOCA>'))
-	uses = area_reader.schema.field(default=0, native=NativeField(4, native_xml_number, prefix='<IUSES>', suffix='</IUSES>'))
-	level = area_reader.schema.field(default=0, native=NativeField(5, native_xml_number, prefix='<ILEVL>', suffix='</ILEVL>'))
-	ability = area_reader.schema.field(default=0, native=NativeField(6, native_xml_number, prefix='<IABLE>', suffix='</IABLE>'))
-	rejuv = area_reader.schema.field(default=0, native=NativeField(7, native_xml_number, prefix='<IREJV>', suffix='</IREJV>'))
-	raw_text = area_reader.schema.field(default='', eq=False, native=NativeField(8, native_coffee_payload, prefix='<ITEXT>', suffix='</ITEXT>'))
-	outer_residual = area_reader.schema.field(default=Factory(list), native=NativeField(9, native_coffee_residuals, suffix=''))
-	name = area_reader.schema.field(default='', native=NativeField(1, native_xml_text, prefix='<NAME>', suffix='</NAME>', section='inner'))
-	description = area_reader.schema.field(default='', native=NativeField(2, native_xml_text, prefix='<DESC>', suffix='</DESC>', section='inner'))
-	display = area_reader.schema.field(default='', native=NativeField(3, native_xml_text, prefix='<DISP>', suffix='</DISP>', section='inner'))
-	prop = area_reader.schema.field(default='', native=NativeField(4, native_xml_text, prefix='<PROP>', suffix='</PROP>', section='inner'))
-	affects = area_reader.schema.field(default=Factory(list), native=NativeField(5, native_coffee_affects, section='inner'))
-	flag = area_reader.schema.field(default=0, native=NativeField(6, native_xml_number, prefix='<FLAG>', suffix='</FLAG>', section='inner'))
-	value = area_reader.schema.field(default=0, native=NativeField(7, native_xml_number, prefix='<VALUE>', suffix='</VALUE>', section='inner'))
-	material = area_reader.schema.field(default=0, native=NativeField(8, native_xml_number, prefix='<MTRAL>', suffix='</MTRAL>', section='inner'))
-	read_text = area_reader.schema.field(default='', native=NativeField(9, native_xml_text, prefix='<READ>', suffix='</READ>', section='inner'))
-	worn_location = area_reader.schema.field(default='', native=NativeField(10, native_xml_text, prefix='<WORNL>', suffix='</WORNL>', section='inner'))
-	worn_bitmap = area_reader.schema.field(default=0, native=NativeField(11, native_xml_number, prefix='<WORNB>', suffix='</WORNB>', section='inner'))
-	capacity = area_reader.schema.field(default=0, native=NativeField(12, native_xml_number, prefix='<CAPA>', suffix='</CAPA>', section='inner'))
-	container_flags = area_reader.schema.field(default=0, native=NativeField(13, native_xml_number, prefix='<CONT>', suffix='</CONT>', section='inner'))
-	open_ticks = area_reader.schema.field(default=0, native=NativeField(14, native_xml_number, prefix='<OPENTK>', suffix='</OPENTK>', section='inner'))
-	nested_area = area_reader.schema.field(default=None, native=NativeField(15, native_coffee_nested_area, section='inner', when=lambda owner: owner.nested_area is not None))
-	inner_residual = area_reader.schema.field(default=Factory(list), native=NativeField(16, native_coffee_residuals, section='inner', suffix=''))
-	count = attr(default=1)
-	raw_data = attr(default=Factory(dict), eq=False)
-	native_tag = attr(default='ITEM', type=str)
-
-
-@attributes
-class CoffeeMudExit(object):
-	NATIVE_PREFIX = '<REXIT>'
-	NATIVE_SUFFIX = '</REXIT>'
-
-	direction = area_reader.schema.field(default=0, native=NativeField(1, native_xml_number, prefix='<XDIRE>', suffix='</XDIRE>'))
-	target_room_id = area_reader.schema.field(default='', native=NativeField(2, native_xml_text, prefix='<XDOOR>', suffix='</XDOOR>'))
-	class_id = area_reader.schema.field(default='', native=NativeField(3, native_coffee_exit_data, suffix=''))
-	outer_residual = area_reader.schema.field(default=Factory(list), native=NativeField(4, native_coffee_residuals, suffix=''))
-	inner_residual = attr(default=Factory(list))
-	xexit_residual = attr(default=Factory(list))
-	raw_data = attr(default=Factory(dict), eq=False)
-
-
-@attributes
-class CoffeeMudRoom(object):
-	NATIVE_PREFIX = '<AROOM>'
-	NATIVE_SUFFIX = '</AROOM>'
-
-	room_id = area_reader.schema.field(default='', native=NativeField(1, native_xml_text, prefix='<ROOMID>', suffix='</ROOMID>'))
-	area = area_reader.schema.field(default='', native=NativeField(2, native_xml_text, prefix='<RAREA>', suffix='</RAREA>'))
-	class_id = area_reader.schema.field(default='', native=NativeField(3, native_xml_text, prefix='<RCLAS>', suffix='</RCLAS>'))
-	display = area_reader.schema.field(default='', native=NativeField(4, native_xml_text, prefix='<RDISP>', suffix='</RDISP>'))
-	description = area_reader.schema.field(default='', native=NativeField(5, native_xml_text, prefix='<RDESC>', suffix='</RDESC>'))
-	raw_text = area_reader.schema.field(default='', eq=False, native=NativeField(6, native_coffee_payload, prefix='<RTEXT>', suffix='</RTEXT>'))
-	exits = area_reader.schema.field(default=Factory(list), native=NativeField(7, native_coffee_exits, suffix=''))
-	items = area_reader.schema.field(default=Factory(list), native=NativeField(8, native_coffee_content, suffix=''))
-	outer_residual = area_reader.schema.field(default=Factory(list), native=NativeField(9, native_coffee_residuals, suffix=''))
-	climate = area_reader.schema.field(default=0, native=NativeField(1, native_xml_number, prefix='<RCLIM>', suffix='</RCLIM>', section='inner'))
-	atmosphere = area_reader.schema.field(default=0, native=NativeField(2, native_xml_number, prefix='<RATMO>', suffix='</RATMO>', section='inner'))
-	inner_residual = area_reader.schema.field(default=Factory(list), native=NativeField(3, native_coffee_residuals, section='inner', suffix=''))
-	mobs = attr(default=Factory(list))
-	raw_data = attr(default=Factory(dict), eq=False)
-
-
-@attributes
-class CoffeeMudArea(object):
-	NATIVE_PREFIX = '<AREA>'
-	NATIVE_SUFFIX = '</AREA>'
-
-	top_level = attr(default='')
-	class_id = area_reader.schema.field(default='', native=NativeField(1, native_xml_text, prefix='<ACLAS>', suffix='</ACLAS>'))
-	name = area_reader.schema.field(default='', native=NativeField(2, native_xml_text, prefix='<ANAME>', suffix='</ANAME>'))
-	description = area_reader.schema.field(default='', native=NativeField(3, native_xml_text, prefix='<ADESC>', suffix='</ADESC>'))
-	climate = area_reader.schema.field(default=0, native=NativeField(4, native_xml_number, prefix='<ACLIM>', suffix='</ACLIM>'))
-	sub_ops = area_reader.schema.field(default='', native=NativeField(5, native_xml_text, prefix='<ASUBS>', suffix='</ASUBS>'))
-	theme = area_reader.schema.field(default=0, native=NativeField(6, native_xml_number, prefix='<ATECH>', suffix='</ATECH>'))
-	raw_data = area_reader.schema.field(default=Factory(dict), eq=False, native=NativeField(7, native_coffee_area_data, suffix=''))
-	rooms = area_reader.schema.field(default=Factory(OrderedDict), native=NativeField(8, native_coffee_room_records, prefix='<AROOMS>', suffix='</AROOMS>'))
-	outer_residual = area_reader.schema.field(default=Factory(list), native=NativeField(9, native_coffee_residuals, suffix=''))
-	inner_residual = attr(default=Factory(list))
-	mobs = attr(default=Factory(list))
-	items = attr(default=Factory(list))
-	objects = attr(default=Factory(list))
-
-
 class CoffeeMudAreaFile(object):
 	NATIVE_NORMALIZATIONS = (
 		'xml-declaration-and-whitespace',
@@ -1669,7 +1376,7 @@ class CoffeeMudAreaFile(object):
 		self.filename = os.fspath(filename)
 		with io.open(filename, mode='rt', encoding='latin-1') as coffee_file:
 			self.data = coffee_file.read()
-			self.area = CoffeeMudArea()
+			self.area = area_reader.dialects.coffeemud.CoffeeMudArea()
 
 	def dumps(self):
 		top_level = self.area.top_level
@@ -1689,7 +1396,7 @@ class CoffeeMudAreaFile(object):
 			document = ''.join(render_record(room) for room in self.area.rooms.values())
 		else:
 			raise NativeWriteError("Unsupported CoffeeMud top-level document %r" % top_level)
-		return native_coffee_document(document) + '\n'
+		return area_reader.dialects.coffeemud.native_coffee_document(document) + '\n'
 
 	def write(self, path):
 		with io.open(path, mode='wt', encoding='latin-1', newline='\n') as coffee_file:
@@ -1861,7 +1568,7 @@ class CoffeeMudAreaFile(object):
 		text_root = self.parse_escaped_xml(raw_text)
 		if text_root is not None:
 			raw_data = self.document_to_data(text_root)
-		return CoffeeMudMob(
+		return area_reader.dialects.coffeemud.CoffeeMudMob(
 			class_id=self.child_text(element, 'MCLAS'),
 			level=self.child_int(element, 'MLEVL'),
 			ability=self.child_int(element, 'MABLE'),
@@ -1899,7 +1606,7 @@ class CoffeeMudAreaFile(object):
 		if behaves is None:
 			return []
 		return [
-			CoffeeMudBehavior(
+			area_reader.dialects.coffeemud.CoffeeMudBehavior(
 				class_id=self.child_text(behavior, 'BCLASS'),
 				parameters=self.child_text(behavior, 'BPARMS'),
 				residual=self.residual_elements(behavior, ('BCLASS', 'BPARMS')),
@@ -1914,7 +1621,7 @@ class CoffeeMudAreaFile(object):
 		if affects is None:
 			return []
 		return [
-			CoffeeMudAffect(
+			area_reader.dialects.coffeemud.CoffeeMudAffect(
 				class_id=self.child_text(affect, 'ACLASS'),
 				text=self.child_text(affect, 'ATEXT'),
 				residual=self.residual_elements(affect, ('ACLASS', 'ATEXT')),
@@ -1944,7 +1651,7 @@ class CoffeeMudAreaFile(object):
 		result = []
 		for ability in self.children(abilities, 'ABLTY'):
 			data_element = self.child(ability, 'ADATA')
-			result.append(CoffeeMudAbility(
+			result.append(area_reader.dialects.coffeemud.CoffeeMudAbility(
 				class_id=self.child_text(ability, 'ACLASS'),
 				proficiency=self.child_int(ability, 'APROF'),
 				data=self.element_to_data(data_element) if data_element is not None else '',
@@ -1963,7 +1670,7 @@ class CoffeeMudAreaFile(object):
 		if text_root is not None:
 			raw_data = self.document_to_data(text_root)
 		nested_area = self.read_nested_area(text_root)
-		return CoffeeMudItem(
+		return area_reader.dialects.coffeemud.CoffeeMudItem(
 			class_id=self.child_text(element, 'ICLAS'),
 			ident=self.child_text(element, 'IIDEN'),
 			location=self.child_text(element, 'ILOCA'),
@@ -2014,7 +1721,7 @@ class CoffeeMudAreaFile(object):
 
 	def read_area(self, element):
 		data_element = self.child(element, 'ADATA')
-		area = CoffeeMudArea(
+		area = area_reader.dialects.coffeemud.CoffeeMudArea(
 			class_id=self.child_text(element, 'ACLAS'),
 			name=self.child_text(element, 'ANAME'),
 			description=self.child_text(element, 'ADESC'),
@@ -2043,7 +1750,7 @@ class CoffeeMudAreaFile(object):
 		text_root = self.parse_escaped_xml(raw_text)
 		if text_root is not None:
 			raw_data = self.document_to_data(text_root)
-		return CoffeeMudRoom(
+		return area_reader.dialects.coffeemud.CoffeeMudRoom(
 			room_id=self.child_text(element, 'ROOMID'),
 			area=self.child_text(element, 'RAREA'),
 			class_id=self.child_text(element, 'RCLAS'),
@@ -2087,7 +1794,7 @@ class CoffeeMudAreaFile(object):
 				raw_data = self.document_to_data(raw_root)
 				inner_residual = self.residual_elements(raw_root, (), document=True)
 			xexit_residual = self.residual_elements(exit_element, ('EXID', 'EXDAT'))
-		return CoffeeMudExit(
+		return area_reader.dialects.coffeemud.CoffeeMudExit(
 			direction=self.child_int(element, 'XDIRE'),
 			target_room_id=self.child_text(element, 'XDOOR'),
 			class_id=class_id,

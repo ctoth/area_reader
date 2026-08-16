@@ -292,3 +292,34 @@ Commit:
 
 Next slice:
 - CoffeeMud XML semantic owner.
+
+## Iteration 9 - `CoffeeMud XML semantic owner`
+
+Slice read:
+- Former CoffeeMud semantic/XML codec definitions in `area_reader/__init__.py`
+- CoffeeMud writer, parser characterization, and JSONification callers
+
+Surfaces:
+- CoffeeMud semantic records and XML/native codecs
+  - Disposition: move
+  - Owner after cleanup: `area_reader.dialects.coffeemud`
+  - Action: moved eight CoffeeMud semantic classes and twenty-one XML/native rendering functions with Rope in bounded batches.
+  - Evidence: the resulting owner imports schema/native infrastructure directly and has no package-root dependency.
+- JSONification owner discovery
+  - Disposition: consolidate
+  - Owner after cleanup: the explicit `OWNER_MODULES` tuple.
+  - Action: added the CoffeeMud owner even though its current attrs fields do not add enum cases.
+  - Evidence: the contract remains `524 tests collected`.
+
+Gate results:
+- Pass: CoffeeMud owner import smoke -> `area_reader.dialects.coffeemud` for `CoffeeMudArea` and `CoffeeMudItem`.
+- Pass: locked CoffeeMud/parser/JSON/error tests -> `699 passed in 10.45s`.
+- Pass: Ruff on the changed owner and callers -> `All checks passed!`.
+- Pass: ownership search finds CoffeeMud semantic classes and codecs only in `area_reader.dialects.coffeemud`.
+- Pass: `git diff --check` -> no output.
+
+Commit:
+- `Extract CoffeeMud semantic models` (this iteration's commit).
+
+Next slice:
+- Neutral shared parser, then dialect reader owners.

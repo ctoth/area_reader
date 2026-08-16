@@ -6,6 +6,7 @@ import pytest
 from attr import fields, has
 
 import area_reader.dialects.circle
+import area_reader.dialects.coffeemud
 import area_reader.dialects.merc
 import area_reader.dialects.rom
 import area_reader.dialects.smaug
@@ -23,6 +24,7 @@ OWNER_MODULES = (
     area_reader.dialects.smaug,
     area_reader.dialects.swr,
     area_reader.dialects.circle,
+    area_reader.dialects.coffeemud,
 )
 
 

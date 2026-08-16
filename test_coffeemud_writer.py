@@ -1,11 +1,10 @@
 from pathlib import Path
 
-from attr import fields
 import pytest
+from attr import fields
 
-import area_reader
+import area_reader.dialects.coffeemud
 from area_reader.native import NativeWriteError, render_record
-
 
 UPSTREAM_COFFEEMUD = Path(r"C:\Users\Q\src\CoffeeMud")
 COFFEEMUD_PATHS = tuple(
@@ -164,10 +163,10 @@ def test_coffeemud_unknown_xml_is_an_ordered_residual(tmp_path: Path) -> None:
 
 def test_coffeemud_fields_own_their_native_xml_declarations() -> None:
 	for record_type, field_names in (
-		(area_reader.CoffeeMudMob, ("class_id", "level", "name", "behaviors", "inner_residual")),
-		(area_reader.CoffeeMudItem, ("class_id", "uses", "name", "nested_area", "inner_residual")),
-		(area_reader.CoffeeMudRoom, ("room_id", "display", "exits", "inner_residual")),
-		(area_reader.CoffeeMudArea, ("class_id", "name", "raw_data", "rooms")),
+		(area_reader.dialects.coffeemud.CoffeeMudMob, ("class_id", "level", "name", "behaviors", "inner_residual")),
+		(area_reader.dialects.coffeemud.CoffeeMudItem, ("class_id", "uses", "name", "nested_area", "inner_residual")),
+		(area_reader.dialects.coffeemud.CoffeeMudRoom, ("room_id", "display", "exits", "inner_residual")),
+		(area_reader.dialects.coffeemud.CoffeeMudArea, ("class_id", "name", "raw_data", "rooms")),
 	):
 		declarations = {attribute.name: attribute.metadata.get("native") for attribute in fields(record_type)}
 		assert all(declarations[name] is not None for name in field_names)
@@ -185,7 +184,7 @@ def test_coffeemud_native_normalization_ledger_is_explicit() -> None:
 
 
 def test_coffeemud_rejects_malformed_residual_xml() -> None:
-	mob = area_reader.CoffeeMudMob(inner_residual=["<BROKEN>"])
+	mob = area_reader.dialects.coffeemud.CoffeeMudMob(inner_residual=["<BROKEN>"])
 
 	with pytest.raises(NativeWriteError, match="residual XML"):
 		render_record(mob)
