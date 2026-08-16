@@ -323,7 +323,7 @@ class AreaFile:
         while True:
             level = self.read_number()
             keyword = self.read_string()
-            if keyword[0] == "$":
+            if keyword.startswith("$"):
                 break
             logger.debug("Reading help with keyword %s", keyword)
             help = area_reader.model.Help(level=level, keyword=keyword)

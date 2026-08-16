@@ -138,6 +138,26 @@ def test_loading_merc_area(merc_path):
     assert_jsonifies(af)
 
 
+def test_help_with_empty_keyword_loads():
+    with tempfile.TemporaryDirectory() as directory:
+        path = write_area(
+            directory,
+            """#HELPS
+0 ~
+Empty keyword help text.~
+0 $~
+#$
+""",
+        )
+
+        af = area_reader.dialects.rom.RomAreaFile(path)
+        af.load_sections()
+
+        assert len(af.area.helps) == 1
+        assert af.area.helps[0].keyword == ""
+        assert af.area.helps[0].text == "Empty keyword help text."
+
+
 def test_coffeemud_top_level_mobs_parse_as_dict_and_json():
     with tempfile.TemporaryDirectory() as directory:
         path = write_coffeemud_file(
