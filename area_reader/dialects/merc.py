@@ -173,12 +173,17 @@ class MercRoom(area_reader.model.Room):
             letter = reader.read_letter()
             if letter == "S":
                 break
-            if letter == "D":
-                self.exits.append(MercExit.read(reader=reader))
-            elif letter == "E":
-                self.extra_descriptions.append(reader.read_object(area_reader.model.ExtraDescription))
-            else:
+            if not self.read_metadata_record(reader, letter):
                 reader.parse_fail(f"room {self.vnum} has flag {letter} not DES")
+
+    def read_metadata_record(self, reader, letter):
+        if letter == "D":
+            self.exits.append(MercExit.read(reader=reader))
+        elif letter == "E":
+            self.extra_descriptions.append(reader.read_object(area_reader.model.ExtraDescription))
+        else:
+            return False
+        return True
 
 
 @attributes
@@ -314,23 +319,7 @@ class MercItem(area_reader.model.Item):
         weight = reader.read_number()
         cost = reader.read_number()
         cost_per_day = reader.read_number()
-        affected = []
-        extra_descriptions = []
-        while True:
-            letter = reader.read_letter()
-            if letter == "A":
-                aff = MercAffectData()
-                affected.append(aff)
-                aff.type = -1
-                aff.duration = -1
-                aff.location = reader.read_number()
-                aff.modifier = reader.read_number()
-            elif letter == "E":
-                extra_descriptions.append(reader.read_object(area_reader.model.ExtraDescription))
-            else:
-                reader.index -= 1
-                break
-        return cls(
+        item = cls(
             vnum=vnum,
             name=name,
             short_desc=short_desc,
@@ -343,9 +332,32 @@ class MercItem(area_reader.model.Item):
             weight=weight,
             cost=cost,
             cost_per_day=cost_per_day,
-            affected=affected,
-            extra_descriptions=extra_descriptions,
         )
+        item.read_metadata(reader)
+        return item
+
+    def read_metadata(self, reader):
+        while True:
+            letter = reader.read_letter()
+            if not self.read_metadata_record(reader, letter):
+                reader.index -= 1
+                break
+
+    def read_metadata_record(self, reader, letter):
+        if letter == "A":
+            self.affected.append(
+                MercAffectData(
+                    type=-1,
+                    duration=-1,
+                    location=reader.read_number(),
+                    modifier=reader.read_number(),
+                )
+            )
+        elif letter == "E":
+            self.extra_descriptions.append(reader.read_object(area_reader.model.ExtraDescription))
+        else:
+            return False
+        return True
 
 
 @attributes

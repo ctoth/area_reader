@@ -241,8 +241,8 @@ class AreaFile:
     def load_economy(self):
         raise NotImplementedError
 
-    def load_sections(self):
-        readers = {
+    def section_readers(self):
+        return {
             "area": self.read_area_metadata,
             "mobiles": self.load_mobiles,
             "rooms": self.load_rooms,
@@ -254,6 +254,9 @@ class AreaFile:
             "economy": self.load_economy,
             "mobprogs": self.load_mobprogs,
         }
+
+    def load_sections(self):
+        readers = self.section_readers()
         while True:
             section_name = self.read_section_name()
             self.current_section_name = section_name

@@ -13,6 +13,7 @@ very easy to do things like render the entire tree of objects out as JSON or sim
 |---|---|---|---|
 | ROM | `RomAreaFile` | `dumps()` / `write()` | single tilde-delimited `.are` file |
 | Merc | `MercAreaFile` | `dumps()` / `write()` | single tilde-delimited area file |
+| GodWars Deluxe | `GodWarsAreaFile` | `dumps()` / `write()` | single `.are` file (`#AREA` or `#AREADATA`) |
 | SMAUG | `SmaugAreaFile` | `dumps()` / `write()` | single tilde-delimited area file |
 | SWR / FUSS | `SwrAreaFile` | `dumps()` / `write()` | single tilde-delimited area file |
 | CircleMUD | `CircleAreaFile` | `dumps()` / `write()` | indexed world tree (`wld`/`mob`/`obj`/`zon`/`shp`) directory |

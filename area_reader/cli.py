@@ -6,6 +6,7 @@ from pathlib import Path
 
 import area_reader.dialects.circle
 import area_reader.dialects.coffeemud
+import area_reader.dialects.godwars
 import area_reader.dialects.medievia
 import area_reader.dialects.merc
 import area_reader.dialects.rom
@@ -19,6 +20,7 @@ COFFEEMUD_ROOT = re.compile(r"<(?:AREA|MOBS?|ITEMS?|AROOMS?)\b", re.IGNORECASE)
 SECTION = re.compile(r"(?m)^[ \t]*#([A-Z]+)\b", re.IGNORECASE)
 AREA_SECTION = re.compile(r"(?m)^[ \t]*#AREA\b", re.IGNORECASE)
 NEXT_NAMED_SECTION = re.compile(r"(?m)^[ \t]*#[A-Z$]+\b", re.IGNORECASE)
+GODWARS_RECORD = re.compile(r"(?m)^[ \t]*[QT][ \t]*$")
 MEDIEVIA_COMPONENTS = frozenset({"medievia.zon", "medievia.mob", "medievia.obj", "medievia.shp"})
 SMAUG_SECTIONS = frozenset(
     {
@@ -87,7 +89,14 @@ def detect_area_type(area_file_path):
         return area_reader.dialects.coffeemud.CoffeeMudAreaFile
 
     sections = {match.group(1).upper() for match in SECTION.finditer(data)}
-    if sections.intersection({"FUSSAREA", "AREADATA"}):
+    if "FUSSAREA" in sections:
+        return area_reader.dialects.swr.SwrAreaFile
+    if "AREADATA" in sections:
+        godwars_fields = all(
+            re.search(rf"(?mi)^[ \t]*{field}\b", data) for field in ("Builders", "VNUMs", "Security", "End")
+        )
+        if godwars_fields:
+            return area_reader.dialects.godwars.GodWarsAreaFile
         return area_reader.dialects.swr.SwrAreaFile
     if sections.intersection(SMAUG_SECTIONS):
         return area_reader.dialects.smaug.SmaugAreaFile
@@ -102,6 +111,8 @@ def detect_area_type(area_file_path):
         if string_count >= 3:
             return area_reader.dialects.rom.RomAreaFile
         if string_count == 1:
+            if GODWARS_RECORD.search(data):
+                return area_reader.dialects.godwars.GodWarsAreaFile
             return area_reader.dialects.merc.MercAreaFile
 
     raise ValueError(f"Could not detect area type for {path}")
