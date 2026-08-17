@@ -420,7 +420,7 @@ class MedieviaArea:
 
 
 class MedieviaAreaFile(area_reader.dialects.circle.CircleAreaFile):
-    """Read and write the native Medievia world rooted at a game or lib directory."""
+    """Read and write a Medievia component file or native world tree."""
 
     NATIVE_NORMALIZATIONS = (
         "comments-and-whitespace",
@@ -432,9 +432,14 @@ class MedieviaAreaFile(area_reader.dialects.circle.CircleAreaFile):
 
     def __init__(self, root):
         self.root = os.fspath(root)
-        self.lib_root = (
-            self.root if os.path.isfile(os.path.join(self.root, "medievia.zon")) else os.path.join(self.root, "lib")
-        )
+        self.component_path = self.root if os.path.isfile(self.root) else None
+        if self.component_path is not None:
+            parent = os.path.dirname(self.component_path)
+            self.lib_root = os.path.dirname(parent) if os.path.basename(parent).lower() == "wld" else parent
+        elif os.path.isfile(os.path.join(self.root, "medievia.zon")):
+            self.lib_root = self.root
+        else:
+            self.lib_root = os.path.join(self.root, "lib")
         self.world_root = self.lib_root
         self.area = MedieviaArea()
         self.filename = ""
@@ -442,16 +447,20 @@ class MedieviaAreaFile(area_reader.dialects.circle.CircleAreaFile):
         self.index = 0
 
     def load_sections(self):
+        if self.component_path is not None:
+            loaders = {
+                "medievia.zon": self.load_zone_file,
+                "medievia.mob": self.load_mobile_file,
+                "medievia.obj": self.load_object_file,
+                "medievia.shp": self.load_shop_file,
+            }
+            loaders.get(os.path.basename(self.component_path).lower(), self.load_room_file)(self.component_path)
+            return
         self.load_zones()
         self.load_rooms()
         self.load_mobiles()
         self.load_objects()
         self.load_shops()
-
-    def open_native_file(self, relative_path):
-        path = os.path.join(self.lib_root, *relative_path.split("/"))
-        self.open_circle_file(path)
-        return path
 
     def read_token(self):
         self.skip_whitespace()
@@ -482,7 +491,10 @@ class MedieviaAreaFile(area_reader.dialects.circle.CircleAreaFile):
             self.parse_fail(f"Expected a Medievia number or dice token, got {token!r}")
 
     def load_zones(self):
-        self.open_native_file("medievia.zon")
+        self.load_zone_file(os.path.join(self.lib_root, "medievia.zon"))
+
+    def load_zone_file(self, path):
+        self.open_circle_file(path)
         while True:
             vnum = self.read_record_header()
             if vnum is None:
@@ -547,21 +559,25 @@ class MedieviaAreaFile(area_reader.dialects.circle.CircleAreaFile):
             if zone.source_file in seen_files:
                 continue
             seen_files.add(zone.source_file)
-            self.open_native_file(f"wld/{zone.source_file}")
-            while True:
-                vnum = self.read_record_header()
-                if vnum is None:
-                    self.parse_fail("Medievia room file ended without a $~ terminator")
-                name = self.read_string()
-                if name == "$":
-                    self.area.room_terminals[zone.source_file] = vnum
-                    break
-                room = self.read_room(vnum)
-                room.name = name
-                room.source_file = zone.source_file
-                if vnum in self.area.rooms:
-                    self.parse_fail(f"Duplicate Medievia room vnum {vnum}")
-                self.area.rooms[vnum] = room
+            self.load_room_file(os.path.join(self.lib_root, "wld", zone.source_file))
+
+    def load_room_file(self, path):
+        source_file = os.path.basename(path)
+        self.open_circle_file(path)
+        while True:
+            vnum = self.read_record_header()
+            if vnum is None:
+                self.parse_fail("Medievia room file ended without a $~ terminator")
+            name = self.read_string()
+            if name == "$":
+                self.area.room_terminals[source_file] = vnum
+                return
+            room = self.read_room(vnum)
+            room.name = name
+            room.source_file = source_file
+            if vnum in self.area.rooms:
+                self.parse_fail(f"Duplicate Medievia room vnum {vnum}")
+            self.area.rooms[vnum] = room
 
     def read_room(self, vnum):
         description = self.read_string()
@@ -615,7 +631,10 @@ class MedieviaAreaFile(area_reader.dialects.circle.CircleAreaFile):
                 self.parse_fail(f"Unknown Medievia room metadata {metadata!r}")
 
     def load_mobiles(self):
-        self.open_native_file("medievia.mob")
+        self.load_mobile_file(os.path.join(self.lib_root, "medievia.mob"))
+
+    def load_mobile_file(self, path):
+        self.open_circle_file(path)
         while True:
             vnum = self.read_record_header()
             if vnum is None:
@@ -691,7 +710,10 @@ class MedieviaAreaFile(area_reader.dialects.circle.CircleAreaFile):
                 residual_tokens.append(tag)
 
     def load_objects(self):
-        self.open_native_file("medievia.obj")
+        self.load_object_file(os.path.join(self.lib_root, "medievia.obj"))
+
+    def load_object_file(self, path):
+        self.open_circle_file(path)
         while True:
             vnum = self.read_record_header()
             if vnum is None:
@@ -763,7 +785,10 @@ class MedieviaAreaFile(area_reader.dialects.circle.CircleAreaFile):
                 residual_tokens.append(token)
 
     def load_shops(self):
-        self.open_native_file("medievia.shp")
+        self.load_shop_file(os.path.join(self.lib_root, "medievia.shp"))
+
+    def load_shop_file(self, path):
+        self.open_circle_file(path)
         while True:
             header = self.read_string()
             if header == "$":

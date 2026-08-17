@@ -202,3 +202,43 @@ def test_detects_medievia_game_and_lib_roots(tmp_path):
     assert area_reader.cli.detect_area_type(root) is MedieviaAreaFile
     assert area_reader.cli.detect_area_type(root / "lib") is MedieviaAreaFile
     assert area_reader.MedieviaAreaFile is MedieviaAreaFile
+
+
+def test_loads_standalone_medievia_world_file(tmp_path):
+    root = write_fixture(tmp_path / "Medievia")
+    world_path = root / "lib" / "wld" / "Test_Zone"
+
+    reader = MedieviaAreaFile(world_path)
+    reader.load_sections()
+
+    assert list(reader.area.rooms) == [100]
+    assert reader.area.rooms[100].source_file == "Test_Zone"
+    assert reader.area.room_terminals == {"Test_Zone": 19999}
+    assert not reader.area.zones
+    assert not reader.area.mobs
+    assert not reader.area.objects
+    assert not reader.area.shops
+
+    detected = area_reader.cli.load_area(world_path)
+    assert isinstance(detected, MedieviaAreaFile)
+    assert list(detected.area.rooms) == [100]
+
+
+def test_loads_standalone_medievia_monolithic_files(tmp_path):
+    lib = write_fixture(tmp_path / "Medievia") / "lib"
+    expected = {
+        "medievia.zon": ("zones", [1]),
+        "medievia.mob": ("mobs", [10]),
+        "medievia.obj": ("objects", [20, 21]),
+        "medievia.shp": ("shops", [1, 1]),
+    }
+
+    for filename, (collection_name, identifiers) in expected.items():
+        path = lib / filename
+        reader = MedieviaAreaFile(path)
+        reader.load_sections()
+        collection = getattr(reader.area, collection_name)
+        actual = [record.vnum for record in collection] if collection_name == "shops" else list(collection)
+
+        assert actual == identifiers
+        assert area_reader.cli.detect_area_type(path) is MedieviaAreaFile

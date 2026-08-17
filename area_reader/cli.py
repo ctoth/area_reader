@@ -19,6 +19,7 @@ COFFEEMUD_ROOT = re.compile(r"<(?:AREA|MOBS?|ITEMS?|AROOMS?)\b", re.IGNORECASE)
 SECTION = re.compile(r"(?m)^[ \t]*#([A-Z]+)\b", re.IGNORECASE)
 AREA_SECTION = re.compile(r"(?m)^[ \t]*#AREA\b", re.IGNORECASE)
 NEXT_NAMED_SECTION = re.compile(r"(?m)^[ \t]*#[A-Z$]+\b", re.IGNORECASE)
+MEDIEVIA_COMPONENTS = frozenset({"medievia.zon", "medievia.mob", "medievia.obj", "medievia.shp"})
 SMAUG_SECTIONS = frozenset(
     {
         "AUTHOR",
@@ -34,6 +35,29 @@ SMAUG_SECTIONS = frozenset(
         "VERSION",
     }
 )
+
+
+def _looks_like_medievia_room(data):
+    """Return whether the first record has Medievia's 4/4/3 room fields."""
+    header = re.match(r"\s*#-?\d+[^\r\n]*(?:\r?\n)", data)
+    if header is None:
+        return False
+    cursor = header.end()
+    for _ in range(2):
+        cursor = data.find("~", cursor)
+        if cursor == -1:
+            return False
+        cursor += 1
+    lines = [line.split() for line in data[cursor:].splitlines() if line.strip()][:3]
+    if [len(line) for line in lines] != [4, 4, 3]:
+        return False
+    try:
+        for line in lines:
+            for value in line:
+                int(value)
+    except ValueError:
+        return False
+    return True
 
 
 def detect_area_type(area_file_path):
@@ -54,6 +78,9 @@ def detect_area_type(area_file_path):
 
     with path.open(mode="rt", encoding="latin-1") as area_file:
         data = area_file.read(SNIFF_SIZE)
+
+    if path.name.lower() in MEDIEVIA_COMPONENTS or _looks_like_medievia_room(data):
+        return area_reader.dialects.medievia.MedieviaAreaFile
 
     stripped = data.lstrip()
     if stripped.startswith("<?xml") or COFFEEMUD_ROOT.match(stripped):
