@@ -2,6 +2,7 @@
 
 from area_reader.dialects.circle import CircleAreaFile
 from area_reader.dialects.coffeemud import CoffeeMudAreaFile
+from area_reader.dialects.medievia import MedieviaAreaFile
 from area_reader.dialects.merc import MercAreaFile
 from area_reader.dialects.rom import RomAreaFile
 from area_reader.dialects.smaug import SmaugAreaFile
@@ -11,6 +12,7 @@ from area_reader.dialects.tba import TbaAreaFile
 __all__ = (
     "CircleAreaFile",
     "CoffeeMudAreaFile",
+    "MedieviaAreaFile",
     "MercAreaFile",
     "RomAreaFile",
     "SmaugAreaFile",

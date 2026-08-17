@@ -17,6 +17,7 @@ very easy to do things like render the entire tree of objects out as JSON or sim
 | SWR / FUSS | `SwrAreaFile` | `dumps()` / `write()` | single tilde-delimited area file |
 | CircleMUD | `CircleAreaFile` | `dumps()` / `write()` | indexed world tree (`wld`/`mob`/`obj`/`zon`/`shp`) directory |
 | tbaMUD | `TbaAreaFile` | `dumps()` / `write()` | indexed world tree (`zon`/`trg`/`wld`/`mob`/`obj`/`shp`/`qst`) directory |
+| Medievia | `MedieviaAreaFile` | `dumps()` / `write()` | game tree with monolithic `lib/medievia.*` files and per-zone `lib/wld` room files |
 | CoffeeMud | `CoffeeMudAreaFile` | `dumps()` / `write()` | `.cmare` XML export (areas, item/mob catalogs, nested boardable areas) |
 
 ## Example usage
@@ -86,6 +87,27 @@ object levels and timers, and hidden exits.
 
 Directory auto-detection distinguishes a tbaMUD tree from a CircleMUD tree by
 its indexed `trg` or `qst` family.
+
+### Medievia
+
+Medievia uses one zone file to name its room files, monolithic tagged mobile
+and object files, and a shop stream whose numeric headers are not unique.
+Construct the reader with either the game root or its `lib` directory:
+
+```python
+>>> world = area_reader.MedieviaAreaFile('/path/to/Medievia')
+>>> world.load_sections()
+>>> world.area.rooms[100]
+>>> tree = world.dumps()
+>>> tree['medievia.zon']
+>>> world.write('/path/to/canonical-medievia')
+```
+
+`dumps()` returns an ordered mapping relative to `lib`. Medievia-only room
+restrictions, exit messages, stochastic mobile values, object deterioration,
+variable reset arity, ignored historical tokens, terminal vnums, and duplicate
+shop headers remain represented in the native model and survive a semantic
+round trip.
 
 ### CoffeeMud
 

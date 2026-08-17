@@ -6,6 +6,7 @@ from pathlib import Path
 
 import area_reader.dialects.circle
 import area_reader.dialects.coffeemud
+import area_reader.dialects.medievia
 import area_reader.dialects.merc
 import area_reader.dialects.rom
 import area_reader.dialects.smaug
@@ -38,6 +39,10 @@ SMAUG_SECTIONS = frozenset(
 def detect_area_type(area_file_path):
     path = Path(area_file_path)
     if path.is_dir():
+        direct_medievia = path / "medievia.zon"
+        nested_medievia = path / "lib" / "medievia.zon"
+        if direct_medievia.is_file() or nested_medievia.is_file():
+            return area_reader.dialects.medievia.MedieviaAreaFile
         direct_index = path / "zon" / "index"
         nested_index = path / "lib" / "world" / "zon" / "index"
         if direct_index.is_file() or nested_index.is_file():
