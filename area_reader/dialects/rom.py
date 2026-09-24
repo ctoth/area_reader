@@ -208,7 +208,6 @@ class RomAffectData:
 class RomItem(area_reader.model.Item):
     @staticmethod
     def convert_condition(letter):
-        condition = -1
         conditions = {
             "P": 100,
             "G": 90,
@@ -218,8 +217,8 @@ class RomItem(area_reader.model.Item):
             "B": 10,
             "R": 0,
         }
-        condition = conditions[letter]
-        return condition
+        # ROM's load_objects falls through to 100 (perfect) for any other letter.
+        return conditions.get(letter, 100)
 
     vnum = area_reader.schema.field(
         default=0, type=area_reader.values.VNum, read=False, native=NativeField(0, native_number, prefix="#")
@@ -312,7 +311,13 @@ class RomItem(area_reader.model.Item):
         level = reader.read_number()
         weight = reader.read_number()
         cost = reader.read_number()
-        condition = cls.convert_condition(reader.read_letter())
+        reader.skip_whitespace()
+        if reader.current_char.isdigit():
+            # Some OLCs wrote a number here; consume all of it so the record stays aligned.
+            reader.read_number()
+            condition = cls.convert_condition(None)
+        else:
+            condition = cls.convert_condition(reader.read_letter())
         affected = []
         extra_descriptions = []
         while True:

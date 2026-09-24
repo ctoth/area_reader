@@ -82,6 +82,14 @@ def native_exit_lock(value, owner):
         raise NativeWriteError(f"ROM exit flags {value!r} have no native lock code")
 
 
+def sector_type_or_raw(value):
+    """Convert a sector number to SECTOR_TYPES, keeping numbers from dialect-specific sector tables as raw ints."""
+    try:
+        return SECTOR_TYPES(value)
+    except ValueError:
+        return int(value)
+
+
 @attributes
 class ExtraDescription:
     keyword = field(default="", type=str, native=NativeField(1, native_tilde_string, prefix="E\n"))
@@ -287,7 +295,9 @@ class Room(MudBase):
     area = attr(default=None)
     area_number = field(default=0, type=int, native=NativeField(3, native_number))
     room_flags = field(default=0, type=ROM_ROOM_FLAGS, converter=ROM_ROOM_FLAGS, native=NativeField(4, native_flag))
-    sector_type = field(default=0, type=SECTOR_TYPES, converter=SECTOR_TYPES, native=NativeField(5, native_number))
+    sector_type = field(
+        default=0, type=SECTOR_TYPES | int, converter=sector_type_or_raw, native=NativeField(5, native_number)
+    )
     heal_rate = field(
         default=100,
         type=int,
