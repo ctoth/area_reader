@@ -24,6 +24,7 @@ NEXT_NAMED_SECTION = re.compile(r"(?m)^[ \t]*#[A-Z$]+\b", re.IGNORECASE)
 GODWARS_RECORD = re.compile(r"(?m)^[ \t]*[QT][ \t]*$")
 # ACK!MUD: the area name string is followed by letter-keyed lines, starting with "K keyword~".
 ACK_HEADER = re.compile(r"\A[^~]*~\s*K[ \t][^\n~]*~")
+ROM_AREADATA_CREDITS = re.compile(r"(?m)^[ \t]*Credits[ \t]")
 MOBILES_RECORD = re.compile(r"(?m)^[ \t]*#MOBILES\b[^\n]*\n\s*#[1-9][0-9]*[^\n]*\n", re.IGNORECASE)
 MEDIEVIA_COMPONENTS = frozenset({"medievia.zon", "medievia.mob", "medievia.obj", "medievia.shp"})
 SMAUG_SECTIONS = frozenset(
@@ -111,6 +112,9 @@ def detect_area_type(area_file_path):
     if "FUSSAREA" in sections:
         return area_reader.dialects.swr.SwrAreaFile
     if "AREADATA" in sections:
+        # ROM OLC (and ROT) also write #AREADATA; their bodies are ROM, with a race string on each mobile.
+        if ROM_AREADATA_CREDITS.search(data) or _first_mobile_has_race(data):
+            return area_reader.dialects.rom.RomAreaFile
         godwars_fields = all(
             re.search(rf"(?mi)^[ \t]*{field}\b", data) for field in ("Builders", "VNUMs", "Security", "End")
         )
