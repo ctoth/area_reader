@@ -1,0 +1,79 @@
+#AREADATA
+Name Glen Dhoo~
+Builders None~
+VNUMs 30800 30899
+Credits [ 20  55] Kandahar Glen Dhoo~
+Security 9
+End
+
+
+
+#MOBILES
+#30800
+imp~
+an imp~
+An {mimp{x grins broadly.
+~
+This imp has obviously nothing better to do than to poke his nose into
+other people's businesses.
+~
+elf~
+AGU J 0 -500 0
+30 60 9d61+416 1d1+999 5d6+15 claw
+-9 -9 -9 -9
+0 0 B Z
+stand stand male 1500
+AHMV ABCDEFGHIJK small unknown
+M RANDOM 30800 15~
+#0
+
+
+
+#OBJECTS
+#30800
+water culvert~
+a culvert~
+{CWater{W gushes{x into the culvert here.~
+stone~
+fountain 0 P
+-1 -1 'water' 0 0
+0 0 0 P
+#0
+
+
+
+#ROOMS
+#30800
+{GA {DShady {GFootpath{x~
+{gThis is a shady footpath at the beginning of the {Ddappled{g forest.{x
+~
+0 4 3
+D0
+~
+~
+0 0 30801
+S
+#30801
+A Culvert~
+Water gushes into the culvert here.
+~
+0 0 3
+S
+#0
+
+
+
+#RESETS
+M 0 30800 1 30800 1
+O 0 30800 0 30801
+S
+
+
+
+#MOBPROGS
+#30800
+mob echo An {mimp{x follows you.
+~
+#0
+
+#$

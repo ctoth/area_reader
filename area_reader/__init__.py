@@ -1,7 +1,9 @@
 """Readers for supported MUD area formats."""
 
+from area_reader.dialects.ack import AckAreaFile
 from area_reader.dialects.circle import CircleAreaFile
 from area_reader.dialects.coffeemud import CoffeeMudAreaFile
+from area_reader.dialects.dsa import DsaAreaFile
 from area_reader.dialects.godwars import GodWarsAreaFile
 from area_reader.dialects.medievia import MedieviaAreaFile
 from area_reader.dialects.merc import MercAreaFile
@@ -11,8 +13,10 @@ from area_reader.dialects.swr import SwrAreaFile
 from area_reader.dialects.tba import TbaAreaFile
 
 __all__ = (
+    "AckAreaFile",
     "CircleAreaFile",
     "CoffeeMudAreaFile",
+    "DsaAreaFile",
     "GodWarsAreaFile",
     "MedieviaAreaFile",
     "MercAreaFile",

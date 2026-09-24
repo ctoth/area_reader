@@ -7,8 +7,10 @@ import re
 import sys
 from pathlib import Path
 
+import area_reader.dialects.ack
 import area_reader.dialects.circle
 import area_reader.dialects.coffeemud
+import area_reader.dialects.dsa
 import area_reader.dialects.godwars
 import area_reader.dialects.medievia
 import area_reader.dialects.merc
@@ -26,6 +28,11 @@ SECTION = re.compile(r"(?m)^[ \t]*#([A-Z]+)\b", re.IGNORECASE)
 AREA_SECTION = re.compile(r"(?m)^[ \t]*#AREA\b", re.IGNORECASE)
 NEXT_NAMED_SECTION = re.compile(r"(?m)^[ \t]*#[A-Z$]+\b", re.IGNORECASE)
 GODWARS_RECORD = re.compile(r"(?m)^[ \t]*[QT][ \t]*$")
+# ACK!MUD: the area name string is followed by letter-keyed lines, starting with "K keyword~".
+ACK_HEADER = re.compile(r"\A[^~]*~\s*K[ \t][^\n~]*~")
+DSA_HEADER = re.compile(r"\A\s*DSA Format~")
+ROM_AREADATA_CREDITS = re.compile(r"(?m)^[ \t]*Credits[ \t]")
+MOBILES_RECORD = re.compile(r"(?m)^[ \t]*#MOBILES\b[^\n]*\n\s*#[1-9][0-9]*[^\n]*\n", re.IGNORECASE)
 MEDIEVIA_COMPONENTS = frozenset({"medievia.zon", "medievia.mob", "medievia.obj", "medievia.shp"})
 SMAUG_SECTIONS = frozenset(
     {
@@ -67,6 +74,21 @@ def _looks_like_medievia_room(data):
     return True
 
 
+def _first_mobile_has_race(data):
+    """Return whether the first #MOBILES record has ROM's fifth (race) string after Merc's four."""
+    mobiles = MOBILES_RECORD.search(data)
+    if mobiles is None:
+        return False
+    cursor = mobiles.end()
+    for _ in range(4):
+        cursor = data.find("~", cursor)
+        if cursor == -1:
+            return False
+        cursor += 1
+    following = next((line.strip() for line in data[cursor:].splitlines() if line.strip()), "")
+    return following.endswith("~")
+
+
 def detect_area_type(area_file_path):
     path = Path(area_file_path)
     if path.is_dir():
@@ -97,6 +119,9 @@ def detect_area_type(area_file_path):
     if "FUSSAREA" in sections:
         return area_reader.dialects.swr.SwrAreaFile
     if "AREADATA" in sections:
+        # ROM OLC (and ROT) also write #AREADATA; their bodies are ROM, with a race string on each mobile.
+        if ROM_AREADATA_CREDITS.search(data) or _first_mobile_has_race(data):
+            return area_reader.dialects.rom.RomAreaFile
         godwars_fields = all(
             re.search(rf"(?mi)^[ \t]*{field}\b", data) for field in ("Builders", "VNUMs", "Security", "End")
         )
@@ -112,12 +137,18 @@ def detect_area_type(area_file_path):
         next_section = NEXT_NAMED_SECTION.search(area_metadata)
         if next_section is not None:
             area_metadata = area_metadata[: next_section.start()]
+        if ACK_HEADER.match(area_metadata):
+            return area_reader.dialects.ack.AckAreaFile
+        if DSA_HEADER.match(area_metadata):
+            return area_reader.dialects.dsa.DsaAreaFile
         string_count = area_metadata.count("~")
         if string_count >= 3:
             return area_reader.dialects.rom.RomAreaFile
         if string_count == 1:
             if GODWARS_RECORD.search(data):
                 return area_reader.dialects.godwars.GodWarsAreaFile
+            if _first_mobile_has_race(data):
+                return area_reader.dialects.rom.RomAreaFile
             return area_reader.dialects.merc.MercAreaFile
 
     raise ValueError(f"Could not detect area type for {path}")

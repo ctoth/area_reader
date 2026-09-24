@@ -29,8 +29,22 @@ def native_trade_types(value, owner):
 logger = logging.getLogger("area_reader")
 
 
+def reset_has_arg4(owner):
+    return owner.command in ("P", "M") and owner.arg4 is not None
+
+
 def native_reset_arg3_suffix(owner):
-    return " " if owner.command in ("P", "M") else ""
+    return " " if reset_has_arg4(owner) else ""
+
+
+def number_on_current_line(reader):
+    """Return whether another number follows on the current line, without consuming anything."""
+    index = reader.index
+    while index < len(reader.data) and reader.data[index] in " \t":
+        index += 1
+    if index < len(reader.data) and reader.data[index] in "+-":
+        index += 1
+    return index < len(reader.data) and reader.data[index].isdigit()
 
 
 def native_reset_arg2_suffix(owner):
@@ -66,6 +80,14 @@ def native_exit_lock(value, owner):
         return str(locks[int(value)])
     except KeyError:
         raise NativeWriteError(f"ROM exit flags {value!r} have no native lock code")
+
+
+def sector_type_or_raw(value):
+    """Convert a sector number to SECTOR_TYPES, keeping numbers from dialect-specific sector tables as raw ints."""
+    try:
+        return SECTOR_TYPES(value)
+    except ValueError:
+        return int(value)
 
 
 @attributes
@@ -104,8 +126,13 @@ class Dice:
     @classmethod
     def read(cls, reader, **kwargs):
         number = reader.read_number()
-        reader.read_letter()  # D
+        if reader.current_char not in "dD":
+            # Some ROM 2.3 builders wrote a flat number where dice belong (for example mana "100").
+            return cls(number=0, sides=0, bonus=number, **kwargs)
+        reader.advance()
         sides = reader.read_number()
+        if reader.data.startswith("+-", reader.index):
+            reader.advance()  # "1d5+-1": OLC printf("%d+%d") of a negative bonus
         bonus = reader.read_number()
         return cls(number=number, sides=sides, bonus=bonus, **kwargs)
 
@@ -221,7 +248,7 @@ class Reset:
     )
     arg4 = field(
         default=None,
-        native=NativeField(6, native_number, suffix="", when=lambda owner: owner.command in ("P", "M")),
+        native=NativeField(6, native_number, suffix="", when=reset_has_arg4),
     )
     comment = field(default=None, type=str, native=NativeField(7, native_comment))
 
@@ -232,7 +259,10 @@ class Reset:
         arg1 = reader.read_number()
         arg2 = reader.read_number()
         arg3 = 0 if letter in ("G", "R") else reader.read_number()
-        arg4 = reader.read_number() if letter in ("P", "M") else 0
+        arg4 = 0
+        if letter in ("P", "M"):
+            # ROM 2.4 added a fourth M/P argument; ROM 2.3 resets end after the third.
+            arg4 = reader.read_number() if number_on_current_line(reader) else None
         comment = reader.read_to_eol()
         return cls(
             command=command,
@@ -265,7 +295,9 @@ class Room(MudBase):
     area = attr(default=None)
     area_number = field(default=0, type=int, native=NativeField(3, native_number))
     room_flags = field(default=0, type=ROM_ROOM_FLAGS, converter=ROM_ROOM_FLAGS, native=NativeField(4, native_flag))
-    sector_type = field(default=0, type=SECTOR_TYPES, converter=SECTOR_TYPES, native=NativeField(5, native_number))
+    sector_type = field(
+        default=0, type=SECTOR_TYPES | int, converter=sector_type_or_raw, native=NativeField(5, native_number)
+    )
     heal_rate = field(
         default=100,
         type=int,

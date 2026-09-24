@@ -1,0 +1,126 @@
+#AREA
+DSA Format~
+cloudkeep.are~
+Cloud Keep~
+[ 1 30] Monomach Cloud Keep~
+4700 4799
+Descr
+No description.
+~
+Bldrs Monomach~
+Sec 9
+Levels 1 30
+Flags A
+End
+#HELPS
+Of all the giant races that exist in the realm, cloud giants are by far
+the most civilized of the group.
+-1 $~
+
+#MOBILES
+#4700
+child giant~
+a child giant~
+A giant child runs around playing tag with their siblings.
+~
+A young giant child happily plays tag.
+~
+unique~
+AGHW J 0 200 0
+25 0 5d30+208 15d10+100 3d5+8 pound
+0 0 0 5
+0 J LP MQ
+stand stand either 700
+AHMV ABCDEFGHIJK medium none
+~
+End
+#32200
+komodo dragon ito~
+a Komodo Dragon~
+The Komodo dragon of the Ito clan lies here.
+~
+~
+dragon~
+ABFGTc HJTVac BCDEHOS -1000 0
+150 90 50d10+25000 10d50+12000 10d12+300 bite
+-40 -40 -40 -30
+M AEL BEH I
+stand stand male 0
+AHZ ACDEFGHIJKPQUVX huge none
+F vul F
+~
+Damroll  70
+MaxWorld  1
+Saves  -40
+End
+#0
+
+
+
+#OBJECTS
+#32200
+bhelliom~
+{$Bhellio{4m{0~
+Bhelliom lies here glowing with a blue aura.~
+steel~
+weapon ABMYd AN
+hand 40 100 wrath ABCDEGHIJK
+102 0 10000 P
+A
+19 1000
+E
+bhelliom~
+It glows.
+~
+~
+Spec flaming~
+MaxWorld 5
+End
+#0
+
+
+
+#ROOMS
+#4700
+Front Gate~
+There is a gate here.  It is huge, towering over you.
+~
+0 4 2
+D2
+~
+gate~
+1 0 4701
+Flags AB
+End
+S
+Reset M 4700 1 100 0 Load a child giant.
+Reset E 32200 16 100 0
+End
+#4701
+The Lawn~
+The lawn seems to stretch and stretch to the south.
+~
+0 0 2
+D0
+~
+gate~
+1 0 4700
+End
+S
+End
+#0
+
+
+
+#SPECIALS
+M 4700 spec_cast_mage
+S
+
+
+
+#SHOPS
+0
+
+
+
+#$
