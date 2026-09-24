@@ -4,6 +4,7 @@ import enum
 import json
 import logging
 import os
+import re
 from operator import setitem
 
 from attr import fields
@@ -14,6 +15,9 @@ import area_reader.values
 from area_reader.constants import flag_convert
 
 logger = logging.getLogger("area_reader")
+
+# A section header starts its line: "#" followed by an uppercase name or "$".
+SECTION_HEADER = re.compile(r"(?m)^#(?:\$|[A-Z][A-Z0-9_]*\b)")
 
 
 class ParseError(Exception):
@@ -302,7 +306,11 @@ class AreaFile:
 
     def skip_section(self, section_name):
         logger.debug("Skipping section %s", section_name)
-        self.skipped_sections.append((section_name, self.read_until("#")))
+        header = SECTION_HEADER.search(self.data, self.index)
+        end = len(self.data) if header is None else header.start()
+        body = self.data[self.index : end]
+        self.index = end
+        self.skipped_sections.append((section_name, body))
 
     def read_section_name(self):
         self.read_and_verify_letter("#")
