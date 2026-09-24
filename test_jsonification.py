@@ -238,6 +238,7 @@ def test_smaug_area_uses_smaug_room_and_exit_json_shapes():
 def test_save_as_json_uses_the_same_enum_safe_representation(tmp_path):
     area_file = object.__new__(parser.AreaFile)
     area_file.filename = str(tmp_path / "enum-area.are")
+    area_file.diagnostics = []
     area_file.area = area_reader.dialects.rom.RomArea(
         mobs={
             1: area_reader.dialects.rom.RomMob(

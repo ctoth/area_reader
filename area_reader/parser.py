@@ -5,7 +5,6 @@ import json
 import logging
 import os
 import re
-from operator import setitem
 
 from attr import fields
 
@@ -54,6 +53,7 @@ class AreaFile:
         self.filename = filename
         self.area = self.create_area()
         self.skipped_sections = []
+        self.diagnostics = []
         self.current_section_name = "N/A"
         self.readers = {
             area_reader.values.Word: self.read_word,
@@ -311,6 +311,14 @@ class AreaFile:
         body = self.data[self.index : end]
         self.index = end
         self.skipped_sections.append((section_name, body))
+        self.diagnostics.append({"kind": "skipped_section", "section": section_name})
+
+    def store_vnum(self, family, vnum, item):
+        """Store ``item`` in the ``family`` collection, noting a replaced vnum."""
+        collection = getattr(self.area, family)
+        if vnum in collection:
+            self.diagnostics.append({"kind": "duplicate_vnum", "family": family, "vnum": vnum})
+        collection[vnum] = item
 
     def read_section_name(self):
         self.read_and_verify_letter("#")
@@ -319,11 +327,11 @@ class AreaFile:
 
     def load_rooms(self):
         for item in self.load_vnum_section(area_reader.model.Room):
-            setitem(self.area.rooms, item.vnum, item)
+            self.store_vnum("rooms", item.vnum, item)
 
     def load_objects(self):
         for item in self.load_vnum_section(area_reader.model.Item):
-            setitem(self.area.objects, item.vnum, item)
+            self.store_vnum("objects", item.vnum, item)
 
     def load_resets(self):
         for reset in self.read_flat_section(area_reader.model.Reset):
@@ -393,7 +401,9 @@ class AreaFile:
         return self.data[self.index - window : self.index + window]
 
     def as_dict(self):
-        return area_reader.serialization.EnumNameConverter().unstructure(self.area)
+        result = area_reader.serialization.EnumNameConverter().unstructure(self.area)
+        result["diagnostics"] = [dict(diagnostic) for diagnostic in self.diagnostics]
+        return result
 
     def as_json(self, indent=None):
         return json.dumps(self.as_dict(), indent=indent)

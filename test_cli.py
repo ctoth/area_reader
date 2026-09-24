@@ -261,7 +261,9 @@ def test_print_area_autodetects_other_single_file_dialects(tmp_path, capsys, con
 
     area_reader.cli.print_area(path)
 
-    assert isinstance(json.loads(capsys.readouterr().out), dict)
+    payload = json.loads(capsys.readouterr().out)
+    assert isinstance(payload, dict)
+    assert payload["diagnostics"] == []
 
 
 def test_print_area_autodetects_circle_world_tree(tmp_path, capsys):
@@ -270,4 +272,6 @@ def test_print_area_autodetects_circle_world_tree(tmp_path, capsys):
 
     area_reader.cli.print_area(tmp_path)
 
-    assert isinstance(json.loads(capsys.readouterr().out), dict)
+    payload = json.loads(capsys.readouterr().out)
+    assert isinstance(payload, dict)
+    assert payload["diagnostics"] == []

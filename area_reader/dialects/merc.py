@@ -2,7 +2,6 @@
 
 import logging
 from collections import OrderedDict
-from operator import setitem
 
 from attr import Factory, attr, attributes
 
@@ -44,15 +43,15 @@ class MercAreaFile(area_reader.parser.AreaFile):
 
     def load_mobiles(self):
         for mob in self.load_vnum_section(MercMob):
-            setitem(self.area.mobs, mob.vnum, mob)
+            self.store_vnum("mobs", mob.vnum, mob)
 
     def load_objects(self):
         for item in self.load_vnum_section(MercItem):
-            setitem(self.area.objects, item.vnum, item)
+            self.store_vnum("objects", item.vnum, item)
 
     def load_rooms(self):
         for room in self.load_vnum_section(MercRoom):
-            setitem(self.area.rooms, room.vnum, room)
+            self.store_vnum("rooms", room.vnum, room)
 
     def load_resets(self):
         for reset in self.read_flat_section(MercReset):

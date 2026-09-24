@@ -37,6 +37,7 @@ class CircleAreaFile:
         if not os.path.exists(os.path.join(self.world_root, "zon", "index")):
             self.world_root = os.path.join(self.root, "lib", "world")
         self.area = CircleArea()
+        self.diagnostics = []
         self.filename = ""
         self.data = ""
         self.index = 0
@@ -469,7 +470,9 @@ class CircleAreaFile:
         )
 
     def as_dict(self):
-        return area_reader.serialization.EnumNameConverter().unstructure(self.area)
+        result = area_reader.serialization.EnumNameConverter().unstructure(self.area)
+        result["diagnostics"] = [dict(diagnostic) for diagnostic in self.diagnostics]
+        return result
 
     def as_json(self, indent=None):
         return json.dumps(self.as_dict(), indent=indent)
