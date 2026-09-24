@@ -50,7 +50,15 @@ class RomAreaFile(area_reader.parser.AreaFile):
             setitem(self.area.objects, item.vnum, item)
 
     def read_area_metadata(self):
-        self.area.original_filename = self.read_string()
+        first = self.read_string()
+        self.skip_whitespace()
+        if self.current_char == "#":
+            # ROM 2.3-era areas often kept Merc's one-string header: #AREA {levels} Author Name~
+            self.area.header_format = "merc"
+            self.area.metadata = first
+            self.area.name = first
+            return
+        self.area.original_filename = first
         self.area.name = self.read_string()
         self.area.metadata = self.read_string()
         self.area.first_vnum = self.read_number()
@@ -106,6 +114,10 @@ def native_item_values(value, owner):
         encoder = native_word if index in word_positions else native_flag
         encoded.append(encoder(item, owner))
     return " ".join(encoded)
+
+
+def native_group(value, owner):
+    return "S" if value is None else native_number(value, owner)
 
 
 def native_affect_prefix(owner):
@@ -377,7 +389,8 @@ class RomMob(RomCharacter):
         default=0, type=AFFECTED_BY, converter=AFFECTED_BY, native=NativeField(7, native_flag)
     )
     alignment = area_reader.schema.field(default=0, type=int, native=NativeField(8, native_number))
-    group = area_reader.schema.field(default=0, type=int, native=NativeField(9, native_number))
+    # ROM 2.3 writes a literal "S" where ROM 2.4 writes the mob group; None records that layout.
+    group = area_reader.schema.field(default=0, type=int | None, native=NativeField(9, native_group))
     level = area_reader.schema.field(default=0, type=int, native=NativeField(10, native_number))
     hitroll = area_reader.schema.field(default=0, type=int, native=NativeField(11, native_number))
     hit = area_reader.schema.field(
@@ -433,7 +446,12 @@ class RomMob(RomCharacter):
         act = ROM_ACT_TYPES(reader.read_flag()) | ROM_ACT_TYPES.IS_NPC
         affected_by = reader.read_flag()
         alignment = reader.read_number()
-        group = reader.read_number()
+        reader.skip_whitespace()
+        if reader.current_char == "S":
+            reader.advance()
+            group = None
+        else:
+            group = reader.read_number()
         level = reader.read_number()
         hitroll = reader.read_number()
         hit = area_reader.model.Dice.read(reader=reader)
@@ -516,6 +534,10 @@ class RomMob(RomCharacter):
         )
 
 
+def rom_area_header(area):
+    return area.header_format == "rom"
+
+
 @attributes
 class RomArea:
     NATIVE_SECTIONS = (
@@ -529,11 +551,20 @@ class RomArea:
         NativeSection("SPECIALS", collection="specials", end="S\n"),
     )
 
-    name = area_reader.schema.field(default="", native=NativeField(2, native_tilde_string, section="area"))
+    header_format = attr(default="rom", type=str)
+    name = area_reader.schema.field(
+        default="", native=NativeField(2, native_tilde_string, section="area", when=rom_area_header)
+    )
     metadata = area_reader.schema.field(default="", native=NativeField(3, native_tilde_string, section="area"))
-    original_filename = area_reader.schema.field(default="", native=NativeField(1, native_tilde_string, section="area"))
-    first_vnum = area_reader.schema.field(default=-1, native=NativeField(4, native_number, section="area"))
-    last_vnum = area_reader.schema.field(default=-1, native=NativeField(5, native_number, section="area"))
+    original_filename = area_reader.schema.field(
+        default="", native=NativeField(1, native_tilde_string, section="area", when=rom_area_header)
+    )
+    first_vnum = area_reader.schema.field(
+        default=-1, native=NativeField(4, native_number, section="area", when=rom_area_header)
+    )
+    last_vnum = area_reader.schema.field(
+        default=-1, native=NativeField(5, native_number, section="area", when=rom_area_header)
+    )
     helps = attr(default=Factory(list), type=list[area_reader.model.Help])
     rooms = attr(default=Factory(OrderedDict), type=dict[int, area_reader.model.Room])
     mobs = attr(default=Factory(OrderedDict))

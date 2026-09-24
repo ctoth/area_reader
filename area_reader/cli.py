@@ -24,6 +24,7 @@ NEXT_NAMED_SECTION = re.compile(r"(?m)^[ \t]*#[A-Z$]+\b", re.IGNORECASE)
 GODWARS_RECORD = re.compile(r"(?m)^[ \t]*[QT][ \t]*$")
 # ACK!MUD: the area name string is followed by letter-keyed lines, starting with "K keyword~".
 ACK_HEADER = re.compile(r"\A[^~]*~\s*K[ \t][^\n~]*~")
+MOBILES_RECORD = re.compile(r"(?m)^[ \t]*#MOBILES\b[^\n]*\n\s*#[1-9][0-9]*[^\n]*\n", re.IGNORECASE)
 MEDIEVIA_COMPONENTS = frozenset({"medievia.zon", "medievia.mob", "medievia.obj", "medievia.shp"})
 SMAUG_SECTIONS = frozenset(
     {
@@ -63,6 +64,21 @@ def _looks_like_medievia_room(data):
     except ValueError:
         return False
     return True
+
+
+def _first_mobile_has_race(data):
+    """Return whether the first #MOBILES record has ROM's fifth (race) string after Merc's four."""
+    mobiles = MOBILES_RECORD.search(data)
+    if mobiles is None:
+        return False
+    cursor = mobiles.end()
+    for _ in range(4):
+        cursor = data.find("~", cursor)
+        if cursor == -1:
+            return False
+        cursor += 1
+    following = next((line.strip() for line in data[cursor:].splitlines() if line.strip()), "")
+    return following.endswith("~")
 
 
 def detect_area_type(area_file_path):
@@ -118,6 +134,8 @@ def detect_area_type(area_file_path):
         if string_count == 1:
             if GODWARS_RECORD.search(data):
                 return area_reader.dialects.godwars.GodWarsAreaFile
+            if _first_mobile_has_race(data):
+                return area_reader.dialects.rom.RomAreaFile
             return area_reader.dialects.merc.MercAreaFile
 
     raise ValueError(f"Could not detect area type for {path}")

@@ -1,0 +1,71 @@
+#AREA { 5 15} Paulanka  Sesame Street~
+
+#MOBILES
+#715
+oscar grouch~
+Oscar the Grouch~
+Oscar the Grouch is here, complaining about his living conditions.
+~
+~
+muppet~
+BGT N -1000 S
+5 0 2d10+40 0d0+0 1d10+10 1
+50 50 50 75
+DFK 0 0 H
+8 8 1 200
+AM ABCDEFGHIJK 2 0
+#716
+bird aarakocra~
+the drunk bird~
+A drunk bird staggers around here.
+~
+~
+human~
+BGL 0 -100 S
+2 0 1d12+23 100 1d5+-1 1
+-5 -5 -5 0
+0 0 0 0
+8 8 1 230
+0 0 2 0
+#0
+
+#OBJECTS
+#725
+ducky rubber~
+Rubber Ducky~
+Ernies precious little Rubber Ducky has been dropped here.~
+rubber~
+11 G AO
+5 5 5 0 0
+1 2 200 G
+A
+5 1
+#0
+
+#ROOMS
+#715
+On-ramp to Sesame Street~
+You are walking towards a quiet street.
+~
+0 0 1
+D1
+To Kvasir Court.
+~
+~
+0 0 716
+S
+#716
+Sesame Street~
+The main drag on Sesame Street.
+~
+0 0 1
+S
+#0
+
+#RESETS
+M 0 715 1 715     Oscar
+G 1 725 2
+M 0 716 1 716 1
+S
+
+#$
