@@ -83,10 +83,6 @@ def native_merc_exit_lock(value, owner):
         raise NativeWriteError(f"Merc exit flags {value!r} have no native lock code")
 
 
-def native_merc_reset_arg2_suffix(owner):
-    return "" if owner.command in ("G", "R") else " "
-
-
 @attributes
 class MercAffectData:
     type = attr(default=-1)
@@ -125,7 +121,10 @@ class MercReset:
     arg2 = area_reader.schema.field(
         default=None,
         native=NativeField(
-            4, native_number, suffix=native_merc_reset_arg2_suffix, when=lambda owner: owner.command is not None
+            4,
+            native_number,
+            suffix=area_reader.model.native_reset_arg2_suffix,
+            when=lambda owner: owner.command is not None,
         ),
     )
     arg3 = area_reader.schema.field(

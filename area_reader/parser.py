@@ -369,7 +369,10 @@ class AreaFile:
             self.area.helps.append(help)
 
     def jump_to_section(self, section_name):
-        self.index = self.data.find("#" + section_name.upper()) + len(section_name) + 1
+        header = re.compile(rf"(?m)^#{re.escape(section_name.upper())}\b").search(self.data)
+        if header is None:
+            self.parse_fail(f"Section #{section_name.upper()} not found")
+        self.index = header.end()
 
     def parse_fail(self, message):
         backwards = self.data[: self.index]

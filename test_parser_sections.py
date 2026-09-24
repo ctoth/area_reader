@@ -7,10 +7,47 @@ import pytest
 
 import area_reader.dialects.merc
 import area_reader.dialects.rom
+import area_reader.dialects.smaug
+import area_reader.dialects.swr
+import area_reader.model
 import area_reader.parser
 
 AREA_HEADER = "#AREA\nsocial.are~\nSocial test~\nBuilder~\n1 1\n"
 DUPLICATE_ROOMS = "#ROOMS\n#100\nFirst~\nDesc~\n0 0 0\nS\n#100\nSecond~\nDesc~\n0 0 0\nS\n#0\n#$\n"
+
+
+def unloaded_rom(tmp_path: Path, text: str) -> area_reader.dialects.rom.RomAreaFile:
+    path = tmp_path / "area.are"
+    path.write_text(text, encoding="latin-1")
+    return area_reader.dialects.rom.RomAreaFile(path)
+
+
+def test_jump_to_section_positions_after_the_section_header(tmp_path):
+    reader = unloaded_rom(tmp_path, "#AREA\nsays #ROOMS~\n#ROOMS\n#100\n")
+
+    reader.jump_to_section("rooms")
+
+    assert reader.data[reader.index :] == "\n#100\n"
+
+
+def test_jump_to_section_rejects_a_missing_section(tmp_path):
+    reader = unloaded_rom(tmp_path, "#AREA\nstuff\n")
+
+    with pytest.raises(area_reader.parser.ParseError, match="Section #NOSUCH not found"):
+        reader.jump_to_section("nosuch")
+
+    assert reader.index == 0
+
+
+def test_smaug_reader_has_no_dead_room_loader():
+    assert not hasattr(area_reader.dialects.smaug.SmaugAreaFile, "load_room")
+    assert not hasattr(area_reader.dialects.smaug.SmaugAreaFile, "read_line")
+
+
+def test_reset_arg2_suffix_has_one_shared_owner():
+    assert not hasattr(area_reader.dialects.merc, "native_merc_reset_arg2_suffix")
+    assert not hasattr(area_reader.dialects.swr, "native_swr_reset_arg2_suffix")
+    assert area_reader.model.native_reset_arg2_suffix
 
 
 @pytest.mark.parametrize(

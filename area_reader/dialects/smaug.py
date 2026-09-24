@@ -204,21 +204,6 @@ class SmaugAreaFile(area_reader.dialects.rom.RomAreaFile):
         self.area.high_economy = self.read_number()
         self.area.low_economy = self.read_number()
 
-    def load_room(self, vnum):
-        logger.debug("Reading room %d", vnum)
-        room = area_reader.model.Room(vnum=vnum)
-        room.name = self.read_string()
-        room.description = self.read_string()
-        room.area_number = self.read_number()
-        room.room_flags = self.read_flag()
-        self.read_line()
-        # room.sector_type, room.tele_delay, room.tele_vnum, room.tunnel, room.max_weight = map(int, line.split())
-        self.read_room_data(room)
-        return room
-
-    def read_line(self):
-        return self.read_to_eol()
-
 
 logger = logging.getLogger("area_reader")
 

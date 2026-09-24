@@ -398,10 +398,6 @@ def native_swr_unknown_value(value, owner):
     return native_raw(value, owner)
 
 
-def native_swr_reset_arg2_suffix(owner):
-    return "" if owner.command in ("G", "R") else " "
-
-
 def native_swr_armor_class(value, owner):
     del owner
     classes = (value.pierce, value.bash, value.slash, value.exotic)
@@ -512,7 +508,7 @@ class SwrReset:
     if_flag = area_reader.schema.field(default=0, type=int, native=NativeField(2, native_number, suffix=" "))
     arg1 = area_reader.schema.field(default=0, type=int, native=NativeField(3, native_number, suffix=" "))
     arg2 = area_reader.schema.field(
-        default=0, type=int, native=NativeField(4, native_number, suffix=native_swr_reset_arg2_suffix)
+        default=0, type=int, native=NativeField(4, native_number, suffix=area_reader.model.native_reset_arg2_suffix)
     )
     arg3 = area_reader.schema.field(
         default=0,
