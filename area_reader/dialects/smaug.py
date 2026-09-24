@@ -2,7 +2,6 @@
 
 import logging
 from collections import OrderedDict
-from operator import setitem
 
 from attr import Factory, attr, attributes
 
@@ -146,15 +145,15 @@ class SmaugAreaFile(area_reader.dialects.rom.RomAreaFile):
 
     def load_mobiles(self):
         for mob in self.load_smaug_vnum_section(SmaugMob):
-            setitem(self.area.mobs, mob.vnum, mob)
+            self.store_vnum("mobs", mob.vnum, mob)
 
     def load_objects(self):
         for item in self.load_smaug_vnum_section(SmaugItem):
-            setitem(self.area.objects, item.vnum, item)
+            self.store_vnum("objects", item.vnum, item)
 
     def load_rooms(self):
         for room in self.load_smaug_vnum_section(SmaugRoom):
-            setitem(self.area.rooms, room.vnum, room)
+            self.store_vnum("rooms", room.vnum, room)
 
     def load_smaug_vnum_section(self, section_object_type):
         while True:
@@ -204,21 +203,6 @@ class SmaugAreaFile(area_reader.dialects.rom.RomAreaFile):
     def load_economy(self):
         self.area.high_economy = self.read_number()
         self.area.low_economy = self.read_number()
-
-    def load_room(self, vnum):
-        logger.debug("Reading room %d", vnum)
-        room = area_reader.model.Room(vnum=vnum)
-        room.name = self.read_string()
-        room.description = self.read_string()
-        room.area_number = self.read_number()
-        room.room_flags = self.read_flag()
-        self.read_line()
-        # room.sector_type, room.tele_delay, room.tele_vnum, room.tunnel, room.max_weight = map(int, line.split())
-        self.read_room_data(room)
-        return room
-
-    def read_line(self):
-        return self.read_to_eol()
 
 
 logger = logging.getLogger("area_reader")

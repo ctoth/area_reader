@@ -1,7 +1,5 @@
 """GodWars Deluxe area models, codecs, and reader."""
 
-from operator import setitem
-
 from attr import Factory, attr, attributes
 
 import area_reader.dialects.merc
@@ -158,8 +156,8 @@ class GodWarsAreaFile(area_reader.dialects.merc.MercAreaFile):
 
     def load_objects(self):
         for item in self.load_vnum_section(GodWarsItem):
-            setitem(self.area.objects, item.vnum, item)
+            self.store_vnum("objects", item.vnum, item)
 
     def load_rooms(self):
         for room in self.load_vnum_section(GodWarsRoom):
-            setitem(self.area.rooms, room.vnum, room)
+            self.store_vnum("rooms", room.vnum, room)

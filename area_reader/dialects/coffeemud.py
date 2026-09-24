@@ -29,6 +29,7 @@ class CoffeeMudAreaFile:
 
     def __init__(self, filename):
         self.filename = os.fspath(filename)
+        self.diagnostics = []
         with open(filename, mode="rt", encoding="latin-1") as coffee_file:
             self.data = coffee_file.read()
             self.area = CoffeeMudArea()
@@ -540,7 +541,9 @@ class CoffeeMudAreaFile:
             return default
 
     def as_dict(self):
-        return area_reader.serialization.EnumNameConverter().unstructure(self.area)
+        result = area_reader.serialization.EnumNameConverter().unstructure(self.area)
+        result["diagnostics"] = [dict(diagnostic) for diagnostic in self.diagnostics]
+        return result
 
     def as_json(self, indent=None):
         return json.dumps(self.as_dict(), indent=indent)
