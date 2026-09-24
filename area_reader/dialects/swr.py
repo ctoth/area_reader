@@ -1,7 +1,6 @@
 """SWR/FUSS area models, codecs, and reader."""
 
 from collections import OrderedDict
-from operator import setitem
 
 from attr import Factory, attr, attributes
 
@@ -48,21 +47,21 @@ class SwrAreaFile(area_reader.dialects.smaug.SmaugAreaFile):
             self.index = start
             if word.isdigit():
                 for mob in self.load_smaug_vnum_section(area_reader.dialects.smaug.SmaugMob):
-                    setitem(self.area.mobs, mob.vnum, mob)
+                    self.store_vnum("mobs", mob.vnum, mob)
                 return
         super().load_sections()
 
     def load_mobiles(self):
         for mob in self.load_swr_vnum_section(area_reader.dialects.smaug.SmaugMob):
-            setitem(self.area.mobs, mob.vnum, mob)
+            self.store_vnum("mobs", mob.vnum, mob)
 
     def load_objects(self):
         for item in self.load_swr_vnum_section(area_reader.dialects.smaug.SmaugItem):
-            setitem(self.area.objects, item.vnum, item)
+            self.store_vnum("objects", item.vnum, item)
 
     def load_rooms(self):
         for room in self.load_swr_vnum_section(area_reader.dialects.smaug.SmaugRoom):
-            setitem(self.area.rooms, room.vnum, room)
+            self.store_vnum("rooms", room.vnum, room)
 
     def load_swr_vnum_section(self, section_object_type):
         while True:
@@ -91,13 +90,13 @@ class SwrAreaFile(area_reader.dialects.smaug.SmaugAreaFile):
                 self.load_fuss_areadata()
             elif section_name == "mobile":
                 mob = self.read_fuss_mobile()
-                setitem(self.area.mobs, mob.vnum, mob)
+                self.store_vnum("mobs", mob.vnum, mob)
             elif section_name == "object":
                 item = self.read_fuss_object()
-                setitem(self.area.objects, item.vnum, item)
+                self.store_vnum("objects", item.vnum, item)
             elif section_name == "room":
                 room = self.read_fuss_room()
-                setitem(self.area.rooms, room.vnum, room)
+                self.store_vnum("rooms", room.vnum, room)
                 self.area.resets.extend(room.resets)
             elif section_name == "endarea":
                 return
@@ -399,10 +398,6 @@ def native_swr_unknown_value(value, owner):
     return native_raw(value, owner)
 
 
-def native_swr_reset_arg2_suffix(owner):
-    return "" if owner.command in ("G", "R") else " "
-
-
 def native_swr_armor_class(value, owner):
     del owner
     classes = (value.pierce, value.bash, value.slash, value.exotic)
@@ -513,7 +508,7 @@ class SwrReset:
     if_flag = area_reader.schema.field(default=0, type=int, native=NativeField(2, native_number, suffix=" "))
     arg1 = area_reader.schema.field(default=0, type=int, native=NativeField(3, native_number, suffix=" "))
     arg2 = area_reader.schema.field(
-        default=0, type=int, native=NativeField(4, native_number, suffix=native_swr_reset_arg2_suffix)
+        default=0, type=int, native=NativeField(4, native_number, suffix=area_reader.model.native_reset_arg2_suffix)
     )
     arg3 = area_reader.schema.field(
         default=0,

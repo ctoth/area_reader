@@ -4,7 +4,7 @@ import enum
 import json
 import logging
 import os
-from operator import setitem
+import re
 
 from attr import fields
 
@@ -15,9 +15,31 @@ from area_reader.constants import flag_convert
 
 logger = logging.getLogger("area_reader")
 
+# A section header starts its line: "#" followed by an uppercase name or "$".
+SECTION_HEADER = re.compile(r"(?m)^#(?:\$|[A-Z][A-Z0-9_]*\b)")
+
 
 class ParseError(Exception):
-    pass
+    """A parse failure with its source location.
+
+    ``line`` and ``column`` are 1-based; any location field may be ``None``
+    when the failure has no source position.
+    """
+
+    def __init__(self, message, *, reason=None, filename=None, line=None, column=None, section=None):
+        super().__init__(message)
+        self.reason = message if reason is None else reason
+        self.filename = filename
+        self.line = line
+        self.column = column
+        self.section = section
+
+
+def source_position(data, index):
+    """Return the 1-based ``(line, column)`` of ``index`` in ``data``."""
+    backwards = data[:index]
+    line_start = backwards.rfind("\n") + 1
+    return backwards.count("\n") + 1, index - line_start + 1
 
 
 class AreaFile:
@@ -31,6 +53,7 @@ class AreaFile:
         self.filename = filename
         self.area = self.create_area()
         self.skipped_sections = []
+        self.diagnostics = []
         self.current_section_name = "N/A"
         self.readers = {
             area_reader.values.Word: self.read_word,
@@ -283,7 +306,19 @@ class AreaFile:
 
     def skip_section(self, section_name):
         logger.debug("Skipping section %s", section_name)
-        self.skipped_sections.append((section_name, self.read_until("#")))
+        header = SECTION_HEADER.search(self.data, self.index)
+        end = len(self.data) if header is None else header.start()
+        body = self.data[self.index : end]
+        self.index = end
+        self.skipped_sections.append((section_name, body))
+        self.diagnostics.append({"kind": "skipped_section", "section": section_name})
+
+    def store_vnum(self, family, vnum, item):
+        """Store ``item`` in the ``family`` collection, noting a replaced vnum."""
+        collection = getattr(self.area, family)
+        if vnum in collection:
+            self.diagnostics.append({"kind": "duplicate_vnum", "family": family, "vnum": vnum})
+        collection[vnum] = item
 
     def read_section_name(self):
         self.read_and_verify_letter("#")
@@ -292,11 +327,11 @@ class AreaFile:
 
     def load_rooms(self):
         for item in self.load_vnum_section(area_reader.model.Room):
-            setitem(self.area.rooms, item.vnum, item)
+            self.store_vnum("rooms", item.vnum, item)
 
     def load_objects(self):
         for item in self.load_vnum_section(area_reader.model.Item):
-            setitem(self.area.objects, item.vnum, item)
+            self.store_vnum("objects", item.vnum, item)
 
     def load_resets(self):
         for reset in self.read_flat_section(area_reader.model.Reset):
@@ -334,12 +369,17 @@ class AreaFile:
             self.area.helps.append(help)
 
     def jump_to_section(self, section_name):
-        self.index = self.data.find("#" + section_name.upper()) + len(section_name) + 1
+        header = re.compile(rf"(?m)^#{re.escape(section_name.upper())}\b").search(self.data)
+        if header is None:
+            self.parse_fail(f"Section #{section_name.upper()} not found")
+        self.index = header.end()
 
     def parse_fail(self, message):
         backwards = self.data[: self.index]
         lineno = backwards.count("\n") + 1
         col = backwards[::-1].find("\n")
+        line, column = source_position(self.data, self.index)
+        reason = message
         message = (
             str(self.filename)
             + " line "
@@ -351,13 +391,22 @@ class AreaFile:
             + ": "
             + message
         )
-        raise ParseError(message)
+        raise ParseError(
+            message,
+            reason=reason,
+            filename=str(self.filename),
+            line=line,
+            column=column,
+            section=self.current_section_name,
+        )
 
     def surrounding_text(self, window=50):
         return self.data[self.index - window : self.index + window]
 
     def as_dict(self):
-        return area_reader.serialization.EnumNameConverter().unstructure(self.area)
+        result = area_reader.serialization.EnumNameConverter().unstructure(self.area)
+        result["diagnostics"] = [dict(diagnostic) for diagnostic in self.diagnostics]
+        return result
 
     def as_json(self, indent=None):
         return json.dumps(self.as_dict(), indent=indent)

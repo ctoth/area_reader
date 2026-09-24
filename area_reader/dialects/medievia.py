@@ -442,6 +442,7 @@ class MedieviaAreaFile(area_reader.dialects.circle.CircleAreaFile):
             self.lib_root = os.path.join(self.root, "lib")
         self.world_root = self.lib_root
         self.area = MedieviaArea()
+        self.diagnostics = []
         self.filename = ""
         self.data = ""
         self.index = 0
