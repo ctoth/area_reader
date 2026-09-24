@@ -17,7 +17,26 @@ logger = logging.getLogger("area_reader")
 
 
 class ParseError(Exception):
-    pass
+    """A parse failure with its source location.
+
+    ``line`` and ``column`` are 1-based; any location field may be ``None``
+    when the failure has no source position.
+    """
+
+    def __init__(self, message, *, reason=None, filename=None, line=None, column=None, section=None):
+        super().__init__(message)
+        self.reason = message if reason is None else reason
+        self.filename = filename
+        self.line = line
+        self.column = column
+        self.section = section
+
+
+def source_position(data, index):
+    """Return the 1-based ``(line, column)`` of ``index`` in ``data``."""
+    backwards = data[:index]
+    line_start = backwards.rfind("\n") + 1
+    return backwards.count("\n") + 1, index - line_start + 1
 
 
 class AreaFile:
@@ -340,6 +359,8 @@ class AreaFile:
         backwards = self.data[: self.index]
         lineno = backwards.count("\n") + 1
         col = backwards[::-1].find("\n")
+        line, column = source_position(self.data, self.index)
+        reason = message
         message = (
             str(self.filename)
             + " line "
@@ -351,7 +372,14 @@ class AreaFile:
             + ": "
             + message
         )
-        raise ParseError(message)
+        raise ParseError(
+            message,
+            reason=reason,
+            filename=str(self.filename),
+            line=line,
+            column=column,
+            section=self.current_section_name,
+        )
 
     def surrounding_text(self, window=50):
         return self.data[self.index - window : self.index + window]

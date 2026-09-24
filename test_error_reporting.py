@@ -72,3 +72,32 @@ def test_circle_record_header_rejects_a_non_numeric_vnum(tmp_path):
 
     with pytest.raises(area_reader.parser.ParseError, match="Expected numeric record header"):
         reader.read_record_header()
+
+
+def test_parse_error_carries_its_source_location(tmp_path):
+    path = write_area(tmp_path, "#MOBILES\n#3000\nguard~\nA guard\n")
+    reader = area_reader.dialects.rom.RomAreaFile(path)
+
+    with pytest.raises(area_reader.parser.ParseError) as caught:
+        reader.load_sections()
+
+    error = caught.value
+    assert (error.reason, error.filename, error.line, error.column, error.section) == (
+        "Unterminated string",
+        str(path),
+        5,
+        1,
+        "mobiles",
+    )
+
+
+def test_circle_parse_error_carries_its_source_location(tmp_path):
+    path = tmp_path / "broken.wld"
+    path.write_text("#\nname~\n", encoding="latin-1")
+    reader = area_reader.dialects.circle.CircleAreaFile(tmp_path)
+    reader.open_circle_file(path)
+
+    with pytest.raises(area_reader.parser.ParseError) as caught:
+        reader.read_record_header()
+
+    assert (caught.value.reason, caught.value.line) == ("Expected numeric record header, got ''", 1)

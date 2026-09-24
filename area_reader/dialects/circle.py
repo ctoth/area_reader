@@ -191,7 +191,14 @@ class CircleAreaFile:
         backwards = self.data[: self.index]
         lineno = backwards.count("\n") + 1
         col = backwards[::-1].find("\n")
-        raise area_reader.parser.ParseError(f"{self.filename} line {lineno} col {col}: {message}")
+        line, column = area_reader.parser.source_position(self.data, self.index)
+        raise area_reader.parser.ParseError(
+            f"{self.filename} line {lineno} col {col}: {message}",
+            reason=message,
+            filename=str(self.filename),
+            line=line,
+            column=column,
+        )
 
     def parse_dice_token(self, token):
         number, rest = token.lower().split("d", 1)
