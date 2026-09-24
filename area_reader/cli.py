@@ -7,6 +7,7 @@ from pathlib import Path
 import area_reader.dialects.ack
 import area_reader.dialects.circle
 import area_reader.dialects.coffeemud
+import area_reader.dialects.dsa
 import area_reader.dialects.godwars
 import area_reader.dialects.medievia
 import area_reader.dialects.merc
@@ -24,6 +25,7 @@ NEXT_NAMED_SECTION = re.compile(r"(?m)^[ \t]*#[A-Z$]+\b", re.IGNORECASE)
 GODWARS_RECORD = re.compile(r"(?m)^[ \t]*[QT][ \t]*$")
 # ACK!MUD: the area name string is followed by letter-keyed lines, starting with "K keyword~".
 ACK_HEADER = re.compile(r"\A[^~]*~\s*K[ \t][^\n~]*~")
+DSA_HEADER = re.compile(r"\A\s*DSA Format~")
 ROM_AREADATA_CREDITS = re.compile(r"(?m)^[ \t]*Credits[ \t]")
 MOBILES_RECORD = re.compile(r"(?m)^[ \t]*#MOBILES\b[^\n]*\n\s*#[1-9][0-9]*[^\n]*\n", re.IGNORECASE)
 MEDIEVIA_COMPONENTS = frozenset({"medievia.zon", "medievia.mob", "medievia.obj", "medievia.shp"})
@@ -132,6 +134,8 @@ def detect_area_type(area_file_path):
             area_metadata = area_metadata[: next_section.start()]
         if ACK_HEADER.match(area_metadata):
             return area_reader.dialects.ack.AckAreaFile
+        if DSA_HEADER.match(area_metadata):
+            return area_reader.dialects.dsa.DsaAreaFile
         string_count = area_metadata.count("~")
         if string_count >= 3:
             return area_reader.dialects.rom.RomAreaFile

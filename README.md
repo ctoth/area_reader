@@ -14,6 +14,7 @@ very easy to do things like render the entire tree of objects out as JSON or sim
 | ROM | `RomAreaFile` | `dumps()` / `write()` | single tilde-delimited `.are` file |
 | Merc | `MercAreaFile` | `dumps()` / `write()` | single tilde-delimited area file |
 | GodWars Deluxe | `GodWarsAreaFile` | `dumps()` / `write()` | single `.are` file (`#AREA` or `#AREADATA`) |
+| Devil's Silence (DSA) | `DsaAreaFile` | `dumps()` / `write()` | single `.are` file whose `#AREA` header starts `DSA Format~` |
 | ACK!MUD | `AckAreaFile` | `dumps()` / `write()` | single `.are` file with a letter-keyed `#AREA` header (`K`/`L`/`N`/`I`/`V`...) |
 | SMAUG | `SmaugAreaFile` | `dumps()` / `write()` | single tilde-delimited area file |
 | SWR / FUSS | `SwrAreaFile` | `dumps()` / `write()` | single tilde-delimited area file |
