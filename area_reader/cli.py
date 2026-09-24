@@ -1,5 +1,8 @@
 """Command-line interface for area-reader."""
 
+import argparse
+import json
+import logging
 import re
 import sys
 from pathlib import Path
@@ -14,6 +17,8 @@ import area_reader.dialects.smaug
 import area_reader.dialects.swr
 import area_reader.dialects.tba
 import area_reader.serialization
+
+logger = logging.getLogger("area_reader")
 
 SNIFF_SIZE = 64 * 1024
 COFFEEMUD_ROOT = re.compile(r"<(?:AREA|MOBS?|ITEMS?|AROOMS?)\b", re.IGNORECASE)
@@ -118,16 +123,126 @@ def detect_area_type(area_file_path):
     raise ValueError(f"Could not detect area type for {path}")
 
 
-def print_area(area_file_path, area_type=None):
-    if area_type is None:
-        area_type = detect_area_type(area_file_path)
+DIALECTS = {
+    "rom": area_reader.dialects.rom.RomAreaFile,
+    "merc": area_reader.dialects.merc.MercAreaFile,
+    "smaug": area_reader.dialects.smaug.SmaugAreaFile,
+    "circle": area_reader.dialects.circle.CircleAreaFile,
+    "tba": area_reader.dialects.tba.TbaAreaFile,
+    "medievia": area_reader.dialects.medievia.MedieviaAreaFile,
+    "godwars": area_reader.dialects.godwars.GodWarsAreaFile,
+    "swr": area_reader.dialects.swr.SwrAreaFile,
+    "coffeemud": area_reader.dialects.coffeemud.CoffeeMudAreaFile,
+}
+FALLBACK_DIALECTS = (
+    area_reader.dialects.rom.RomAreaFile,
+    area_reader.dialects.merc.MercAreaFile,
+    area_reader.dialects.smaug.SmaugAreaFile,
+)
+
+
+def _parse(area_type, area_file_path):
     area_file = area_type(area_file_path)
     area_file.load_sections()
+    return area_file
+
+
+def load_area(area_file_path, dialect=None):
+    """Parse an area and return the loaded area-file reader.
+
+    ``dialect`` is a key of ``DIALECTS``, an area-file class, or ``None``.
+    A given dialect is parsed as-is and its errors propagate.  With ``None``
+    the detected dialect is tried first, then the ROM, Merc and SMAUG
+    readers (files only); the first parse with rooms is returned.  When no
+    parse has rooms, the first successful parse in that order is returned.
+    When no candidate parses, the detected dialect's error is raised; when
+    detection itself failed, its ``ValueError`` is raised, chained from the
+    error of the fallback that got furthest into the file.
+    """
+    if isinstance(dialect, str):
+        if dialect not in DIALECTS:
+            raise ValueError(f"Unknown area dialect {dialect!r}; expected one of {', '.join(DIALECTS)}")
+        dialect = DIALECTS[dialect]
+    if dialect is not None:
+        return _parse(dialect, area_file_path)
+
+    try:
+        detected = detect_area_type(area_file_path)
+    except ValueError as error:
+        detected = None
+        detection_error = error
+    candidates = [] if detected is None else [detected]
+    if not Path(area_file_path).is_dir():
+        candidates.extend(area_type for area_type in FALLBACK_DIALECTS if area_type is not detected)
+
+    first_result = None
+    detected_error = None
+    furthest_error = None
+    furthest_index = -1
+    for area_type in candidates:
+        area_file = None
+        try:
+            area_file = area_type(area_file_path)
+            area_file.load_sections()
+        except Exception as error:  # noqa: BLE001 - a failed candidate falls through to the next dialect
+            logger.debug("%s could not parse %s: %s", area_type.__name__, area_file_path, error)
+            if area_type is detected:
+                detected_error = error
+            index = getattr(area_file, "index", -1)
+            if index > furthest_index:
+                furthest_index = index
+                furthest_error = error
+            continue
+        if area_file.area.rooms:
+            return area_file
+        if first_result is None:
+            first_result = area_file
+
+    if first_result is not None:
+        return first_result
+    if detected_error is not None:
+        raise detected_error
+    raise detection_error from furthest_error
+
+
+def print_area(area_file_path, area_type=None):
+    print(load_area(area_file_path, area_type).as_json())
+
+
+def _error_payload(error, area_file_path):
+    return {
+        "error": getattr(error, "reason", None) or str(error),
+        "file": getattr(error, "filename", None) or str(area_file_path),
+        "line": getattr(error, "line", None),
+        "column": getattr(error, "column", None),
+        "section": getattr(error, "section", None),
+    }
+
+
+def build_parser():
+    parser = argparse.ArgumentParser(prog="area-reader", description="Parse a MUD area and print it as JSON.")
+    parser.add_argument(
+        "--type",
+        choices=("auto", *DIALECTS),
+        default="auto",
+        help="area dialect (default: detect it)",
+    )
+    parser.add_argument("path", help="area file or world directory")
+    return parser
+
+
+def main(argv=None):
+    arguments = build_parser().parse_args(argv)
+    logging.basicConfig(stream=sys.stderr, level=logging.WARNING)
+    dialect = None if arguments.type == "auto" else arguments.type
+    try:
+        area_file = load_area(arguments.path, dialect)
+    except Exception as error:  # noqa: BLE001 - every failure is reported as one JSON line
+        print(json.dumps(_error_payload(error, arguments.path)), file=sys.stderr)
+        return 1
     print(area_file.as_json())
+    return 0
 
 
-def main():
-    if len(sys.argv) < 2:
-        print("Must supply an area")
-        sys.exit(1)
-    print_area(sys.argv[1])
+if __name__ == "__main__":
+    sys.exit(main())
