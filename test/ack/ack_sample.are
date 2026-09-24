@@ -1,0 +1,116 @@
+#AREA
+@@GForest @@Wof @@dConfusion@@N~
+K forestconfusion~
+L @@W(@@r10 60@@W}@@N~
+N 13
+I 10 60
+V 9600 9799
+X 32200
+F 15
+U @@Wyou hear a @@btwig @@Wsnap behind you!!@@N~
+O stephen~
+R stephen jer~
+W stephen jer~
+T You can teleport into here
+#ROOMS
+#16001
+The Secretary's Room~
+A very old and rotten wooden desk has been left here.
+~
+8 0
+D1
+~
+~
+0 -1 16000
+D3
+~
+door~
+225 16010 16002
+E
+desk~
+Searching the desk, you notice nothing of any value.
+~
+S
+#11300
+The Hidden Passage~
+The halls open further to reveal a long, narrow passage.
+~
+1392760
+D2
+~
+~
+0 -1 8488
+S
+#0
+#MOBILES
+#16003
+inmate~
+An imprisoned Inmate~
+An inmate of the Asylum lies here looking miserable.
+~
+~
+36700163 65536 250 S
+57 1
+-160 120 100
+! 0 0 0 7 6158 0 0
+#9623
+ymmas~
+the evil Ymmas~
+The Evil priest Ymmas stands here, looking pissed off.
+~
+Ymass is truely an evil priest.
+~
+3145751 2176 -900 S
+83 1
+-100 90 100
+! 0 0 0 7 24568 1081344 16
+>act_prog p opens the trapdoor.~
+growl
+  close trapdoor
+~
+>death_prog 100~
+MPECHO Ymmas crashes to the ground, and errupts into a mass of spiders!
+    MPMLOAD 9624
+~
+|
+#0
+#OBJECTS
+#16000
+ring turquoise~
+A Turquoise Ring~
+A small turquoise ring glitters here in the light.
+~
+9 0 3 1
+0 0 0 0
+1
+A
+13 60
+A
+17 -50
+E
+ring~
+It is turquoise.
+~
+L
+60
+#16001
+cleaver~
+A Viscious cleaver~
+A razor-edged cleaver lies here.
+~
+5 2 8193 257
+0 0 0 3
+10
+#0
+#RESETS
+M 0 16003 1 16001 (null)
+E 0 16001 0 16 (null)
+G 0 16000 0
+S
+#SPECIALS
+M 16003 spec_cast_mage
+S
+#OBJFUNS
+O 16001 objfun_cast_fight
+S
+#$

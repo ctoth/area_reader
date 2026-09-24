@@ -4,6 +4,7 @@ import re
 import sys
 from pathlib import Path
 
+import area_reader.dialects.ack
 import area_reader.dialects.circle
 import area_reader.dialects.coffeemud
 import area_reader.dialects.godwars
@@ -21,6 +22,8 @@ SECTION = re.compile(r"(?m)^[ \t]*#([A-Z]+)\b", re.IGNORECASE)
 AREA_SECTION = re.compile(r"(?m)^[ \t]*#AREA\b", re.IGNORECASE)
 NEXT_NAMED_SECTION = re.compile(r"(?m)^[ \t]*#[A-Z$]+\b", re.IGNORECASE)
 GODWARS_RECORD = re.compile(r"(?m)^[ \t]*[QT][ \t]*$")
+# ACK!MUD: the area name string is followed by letter-keyed lines, starting with "K keyword~".
+ACK_HEADER = re.compile(r"\A[^~]*~\s*K[ \t][^\n~]*~")
 MEDIEVIA_COMPONENTS = frozenset({"medievia.zon", "medievia.mob", "medievia.obj", "medievia.shp"})
 SMAUG_SECTIONS = frozenset(
     {
@@ -107,6 +110,8 @@ def detect_area_type(area_file_path):
         next_section = NEXT_NAMED_SECTION.search(area_metadata)
         if next_section is not None:
             area_metadata = area_metadata[: next_section.start()]
+        if ACK_HEADER.match(area_metadata):
+            return area_reader.dialects.ack.AckAreaFile
         string_count = area_metadata.count("~")
         if string_count >= 3:
             return area_reader.dialects.rom.RomAreaFile
