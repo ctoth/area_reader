@@ -44,7 +44,8 @@ from area_reader.dialects.rom import RomAreaFile
 ARTICLES = ("a ", "an ", "the ", "some ")
 SLUG_LENGTH = 40
 NOT_SLUG = re.compile(r"[^a-z0-9]+")
-RECORD_START = re.compile(r"(?m)^(  \S)")
+RECORD_START = re.compile(r"(?m)^(?=  \S)")
+KEEP_BLOCK = re.compile(r"(?m)[:-] \|\d*\+\d*$")
 CHECK = At("unbuild")
 STATE_OF_RESET = {state: name for name, state in DOOR_RESETS.items()}
 SECTOR_NAMES = {number: name for name, number in tables.SECTORS.items()}
@@ -594,7 +595,11 @@ def document(data, spaced=False):
     if load_yaml(text, "unbuild") != data:
         raise SourceError("unbuild", "", f"the YAML written for {', '.join(data)} does not read back as it was written")
     if spaced:
-        opened = RECORD_START.sub(r"\n\1", text).replace(":\n\n", ":\n", 1)
+        head, first, *records = RECORD_START.split(text)
+        opened = head + first
+        for previous, record in zip([first, *records], records):
+            # A blank line after a block scalar that keeps its trailing newlines would add one to it.
+            opened += ("" if KEEP_BLOCK.search(previous) else "\n") + record
         if load_yaml(opened, "unbuild") == data:
             return opened
     return text
