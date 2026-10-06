@@ -1,6 +1,8 @@
 """Questions about a set of area files loaded together."""
 
+import argparse
 import enum
+import json
 import re
 from collections import deque
 from pathlib import Path
@@ -387,8 +389,9 @@ def reach(atlas, start, portals=False, progs=False):
     owned = {entry.label: [] for entry in atlas.areas}
     for vnum, (label, _room) in atlas.rooms.items():
         owned[label].append(vnum)
-    leads_into = {atlas.rooms[destination][0] for source, _via, destination in links if crosses(atlas, source, destination)}
-    leads_out = {atlas.rooms[source][0] for source, _via, destination in links if crosses(atlas, source, destination)}
+    crossing = [(source, destination) for source, _via, destination in links if crosses(atlas, source, destination)]
+    leads_into = {atlas.rooms[destination][0] for _source, destination in crossing}
+    leads_out = {atlas.rooms[source][0] for source, _destination in crossing}
     with_rooms = [label for label, vnums in owned.items() if vnums]
     result = {
         "start": room_row(atlas, start),
@@ -418,9 +421,7 @@ def reach(atlas, start, portals=False, progs=False):
             "reachable": [room_row(atlas, vnum) for vnum in atlas.rooms if vnum in reachable - walking_reachable],
             "can_return": [room_row(atlas, vnum) for vnum in atlas.rooms if vnum in can_return - walking_return],
         }
-        result["extra_links"] = [
-            {"from": source, "to": destination, "via": via} for source, via, destination in extras
-        ]
+        result["extra_links"] = [{"from": source, "to": destination, "via": via} for source, via, destination in extras]
     return result
 
 
@@ -435,7 +436,8 @@ def links(atlas):
         if crosses(atlas, source, destination):
             key = (atlas.rooms[source][0], atlas.rooms[destination][0])
             pairs.setdefault(key, []).append({"from": source, "direction": via, "to": destination})
-    labels = [entry.label for entry in atlas.areas if any(owner == entry.label for owner, _room in atlas.rooms.values())]
+    owners = {label for label, _room in atlas.rooms.values()}
+    labels = [entry.label for entry in atlas.areas if entry.label in owners]
     return {
         "areas": [
             {
@@ -496,3 +498,249 @@ def find(atlas, text):
             if needle in record.name.lower() or needle in record.short_desc.lower()
         ]
     return result
+
+
+def joined(items):
+    return ", ".join(map(str, items)) if items else "none"
+
+
+def room_line(row):
+    return f"  {row['vnum']} {row['name']} ({row['area']})"
+
+
+def room_list(title, rows, show):
+    """Return the lines of a room list: its count, and the rooms themselves only when ``show``."""
+    if not rows or show:
+        return [f"{title}: {len(rows)}", *map(room_line, rows)]
+    return [f"{title}: {len(rows)} (list them with --rooms)"]
+
+
+def totals_line(totals):
+    return f"Reachable: {totals['reachable']}. Can walk back: {totals['can_return']}. Both: {totals['both']}."
+
+
+def summary_text(result, arguments):
+    del arguments
+    counts = "{rooms} rooms, {exits} exits, {mobs} mobs, {objects} objects, {resets} resets, {shops} shops, "
+    counts += "{mob_programs} mob programs."
+    lines = []
+    for row in result["areas"]:
+        vnums = "No rooms." if row["room_vnums"] is None else "Room vnums {} to {}.".format(*row["room_vnums"])
+        lines.append(f"{row['file']}: {row['name'] or '(no name)'}. {vnums} {counts.format(**row)}")
+    lines.append(f"Totals: {result['totals']['files']} files, {counts.format(**result['totals'])}")
+    lines.append(f"Files without rooms: {joined(result['areas_without_rooms'])}")
+    for family, found in result["overlaps"].items():
+        lines.append(f"Overlapping {family} vnum ranges: {len(found) or 'none'}")
+        for overlap in found:
+            lines.append(
+                "  {first} {} to {} and {second} {} to {}; both define: {}".format(
+                    *overlap["first_vnums"], *overlap["second_vnums"], joined(overlap["shared_vnums"]), **overlap
+                )
+            )
+    return lines
+
+
+def reach_text(result, arguments):
+    start = result["start"]
+    if start["area"] is None:
+        return [f"Room {start['vnum']} is not in the set."]
+    followed = result["links"]
+    following = followed[0] if len(followed) == 1 else f"{', '.join(followed[:-1])} and {followed[-1]}"
+    lines = [
+        f"From room {start['vnum']} {start['name']} ({start['area']}), following {following}.",
+        f"Rooms: {result['totals']['rooms']}. {totals_line(result['totals'])}",
+    ]
+    for row in result["areas"]:
+        lines.append(
+            "{file}: {rooms} rooms, {reachable} reachable, {can_return} can walk back, {both} both.".format(**row)
+        )
+    lines.append(f"Areas with no room reachable: {joined(result['areas_not_reached'])}")
+    lines.append(f"Areas nothing leads into: {joined(result['areas_nothing_leads_into'])}")
+    lines.append(f"Areas with no way out: {joined(result['areas_with_no_way_out'])}")
+    lines.append(f"Files without rooms: {joined(result['areas_without_rooms'])}")
+    lines.extend(room_list("Unreachable rooms", result["unreachable_rooms"], arguments.rooms))
+    lines.extend(room_list("No-return rooms (reachable, cannot walk back)", result["no_return_rooms"], arguments.rooms))
+    if "walking_totals" in result:
+        lines.append(f"Exits only: {totals_line(result['walking_totals'])}")
+        lines.extend(room_list("Rooms gained as reachable", result["gained"]["reachable"], arguments.rooms))
+        lines.extend(room_list("Rooms gained as able to walk back", result["gained"]["can_return"], arguments.rooms))
+        lines.append(f"Links added: {len(result['extra_links'])}")
+        lines.extend("  {from} to {to} by {via}".format(**link) for link in result["extra_links"])
+    return lines
+
+
+def links_text(result, arguments):
+    lines = []
+    for row in result["areas"]:
+        lines.append(row["file"])
+        for side in ("to", "from"):
+            if not row[side]:
+                lines.append(f"  {side} no other area")
+            for link in row[side]:
+                lines.append(f"  {side} {link['area']}: {link['exits']} exits")
+                if arguments.rooms:
+                    lines.extend("    {from} {direction} to {to}".format(**pair) for pair in link["room_pairs"])
+    lines.append(f"One-way area links: {len(result['one_way'])}")
+    lines.extend("  {from} to {to}: {exits} exits, none back".format(**link) for link in result["one_way"])
+    return lines
+
+
+def dangling_text(result, arguments):
+    del arguments
+    lines = []
+    for kind, found in result["references"].items():
+        lines.append(f"{kind}: {len(found)}")
+        lines.extend("  {area}: {where} refers to {vnum}".format(**reference) for reference in found)
+    exits = result["exits_without_destination"]
+    lines.append(
+        "Exits with a destination of 0 or less: {count}. With a description: {with_description}. "
+        "With a keyword: {with_keyword}. With neither: {with_neither}.".format(**exits)
+    )
+    for row in exits["exits"]:
+        lines.append(
+            "  {area}: room {room} {direction}, destination {destination}, "
+            "description {description!r}, keyword {keyword!r}".format(**row)
+        )
+    lines.append(f"Portals without a fixed destination: {len(result['portals_without_destination'])}")
+    lines.extend(
+        "  {area}: object {vnum}, destination {destination}".format(**row)
+        for row in result["portals_without_destination"]
+    )
+    lines.append(f"Program lines not read as a vnum: {len(result['program_lines_skipped'])}")
+    lines.extend(
+        "  {area}: program {program} line {line}: {text} ({reason})".format(**row)
+        for row in result["program_lines_skipped"]
+    )
+    return lines
+
+
+def depends_text(result, arguments):
+    del arguments
+    lines = []
+    for row in result["areas"]:
+        if not row["needs"]:
+            lines.append(f"{row['file']} needs no other area.")
+        for need in row["needs"]:
+            kinds = ", ".join(
+                f"{kind} {count} ({joined(need['vnums'][kind])})" for kind, count in need["counts"].items()
+            )
+            lines.append(f"{row['file']} needs {need['area']}: {kinds}")
+    return lines
+
+
+def path_text(result, arguments):
+    del arguments
+    if result["missing"]:
+        missing = " and ".join(f"room {vnum} is not in the set" for vnum in result["missing"])
+        return [f"No path from {result['from']} to {result['to']}: {missing}."]
+    if result["steps"] is None:
+        return [f"No path from {result['from']} to {result['to']}."]
+    lines = [f"Path from {result['from']} to {result['to']}: {len(result['steps']) - 1} moves."]
+    for step in result["steps"]:
+        move = "" if step["direction"] is None else f", go {step['direction']}"
+        lines.append(f"{step['vnum']} {step['name']} ({step['area']}){move}")
+    return lines
+
+
+def find_text(result, arguments):
+    del arguments
+    lines = [f"Rooms: {len(result['rooms'])}", *map(room_line, result["rooms"])]
+    for family in ("mobs", "objects"):
+        lines.append(f"{family.title()}: {len(result[family])}")
+        lines.extend("  {vnum} {short_desc} [{name}] ({area})".format(**row) for row in result[family])
+    return lines
+
+
+def without_room_lists(question, result):
+    """Drop the per-room lists that ``--rooms`` asks for."""
+    if question == "reach":
+        return {key: value for key, value in result.items() if key not in ("unreachable_rooms", "no_return_rooms")}
+    if question == "links":
+        areas = [
+            {
+                **row,
+                "to": [{"area": link["area"], "exits": link["exits"]} for link in row["to"]],
+                "from": [{"area": link["area"], "exits": link["exits"]} for link in row["from"]],
+            }
+            for row in result["areas"]
+        ]
+        return {**result, "areas": areas}
+    return result
+
+
+QUESTIONS = {
+    "summary": (lambda atlas, arguments: summary(atlas), summary_text),
+    "reach": (
+        lambda atlas, arguments: reach(atlas, arguments.start, arguments.with_portals, arguments.with_progs),
+        reach_text,
+    ),
+    "links": (lambda atlas, arguments: links(atlas), links_text),
+    "dangling": (lambda atlas, arguments: dangling(atlas), dangling_text),
+    "depends": (lambda atlas, arguments: depends(atlas), depends_text),
+    "path": (
+        lambda atlas, arguments: path(
+            atlas, arguments.start, arguments.goal, arguments.with_portals, arguments.with_progs
+        ),
+        path_text,
+    ),
+    "find": (lambda atlas, arguments: find(atlas, arguments.text), find_text),
+}
+
+
+def build_parser():
+    parser = argparse.ArgumentParser(
+        prog="area-reader atlas", description="Answer a question about a set of area files loaded together."
+    )
+    questions = parser.add_subparsers(dest="question", required=True)
+
+    def question(name, description, rooms=False, links=False):
+        subparser = questions.add_parser(name, help=description, description=description)
+        if rooms:
+            subparser.add_argument("--rooms", action="store_true", help="list the individual rooms")
+        if links:
+            subparser.add_argument(
+                "--with-portals", action="store_true", help="also follow portals that resets place in rooms"
+            )
+            subparser.add_argument(
+                "--with-progs", action="store_true", help="also follow mob program transfers from a mob's reset room"
+            )
+        return subparser
+
+    def area_set(subparser):
+        subparser.add_argument("--json", action="store_true", help="print JSON instead of text")
+        subparser.add_argument(
+            "--type",
+            choices=("auto", *area_reader.cli.DIALECTS),
+            default="auto",
+            help="area dialect (default: detect it)",
+        )
+        subparser.add_argument("paths", nargs="+", help="area files, or directories of *.are files")
+
+    area_set(question("summary", "Counts per area, totals and overlapping vnum ranges."))
+    reach_parser = question("reach", "What a walk from one room reaches and what can walk back.", True, True)
+    reach_parser.add_argument("--from", dest="start", type=int, required=True, help="the room vnum to walk from")
+    area_set(reach_parser)
+    area_set(question("links", "Which areas have exits to which, and the one-way links.", rooms=True))
+    area_set(question("dangling", "References to vnums that no file in the set defines."))
+    area_set(question("depends", "Which other areas each area needs loaded, and why."))
+    path_parser = question("path", "The shortest path between two rooms.", links=True)
+    path_parser.add_argument("start", type=int, help="the room vnum to start in")
+    path_parser.add_argument("goal", type=int, help="the room vnum to arrive in")
+    area_set(path_parser)
+    find_parser = question("find", "Rooms, mobs and objects whose name or short description contains a text.")
+    find_parser.add_argument("text", help="the text to look for, case-insensitively")
+    area_set(find_parser)
+    return parser
+
+
+def main(argv=None):
+    arguments = build_parser().parse_args(argv)
+    atlas = load(arguments.paths, None if arguments.type == "auto" else arguments.type)
+    answer, text = QUESTIONS[arguments.question]
+    result = answer(atlas, arguments)
+    if arguments.json:
+        rooms = getattr(arguments, "rooms", True)
+        print(json.dumps(result if rooms else without_room_lists(arguments.question, result)))
+    else:
+        print("\n".join(text(result, arguments)))
+    return 0

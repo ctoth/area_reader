@@ -1,6 +1,9 @@
+import json
+
 import pytest
 
 import area_reader.atlas
+import area_reader.cli
 import area_reader.parser
 
 
@@ -41,17 +44,13 @@ def rom_area(name, first, last, rooms=(), mobs=(), objects=(), resets=(), shops=
     )
 
 
-ALPHA_PROGRAM = "\n".join(
-    [
-        "mob transfer $n 201",
-        "mob goto 9999",
-        "mob mload 210",
-        "mob oload 8888",
-        "mob transfer $n",
-        "mob at $n say hi",
-        "say mob transfer $n 5",
-    ]
-)
+ALPHA_PROGRAM = """mob transfer $n 201
+mob goto 9999
+mob mload 210
+mob oload 8888
+mob transfer $n
+mob at $n say hi
+say mob transfer $n 5"""
 
 ALPHA = rom_area(
     "alpha",
@@ -479,3 +478,186 @@ def test_depends_counts_references_resolved_by_another_area(world):
         {"area": "alpha.are", "counts": {"program_room": 1}, "vnums": {"program_room": [100]}}
     ]
     assert areas["notes.are"]["needs"] == []
+
+
+def run(capsys, *arguments):
+    assert area_reader.cli.main(["atlas", *map(str, arguments)]) == 0
+    captured = capsys.readouterr()
+    assert captured.err == ""
+    return captured.out
+
+
+def test_cli_summary_prints_text(world_dir, capsys):
+    lines = run(capsys, "summary", world_dir).splitlines()
+
+    assert (
+        "alpha.are: Alpha. Room vnums 100 to 103. 4 rooms, 8 exits, 1 mobs, 3 objects, 11 resets, 0 shops, "
+        "1 mob programs."
+    ) in lines
+    assert (
+        "notes.are: (no name). No rooms. 0 rooms, 0 exits, 0 mobs, 0 objects, 0 resets, 0 shops, 0 mob programs."
+        in lines
+    )
+    assert "Totals: 5 files, 8 rooms, 14 exits, 3 mobs, 4 objects, 13 resets, 2 shops, 2 mob programs." in lines
+    assert "Files without rooms: notes.are" in lines
+    assert "Overlapping rooms vnum ranges: none" in lines
+
+
+def test_cli_summary_prints_overlaps(tmp_path, capsys):
+    write_areas(tmp_path, alpha=ALPHA, epsilon=EPSILON)
+
+    lines = run(capsys, "summary", tmp_path).splitlines()
+
+    assert "Overlapping rooms vnum ranges: 1" in lines
+    assert "  alpha.are 100 to 103 and epsilon.are 102 to 150; both define: 102" in lines
+
+
+def test_cli_json_is_the_question_result(world_dir, world, capsys):
+    assert json.loads(run(capsys, "summary", "--json", world_dir)) == area_reader.atlas.summary(world)
+    assert json.loads(run(capsys, "dangling", "--json", world_dir)) == area_reader.atlas.dangling(world)
+    assert json.loads(run(capsys, "depends", "--json", world_dir)) == area_reader.atlas.depends(world)
+    assert json.loads(run(capsys, "find", "--json", "alpha", world_dir)) == area_reader.atlas.find(world, "alpha")
+    assert json.loads(run(capsys, "path", "--json", "300", "201", world_dir)) == area_reader.atlas.path(world, 300, 201)
+
+
+def test_cli_accepts_several_files(world_dir, capsys):
+    result = json.loads(run(capsys, "summary", "--json", world_dir / "beta.are", world_dir / "alpha.are"))
+
+    assert [row["file"] for row in result["areas"]] == ["beta.are", "alpha.are"]
+
+
+def test_cli_reach_prints_counts_and_keeps_room_lists_behind_a_flag(world_dir, capsys):
+    lines = run(capsys, "reach", "--from", "100", world_dir).splitlines()
+
+    assert lines[0] == "From room 100 Alpha Square (alpha.are), following exits."
+    assert "Rooms: 8. Reachable: 7. Can walk back: 6. Both: 5." in lines
+    assert "delta.are: 1 rooms, 1 reachable, 0 can walk back, 0 both." in lines
+    assert "Areas with no room reachable: gamma.are" in lines
+    assert "Areas nothing leads into: gamma.are" in lines
+    assert "Areas with no way out: delta.are" in lines
+    assert "Files without rooms: notes.are" in lines
+    assert "Unreachable rooms: 1 (list them with --rooms)" in lines
+    assert "No-return rooms (reachable, cannot walk back): 2 (list them with --rooms)" in lines
+    assert not any("Gamma Cell" in line for line in lines)
+
+    lines = run(capsys, "reach", "--from", "100", "--rooms", world_dir).splitlines()
+
+    assert "Unreachable rooms: 1" in lines
+    assert "  300 Gamma Cell (gamma.are)" in lines
+    assert "  102 Alpha Pit (alpha.are)" in lines
+
+
+def test_cli_reach_json_keeps_room_lists_behind_the_flag(world_dir, world, capsys):
+    result = json.loads(run(capsys, "reach", "--from", "100", "--json", world_dir))
+
+    assert "unreachable_rooms" not in result
+    assert "no_return_rooms" not in result
+    assert result["totals"] == {"rooms": 8, "reachable": 7, "can_return": 6, "both": 5}
+    assert json.loads(run(capsys, "reach", "--from", "100", "--json", "--rooms", world_dir)) == area_reader.atlas.reach(
+        world, 100
+    )
+
+
+def test_cli_reach_shows_what_non_walking_links_add(world_dir, capsys):
+    lines = run(capsys, "reach", "--from", "100", "--with-portals", "--with-progs", "--rooms", world_dir).splitlines()
+
+    assert lines[0] == "From room 100 Alpha Square (alpha.are), following exits, portals and programs."
+    assert "Rooms: 8. Reachable: 8. Can walk back: 8. Both: 8." in lines
+    assert "Exits only: Reachable: 7. Can walk back: 6. Both: 5." in lines
+    assert "Rooms gained as reachable: 1" in lines
+    assert "Rooms gained as able to walk back: 2" in lines
+    assert "Links added: 4" in lines
+    assert "  102 to 300 by portal 150" in lines
+    assert "  400 to 100 by program 501" in lines
+
+
+def test_cli_reach_from_a_room_outside_the_set(world_dir, capsys):
+    lines = run(capsys, "reach", "--from", "4242", world_dir).splitlines()
+
+    assert lines[0] == "Room 4242 is not in the set."
+
+
+def test_cli_links_prints_the_area_graph(world_dir, capsys):
+    lines = run(capsys, "links", world_dir).splitlines()
+
+    assert "alpha.are" in lines
+    assert "  to beta.are: 1 exits" in lines
+    assert "  from gamma.are: 1 exits" in lines
+    assert "delta.are" in lines
+    assert "  to no other area" in lines
+    assert "One-way area links: 2" in lines
+    assert "  beta.are to delta.are: 1 exits, none back" in lines
+    assert not any("100 east to 200" in line for line in lines)
+
+    lines = run(capsys, "links", "--rooms", world_dir).splitlines()
+
+    assert "    100 east to 200" in lines
+
+
+def test_cli_links_json_keeps_room_pairs_behind_the_flag(world_dir, world, capsys):
+    result = json.loads(run(capsys, "links", "--json", world_dir))
+
+    assert result["areas"][0]["to"] == [{"area": "beta.are", "exits": 1}]
+    assert json.loads(run(capsys, "links", "--json", "--rooms", world_dir)) == area_reader.atlas.links(world)
+
+
+def test_cli_path_prints_each_step(world_dir, capsys):
+    assert run(capsys, "path", "300", "201", world_dir).splitlines() == [
+        "Path from 300 to 201: 3 moves.",
+        "300 Gamma Cell (gamma.are), go east",
+        "100 Alpha Square (alpha.are), go east",
+        "200 Beta Gate (beta.are), go north",
+        "201 Beta Hall (beta.are)",
+    ]
+
+
+def test_cli_path_states_that_there_is_none(world_dir, capsys):
+    assert run(capsys, "path", "100", "300", world_dir) == "No path from 100 to 300.\n"
+    assert run(capsys, "path", "100", "4242", world_dir) == "No path from 100 to 4242: room 4242 is not in the set.\n"
+
+
+def test_cli_find_prints_matches(world_dir, capsys):
+    assert run(capsys, "find", "guard", world_dir).splitlines() == [
+        "Rooms: 0",
+        "Mobs: 1",
+        "  110 the Alpha guard [alpha guard] (alpha.are)",
+        "Objects: 0",
+    ]
+
+
+def test_cli_dangling_prints_each_kind(world_dir, capsys):
+    lines = run(capsys, "dangling", world_dir).splitlines()
+
+    assert "exit_destination: 1" in lines
+    assert "  alpha.are: room 103 up refers to 999" in lines
+    assert "program_mob: 0" in lines
+    assert (
+        "Exits with a destination of 0 or less: 2. With a description: 1. With a keyword: 1. With neither: 1." in lines
+    )
+    assert "  alpha.are: room 100 down, destination -1, description 'A painted trapdoor.', keyword 'trapdoor'" in lines
+    assert "Portals without a fixed destination: 1" in lines
+    assert "  alpha.are: object 152, destination 0" in lines
+    assert "Program lines not read as a vnum: 2" in lines
+    assert "  alpha.are: program 500 line 5: mob transfer $n (no vnum argument)" in lines
+
+
+def test_cli_depends_prints_what_each_area_needs(world_dir, capsys):
+    lines = run(capsys, "depends", world_dir).splitlines()
+
+    assert "delta.are needs alpha.are: program_room 1 (100)" in lines
+    assert "alpha.are needs gamma.are: portal_destination 1 (300)" in lines
+    assert "gamma.are needs alpha.are: exit_destination 1 (100)" in lines
+    assert "notes.are needs no other area." in lines
+
+
+def test_cli_lets_a_parse_error_propagate(world_dir):
+    (world_dir / "broken.are").write_text("#AREA Metadata~\n#MOBILES\n#3000\nguard~\nA guard\n", encoding="ascii")
+
+    with pytest.raises(area_reader.parser.ParseError, match="Unterminated string"):
+        area_reader.cli.main(["atlas", "summary", str(world_dir)])
+
+
+def test_cli_without_atlas_still_prints_one_area_as_json(world_dir, capsys):
+    assert area_reader.cli.main([str(world_dir / "gamma.are")]) == 0
+
+    assert list(json.loads(capsys.readouterr().out)["rooms"]) == ["300"]
