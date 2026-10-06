@@ -249,3 +249,233 @@ def test_find_matches_the_short_description_alone(world):
     assert result["rooms"] == []
     assert result["mobs"] == []
     assert [row["vnum"] for row in result["objects"]] == [250]
+
+
+def vnums(rows):
+    return [row["vnum"] for row in rows]
+
+
+def test_reach_walks_exits_only_by_default(world):
+    result = area_reader.atlas.reach(world, 100)
+
+    assert result["start"] == {"vnum": 100, "name": "Alpha Square", "area": "alpha.are"}
+    assert result["links"] == ["exits"]
+    assert result["totals"] == {"rooms": 8, "reachable": 7, "can_return": 6, "both": 5}
+    assert result["areas"] == [
+        {"file": "alpha.are", "rooms": 4, "reachable": 4, "can_return": 3, "both": 3},
+        {"file": "beta.are", "rooms": 2, "reachable": 2, "can_return": 2, "both": 2},
+        {"file": "delta.are", "rooms": 1, "reachable": 1, "can_return": 0, "both": 0},
+        {"file": "gamma.are", "rooms": 1, "reachable": 0, "can_return": 1, "both": 0},
+    ]
+    assert result["areas_not_reached"] == ["gamma.are"]
+    assert result["areas_nothing_leads_into"] == ["gamma.are"]
+    assert result["areas_with_no_way_out"] == ["delta.are"]
+    assert result["areas_without_rooms"] == ["notes.are"]
+    assert result["unreachable_rooms"] == [{"vnum": 300, "name": "Gamma Cell", "area": "gamma.are"}]
+    assert vnums(result["no_return_rooms"]) == [102, 400]
+    assert "walking_totals" not in result
+
+
+def test_reach_with_portals_follows_portals_placed_in_rooms(world):
+    result = area_reader.atlas.reach(world, 100, portals=True)
+
+    assert result["links"] == ["exits", "portals"]
+    assert result["totals"] == {"rooms": 8, "reachable": 8, "can_return": 7, "both": 7}
+    assert result["walking_totals"] == {"rooms": 8, "reachable": 7, "can_return": 6, "both": 5}
+    assert vnums(result["gained"]["reachable"]) == [300]
+    assert vnums(result["gained"]["can_return"]) == [102]
+    assert result["extra_links"] == [{"from": 102, "to": 300, "via": "portal 150"}]
+    assert result["areas_not_reached"] == []
+    assert result["areas_nothing_leads_into"] == []
+
+
+def test_reach_with_progs_follows_transfers_from_the_room_a_mob_resets_in(world):
+    result = area_reader.atlas.reach(world, 100, progs=True)
+
+    assert result["links"] == ["exits", "programs"]
+    assert result["totals"] == {"rooms": 8, "reachable": 7, "can_return": 7, "both": 6}
+    assert result["gained"] == {
+        "reachable": [],
+        "can_return": [{"vnum": 400, "name": "Delta Drop", "area": "delta.are"}],
+    }
+    assert result["extra_links"] == [
+        {"from": 100, "to": 201, "via": "program 500"},
+        {"from": 200, "to": 201, "via": "program 500"},
+        {"from": 400, "to": 100, "via": "program 501"},
+    ]
+    assert result["areas_with_no_way_out"] == []
+
+
+def test_reach_from_a_room_outside_the_set_reaches_nothing(world):
+    result = area_reader.atlas.reach(world, 4242)
+
+    assert result["start"] == {"vnum": 4242, "name": None, "area": None}
+    assert result["totals"] == {"rooms": 8, "reachable": 0, "can_return": 0, "both": 0}
+
+
+def test_links_lists_the_area_graph(world):
+    result = area_reader.atlas.links(world)
+
+    areas = by_file(result["areas"])
+    assert list(areas) == ["alpha.are", "beta.are", "delta.are", "gamma.are"]
+    assert areas["alpha.are"]["to"] == [
+        {"area": "beta.are", "exits": 1, "room_pairs": [{"from": 100, "direction": "east", "to": 200}]}
+    ]
+    assert [(link["area"], link["exits"]) for link in areas["alpha.are"]["from"]] == [
+        ("beta.are", 1),
+        ("gamma.are", 1),
+    ]
+    assert [(link["area"], link["exits"]) for link in areas["beta.are"]["to"]] == [("alpha.are", 1), ("delta.are", 1)]
+    assert areas["delta.are"]["to"] == []
+    assert areas["gamma.are"]["from"] == []
+    assert result["one_way"] == [
+        {"from": "beta.are", "to": "delta.are", "exits": 1},
+        {"from": "gamma.are", "to": "alpha.are", "exits": 1},
+    ]
+
+
+def test_path_returns_the_shortest_exit_path(world):
+    result = area_reader.atlas.path(world, 300, 201)
+
+    assert result["missing"] == []
+    assert result["steps"] == [
+        {"vnum": 300, "name": "Gamma Cell", "area": "gamma.are", "direction": "east"},
+        {"vnum": 100, "name": "Alpha Square", "area": "alpha.are", "direction": "east"},
+        {"vnum": 200, "name": "Beta Gate", "area": "beta.are", "direction": "north"},
+        {"vnum": 201, "name": "Beta Hall", "area": "beta.are", "direction": None},
+    ]
+
+
+def test_path_from_a_room_to_itself_is_one_step(world):
+    assert area_reader.atlas.path(world, 100, 100)["steps"] == [
+        {"vnum": 100, "name": "Alpha Square", "area": "alpha.are", "direction": None}
+    ]
+
+
+def test_path_reports_no_path(world):
+    result = area_reader.atlas.path(world, 100, 300)
+
+    assert result["steps"] is None
+    assert result["missing"] == []
+
+
+def test_path_can_use_portals(world):
+    result = area_reader.atlas.path(world, 101, 300, portals=True)
+
+    assert [(step["vnum"], step["direction"]) for step in result["steps"]] == [
+        (101, "west"),
+        (102, "portal 150"),
+        (300, None),
+    ]
+
+
+def test_path_names_rooms_missing_from_the_set(world):
+    result = area_reader.atlas.path(world, 100, 4242)
+
+    assert result["steps"] is None
+    assert result["missing"] == [4242]
+
+
+def references(result, kind):
+    return [(reference["area"], reference["vnum"]) for reference in result["references"][kind]]
+
+
+def test_dangling_lists_references_to_vnums_no_file_defines(world):
+    result = area_reader.atlas.dangling(world)
+
+    assert references(result, "exit_destination") == [("alpha.are", 999)]
+    assert references(result, "exit_key") == [("alpha.are", 777)]
+    assert references(result, "reset_mob") == [("alpha.are", 6666)]
+    assert references(result, "reset_object") == [("alpha.are", 888)]
+    assert references(result, "reset_container") == [("alpha.are", 4444)]
+    assert references(result, "reset_room") == [("alpha.are", 5555), ("alpha.are", 3333)]
+    assert references(result, "shop_keeper") == [("beta.are", 666)]
+    assert references(result, "special_mob") == [("alpha.are", 6660)]
+    assert references(result, "mob_program") == [("alpha.are", 599)]
+    assert references(result, "portal_destination") == [("alpha.are", 7777)]
+    assert references(result, "program_room") == [("alpha.are", 9999)]
+    assert references(result, "program_mob") == []
+    assert references(result, "program_object") == [("alpha.are", 8888)]
+    assert result["counts"]["reset_room"] == 2
+    assert result["counts"]["program_mob"] == 0
+    assert result["references"]["exit_destination"][0]["where"] == "room 103 up"
+    assert result["references"]["program_room"][0]["where"] == "program 500 line 2: mob goto 9999"
+
+
+def test_dangling_describes_exits_without_a_destination(world):
+    result = area_reader.atlas.dangling(world)["exits_without_destination"]
+
+    assert {key: result[key] for key in ("count", "with_description", "with_keyword", "with_neither")} == {
+        "count": 2,
+        "with_description": 1,
+        "with_keyword": 1,
+        "with_neither": 1,
+    }
+    assert result["exits"] == [
+        {
+            "area": "alpha.are",
+            "room": 100,
+            "direction": "down",
+            "destination": -1,
+            "description": "A painted trapdoor.",
+            "keyword": "trapdoor",
+        },
+        {"area": "delta.are", "room": 400, "direction": "north", "destination": 0, "description": "", "keyword": ""},
+    ]
+
+
+def test_dangling_reports_what_it_did_not_resolve(world):
+    result = area_reader.atlas.dangling(world)
+
+    assert result["portals_without_destination"] == [{"area": "alpha.are", "vnum": 152, "destination": 0}]
+    assert result["program_lines_skipped"] == [
+        {"area": "alpha.are", "program": 500, "line": 5, "text": "mob transfer $n", "reason": "no vnum argument"},
+        {
+            "area": "alpha.are",
+            "program": 500,
+            "line": 6,
+            "text": "mob at $n say hi",
+            "reason": "argument is not a bare integer",
+        },
+    ]
+
+
+def test_depends_counts_references_resolved_by_another_area(world):
+    result = area_reader.atlas.depends(world)
+
+    areas = by_file(result["areas"])
+    assert list(areas) == ["alpha.are", "beta.are", "delta.are", "gamma.are", "notes.are"]
+    assert areas["alpha.are"]["needs"] == [
+        {
+            "area": "beta.are",
+            "counts": {
+                "exit_destination": 1,
+                "exit_key": 1,
+                "reset_mob": 1,
+                "reset_object": 1,
+                "program_room": 1,
+                "program_mob": 1,
+            },
+            "vnums": {
+                "exit_destination": [200],
+                "exit_key": [250],
+                "reset_mob": [210],
+                "reset_object": [250],
+                "program_room": [201],
+                "program_mob": [210],
+            },
+        },
+        {"area": "gamma.are", "counts": {"portal_destination": 1}, "vnums": {"portal_destination": [300]}},
+    ]
+    assert areas["beta.are"]["needs"] == [
+        {
+            "area": "alpha.are",
+            "counts": {"exit_destination": 1, "mob_program": 1},
+            "vnums": {"exit_destination": [100], "mob_program": [500]},
+        },
+        {"area": "delta.are", "counts": {"exit_destination": 1}, "vnums": {"exit_destination": [400]}},
+    ]
+    assert areas["delta.are"]["needs"] == [
+        {"area": "alpha.are", "counts": {"program_room": 1}, "vnums": {"program_room": [100]}}
+    ]
+    assert areas["notes.are"]["needs"] == []
