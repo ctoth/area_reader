@@ -173,6 +173,49 @@ area-reader atlas find mota test/rom
 The same questions are functions of `area_reader.atlas`, each returning the
 dictionary that `--json` prints.
 
+`area-reader lint` judges ROM 2.4 area files: it lists their defects and
+measures them. Each path is an area file or a directory of `*.are` files.
+`--with` paths are loaded only so references into other areas resolve; they
+get no findings. The files are read as ROM, and one that does not parse stops
+the command with the parser's error.
+
+```
+area-reader lint [--json] [--with PATH ...] [--min-severity error|warning|info] PATH ...
+area-reader lint new.are --with test/rom
+```
+
+A finding has a `rule` (a stable id such as `dangling-exit-key`), a `severity`
+(`error`, `warning` or `info`), the `file`, a `kind` (`room`, `mob`, `object`,
+`reset`, `shop`, `special`, `program` or `area`), a `vnum` or, for a reset, its
+`index` among the file's resets counted from 0 without comment lines, and a
+`message`. Text output is one line per finding under each file's name, then
+the count per severity. `--json` prints `{"findings": [...], "counts": {...},
+"metrics": {file: {...}}}`. `--min-severity` shortens the list of findings;
+the counts always cover all of them. The exit status is 1 when there is any
+error finding, else 0.
+
+- Errors are what stops ROM booting or leaves a record that cannot work: a
+  reference to a vnum nothing defines, a vnum outside the area's range or
+  defined twice, resets out of order, an unknown spec function, item type,
+  position, sex, size, liquid or section, a broken mob program, and an empty
+  name, short description, room description or mob long description.
+- Warnings are defects ROM runs with: one-way exits, doors that disagree
+  between their two sides, rooms cut off from the rest, mobs, objects, keys
+  and programs nothing loads or uses, shops without stock, mob hit points,
+  damage and armor class far from the table in ROM's builder guide, and prose
+  that is short, repeated, too wide or miscapitalized.
+- Info notes levels outside the area's `{low high}` range, exits to nowhere,
+  and descriptions that say a way leads where the room has no exit.
+- Metrics, per file: record counts, exits per room, room description length,
+  the shares of rooms with an extra description, of distinct room names and
+  descriptions and of mobs with a program or spec function, doors, locked
+  doors and keys, item type and sector counts, the mob level spread, and the
+  type-token ratio of all description words.
+
+`area_reader.lint.RULES` maps each rule id to its severity and its function;
+`area_reader.lint.lint(atlas, targets)` returns the dictionary that `--json`
+prints, for the entries of an atlas given as `targets`.
+
 ## Documentation
 
 - `PROJECT.md` — the larger goal: a shared "virtual world algebra" across MUD dialects.

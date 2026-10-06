@@ -507,10 +507,12 @@ def vnum_out_of_range(atlas, entry, facts):
 def vnum_collision(atlas, entry, facts):
     del facts
     for family, kind in (("rooms", "room"), ("mobs", "mob"), ("objects", "object")):
-        index = getattr(atlas, family)
-        for vnum, record in getattr(entry.area, family).items():
-            if index[vnum][1] is not record:
-                yield found(kind, f"vnum is also defined by {index[vnum][0]}", vnum)
+        for vnum in getattr(entry.area, family):
+            others = [
+                other.label for other in atlas.areas if other is not entry and vnum in getattr(other.area, family)
+            ]
+            if others:
+                yield found(kind, f"vnum is also defined by {area_reader.atlas.joined(others)}", vnum)
 
 
 def duplicate_vnum(atlas, entry, facts):
@@ -1241,7 +1243,9 @@ def build_parser():
 def main(argv=None):
     arguments = build_parser().parse_args(argv)
     targets = list(area_reader.atlas.area_paths(arguments.paths))
-    atlas = area_reader.atlas.load([*targets, *arguments.context], "rom")
+    judged = {path.resolve() for path in targets}
+    context = [path for path in area_reader.atlas.area_paths(arguments.context) if path.resolve() not in judged]
+    atlas = area_reader.atlas.load([*targets, *context], "rom")
     result = lint(atlas, atlas.areas[: len(targets)])
     shown = {**result, "findings": at_least(result["findings"], arguments.min_severity)}
     if arguments.json:
