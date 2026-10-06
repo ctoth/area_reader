@@ -954,6 +954,40 @@ def test_error_bad_dice(tmp_path: Path) -> None:
     assert "NdS+B" in error.reason
 
 
+def test_error_unknown_program_trigger(tmp_path: Path) -> None:
+    error = build_error(
+        tmp_path, {"mobs.yaml": RAT + "    programs:\n      - {trigger: sneeze, code: say Bless me.}\n"}
+    )
+
+    assert error.file.endswith("source/mobs.yaml")
+    assert error.key == "mobs.rat.programs.0.trigger"
+    assert "unknown program trigger 'sneeze'" in error.reason
+    assert "grall" in error.reason
+
+
+def test_every_program_trigger_builds(tmp_path: Path) -> None:
+    programs = "".join(
+        f"      - {{trigger: {name}, phrase: '50', code: say {name}.}}\n" for name in tables.MPROG_TRIGGERS
+    )
+    source = write_source(tmp_path / "source", {"mobs.yaml": RAT + "    programs:\n" + programs})
+
+    built = authoring.build(source, tmp_path / "out.are")
+
+    assert [program.trig_type for program in built.area.mobs[100].mprogs] == list(tables.MPROG_TRIGGERS)
+    assert len(built.area.mobprogs) == 16
+
+
+def test_error_areadata_filename_with_whitespace(tmp_path: Path) -> None:
+    header = "area:\n  name: Test\n  filename: End game.are\n  levels: [1, 5]\n  vnums: {first: 100, size: 10}\n"
+    authoring.write_files(tmp_path / "source", {"area.yaml": header})
+
+    with pytest.raises(SourceError) as caught:
+        authoring.build(tmp_path / "source", tmp_path / "out.are")
+
+    assert caught.value.key == "area.filename"
+    assert caught.value.file.endswith("source/area.yaml")
+
+
 def test_error_unknown_key(tmp_path: Path) -> None:
     error = build_error(tmp_path, {"rooms.yaml": "rooms:\n  hall:\n    name: Hall\n    desciption: A hall.\n"})
 
