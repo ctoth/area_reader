@@ -30,11 +30,16 @@ class SwrAreaFile(area_reader.dialects.smaug.SmaugAreaFile):
     def dumps(self):
         return render_document(self.area, self.area.NATIVE_SECTIONS, self.skipped_sections)
 
+    def inline_mob_programs(self, mob):
+        if isinstance(mob, SwrMobile):
+            return [(program.progtype, program.argument, program.commands) for program in mob.programs]
+        return super().inline_mob_programs(mob)
+
     def write(self, path):
         with open(path, mode="wt", encoding="latin-1", newline="\n") as area_file:
             area_file.write(self.dumps())
 
-    def load_sections(self):
+    def read_sections(self):
         self.skip_whitespace()
         if self.data.startswith("#FUSSAREA", self.index):
             self.read_section_name()
@@ -49,7 +54,7 @@ class SwrAreaFile(area_reader.dialects.smaug.SmaugAreaFile):
                 for mob in self.load_smaug_vnum_section(area_reader.dialects.smaug.SmaugMob):
                     self.store_vnum("mobs", mob.vnum, mob)
                 return
-        super().load_sections()
+        super().read_sections()
 
     def load_mobiles(self):
         for mob in self.load_swr_vnum_section(area_reader.dialects.smaug.SmaugMob):
