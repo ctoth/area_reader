@@ -49,6 +49,16 @@ ECHO_TARGETS = {"echo": 0, "echoat": 1, "echoaround": 1}
 # SMAUG's get_color(): a token starting "_" (or "*", blinking) found in these lists is a colour, not text.
 SMAUG_COLOURS = "_bla_red_dgr_bro_dbl_pur_cya_cha_dch_ora_gre_yel_blu_pin_lbl_whi"
 SMAUG_BLINK_COLOURS = SMAUG_COLOURS.replace("_", "*")
+# SMAUG colour tokens and the ROM brace code for the same colour; the text is closed with "{x".
+COLOUR_CODES = {
+    "_blu": "{B",
+    "_dch": "{D",
+    "_gre": "{G",
+    "_lbl": "{C",
+    "_red": "{r",
+    "_whi": "{W",
+    "_yel": "{Y",
+}
 
 # ROM 2.4 if-check grammar: "check value", "check $actor", "check $actor value", "check $actor operator number".
 VALUE_CHECKS = frozenset({"rand"})
@@ -65,6 +75,11 @@ ACTOR = re.compile(r"\$[inrt]")
 NUMBER = re.compile(r"-?\d+")
 DAMAGE_ARGUMENTS = re.compile(r"\s+(\S+)\s+(\d+)\s*")
 NESTED_COMMAND = re.compile(r"(\s+\S+\s+)(\S.*)", re.DOTALL)
+# An echo command's arguments split into those before the text, the first word of the text, and the rest.
+COLOURED_TEXT = {
+    command: re.compile(rf"(\s+(?:\S+\s+){{{targets}}})(\S+)\s*(.*)", re.DOTALL)
+    for command, targets in ECHO_TARGETS.items()
+}
 
 
 def program_lines(code):
@@ -141,9 +156,12 @@ def translate_line(line):
         return line
     command = MOB_COMMANDS[word]
     if command in ECHO_TARGETS:
-        arguments = rest.split()
-        if len(arguments) > ECHO_TARGETS[command] and is_smaug_colour(arguments[ECHO_TARGETS[command]]):
-            return None
+        coloured = COLOURED_TEXT[command].fullmatch(rest)
+        if coloured is not None and is_smaug_colour(coloured.group(2)):
+            code = COLOUR_CODES.get(coloured.group(2).lower())
+            if code is None:
+                return None
+            rest = f"{coloured.group(1)}{code}{coloured.group(3)}{{x"
     if command == "damage":
         # SMAUG's "mpdamage victim amount" can kill; ROM's form is "mob damage victim min max kill".
         damage = DAMAGE_ARGUMENTS.fullmatch(rest)
@@ -165,7 +183,7 @@ def rom_programs(mob_vnum, mprogs, mobprogs):
     """Join a mob's ROM ``M`` trigger records with their ``#MOBPROGS`` bodies."""
     entries = []
     diagnostics = []
-    for mprog in mprogs:
+    for group, mprog in enumerate(mprogs):
         trigger = mprog.trig_type.upper()
         lines = []
         if mprog.vnum in mobprogs:
@@ -173,7 +191,14 @@ def rom_programs(mob_vnum, mprogs, mobprogs):
         else:
             diagnostics.append({"kind": "missing_mobprog", "mob": mob_vnum, "trigger": trigger, "vnum": mprog.vnum})
         entries.append(
-            {"trigger": trigger, "phrase": mprog.trig_phrase, "lines": lines, "source": "rom", "vnum": mprog.vnum}
+            {
+                "trigger": trigger,
+                "phrase": mprog.trig_phrase,
+                "lines": lines,
+                "source": "rom",
+                "vnum": mprog.vnum,
+                "group": group,
+            }
         )
     return entries, diagnostics
 
@@ -182,16 +207,19 @@ def inline_programs(mob_vnum, programs):
     """Translate a mob's inline ``(trigger, argument, commands)`` programs to ROM 2.4 triggers and syntax."""
     entries = []
     diagnostics = []
-    for name, phrase, commands in programs:
+    for group, (name, phrase, commands) in enumerate(programs):
         trigger = INLINE_TRIGGERS.get(name.lower())
         if trigger is None:
             trigger = name.upper()
             diagnostics.append({"kind": "unknown_mobprog_trigger", "mob": mob_vnum, "trigger": trigger})
+        phrases = [phrase]
         if trigger in PHRASE_TRIGGERS:
             if phrase[:2].lower() == "p ":
-                phrase = phrase[2:]
-            elif len(phrase.split()) > 1:
-                # A list of words, any of which fires the program: one ROM phrase cannot say that.
+                phrases = [phrase[2:]]
+            elif phrase.split():
+                # A list of words, any of which fires the program: one ROM entry per word, in one group.
+                phrases = phrase.split()
+            else:
                 diagnostics.append(
                     {"kind": "untranslated_mobprog_phrase", "mob": mob_vnum, "trigger": trigger, "phrase": phrase}
                 )
@@ -204,5 +232,15 @@ def inline_programs(mob_vnum, programs):
                 )
                 translated = line
             lines.append(translated)
-        entries.append({"trigger": trigger, "phrase": phrase, "lines": lines, "source": "inline", "vnum": None})
+        for phrase in phrases:
+            entries.append(
+                {
+                    "trigger": trigger,
+                    "phrase": phrase,
+                    "lines": list(lines),
+                    "source": "inline",
+                    "vnum": None,
+                    "group": group,
+                }
+            )
     return entries, diagnostics

@@ -73,8 +73,16 @@ def test_rom_triggers_are_joined_with_their_program_bodies(tmp_path: Path) -> No
             "lines": ["mob echo The imp cackles.", "mob cast fireball $n"],
             "source": "rom",
             "vnum": 100,
+            "group": 0,
         },
-        {"trigger": "RANDOM", "phrase": "15", "lines": ["if rand 50", "  grin", "endif"], "source": "rom", "vnum": 101},
+        {
+            "trigger": "RANDOM",
+            "phrase": "15",
+            "lines": ["if rand 50", "  grin", "endif"],
+            "source": "rom",
+            "vnum": 101,
+            "group": 1,
+        },
     ]
     assert payload["mobs"][101]["mob_programs"] == []
     assert payload["diagnostics"] == []
@@ -105,11 +113,11 @@ def test_a_trigger_without_a_program_body_is_reported(tmp_path: Path) -> None:
     payload = area_file.as_dict()
 
     assert payload["mobs"][100]["mob_programs"] == [
-        {"trigger": "GREET", "phrase": "100", "lines": ["say hello"], "source": "rom", "vnum": 100},
-        {"trigger": "SPEECH", "phrase": "hello", "lines": [], "source": "rom", "vnum": 150},
+        {"trigger": "GREET", "phrase": "100", "lines": ["say hello"], "source": "rom", "vnum": 100, "group": 0},
+        {"trigger": "SPEECH", "phrase": "hello", "lines": [], "source": "rom", "vnum": 150, "group": 1},
     ]
     assert payload["mobs"][101]["mob_programs"] == [
-        {"trigger": "DEATH", "phrase": "100", "lines": [], "source": "rom", "vnum": 151},
+        {"trigger": "DEATH", "phrase": "100", "lines": [], "source": "rom", "vnum": 151, "group": 0},
     ]
     assert payload["diagnostics"] == [
         {"kind": "missing_mobprog", "mob": 100, "trigger": "SPEECH", "vnum": 150},
@@ -159,6 +167,7 @@ def test_inline_programs_are_translated_to_rom_syntax(tmp_path: Path) -> None:
             ],
             "source": "inline",
             "vnum": None,
+            "group": 0,
         },
         {
             "trigger": "FIGHT",
@@ -172,6 +181,7 @@ def test_inline_programs_are_translated_to_rom_syntax(tmp_path: Path) -> None:
             ],
             "source": "inline",
             "vnum": None,
+            "group": 1,
         },
     ]
     assert payload["diagnostics"] == []
@@ -201,7 +211,9 @@ def test_inline_programs_are_translated_to_rom_syntax(tmp_path: Path) -> None:
 def test_inline_trigger_names_map_to_rom_trigger_words(name: str, trigger: str) -> None:
     entries, diagnostics = area_reader.mobprogs.inline_programs(7, [(name, "100", "say hi\n")])
 
-    assert entries == [{"trigger": trigger, "phrase": "100", "lines": ["say hi"], "source": "inline", "vnum": None}]
+    assert entries == [
+        {"trigger": trigger, "phrase": "100", "lines": ["say hi"], "source": "inline", "vnum": None, "group": 0},
+    ]
     assert diagnostics == []
 
 
@@ -252,6 +264,19 @@ def test_inline_trigger_names_map_to_rom_trigger_words(name: str, trigger: str) 
         ("if sex($n) == 2", "if sex $n == 2"),
         ("if level($n) < 30", "if level $n < 30"),
         ("if inroom($i) == 12099", "if room $i == 12099"),
+        ("mpe _red A burly berserker charges!", "mob echo {rA burly berserker charges!{x"),
+        ("mpe _gre Vines writhe.", "mob echo {GVines writhe.{x"),
+        ("mpe _yel Sparks fly.", "mob echo {YSparks fly.{x"),
+        ("mpe _lbl Frost spreads.", "mob echo {CFrost spreads.{x"),
+        ("mpe _whi A thunderous cry.", "mob echo {WA thunderous cry.{x"),
+        ("mpe _blu Lightning surges.", "mob echo {BLightning surges.{x"),
+        ("mpe _dch Shadows gather.", "mob echo {DShadows gather.{x"),
+        ("MPE _RED Blood sprays.", "mob echo {rBlood sprays.{x"),
+        ("mea $n _yel You fall into the pit!", "mob echoat $n {YYou fall into the pit!{x"),
+        ("mer $n _red $I slams into $n!", "mob echoaround $n {r$I slams into $n!{x"),
+        ("mpat 3 mpe _whi A horn sounds.", "mob at 3 mob echo {WA horn sounds.{x"),
+        ("mpe _not a colour", "mob echo _not a colour"),
+        ("mea $n *sigh* You hear a sigh.", "mob echoat $n *sigh* You hear a sigh."),
         ("say mpe is not a command here", "say mpe is not a command here"),
         ("c 'fireball' $n", "c 'fireball' $n"),
         (", brings Gjaller to his lips.", ", brings Gjaller to his lips."),
@@ -272,8 +297,8 @@ def test_inline_lines_are_rewritten_as_rom_mob_commands(line: str, translated: s
         "mpopenpassage 12180 12181 2",
         "mpclosepassage 12180 2",
         "mpea Just as your blows begin to tell on $I, his wounds start to close!",
-        "mpe _red A burly berserker warrior charges to aid Heimdall!",
-        "mea $n _yel You fall into the pit!",
+        "mpe _pur A violet haze descends.",
+        "mea $n _ora You are burned!",
         "mer $n *gre With a cry, $n falls into the pit!",
         "mpat 3 mprestore self 50",
         "mpforce thor mpslay $n",
@@ -304,6 +329,7 @@ def test_untranslated_lines_are_kept_and_reported(tmp_path: Path) -> None:
         "mprestore self 500\n"
         "if con($n) < 15\n"
         "mpe _red Blood sprays.\n"
+        "mpe _pur A violet haze descends.\n"
         "endif\n"
         "~\n",
     )
@@ -318,17 +344,19 @@ def test_untranslated_lines_are_kept_and_reported(tmp_path: Path) -> None:
                 "mob echo $I staggers.",
                 "mprestore self 500",
                 "if con($n) < 15",
-                "mpe _red Blood sprays.",
+                "mob echo {rBlood sprays.{x",
+                "mpe _pur A violet haze descends.",
                 "endif",
             ],
             "source": "inline",
             "vnum": None,
+            "group": 0,
         },
     ]
     assert payload["diagnostics"] == [
         {"kind": "untranslated_mobprog_line", "mob": 7, "trigger": "HPCNT", "line": "mprestore self 500"},
         {"kind": "untranslated_mobprog_line", "mob": 7, "trigger": "HPCNT", "line": "if con($n) < 15"},
-        {"kind": "untranslated_mobprog_line", "mob": 7, "trigger": "HPCNT", "line": "mpe _red Blood sprays."},
+        {"kind": "untranslated_mobprog_line", "mob": 7, "trigger": "HPCNT", "line": "mpe _pur A violet haze descends."},
     ]
 
 
@@ -344,32 +372,51 @@ def test_an_inline_trigger_without_a_rom_equivalent_keeps_its_name(tmp_path: Pat
             "lines": ["mob echo The bell tolls."],
             "source": "inline",
             "vnum": None,
+            "group": 0,
         },
     ]
     assert payload["diagnostics"] == [{"kind": "unknown_mobprog_trigger", "mob": 7, "trigger": "TIME_PROG"}]
 
 
-def test_inline_phrases_drop_the_exact_phrase_marker_and_report_word_lists(tmp_path: Path) -> None:
+def test_inline_phrases_drop_the_exact_phrase_marker_and_split_word_lists(tmp_path: Path) -> None:
     area_file = load_smaug_programs(
         tmp_path,
         "> act_prog p pokes you in the ribs.~\ngrin\n~\n"
         "> speech_prog p i wish to see the baron~\nnod\n~\n"
         "> act_prog flees~\ncackle\n~\n"
-        "> speech_prog necromancer witch~\nspit\n~\n"
+        "> speech_prog witch necromancer  witch ~\nspit\nmpslay $n\n~\n"
         "> give_prog rotting heart necromancer~\nsmile\n~\n",
     )
 
     payload = area_file.as_dict()
 
-    assert [(entry["trigger"], entry["phrase"]) for entry in payload["mobs"][7]["mob_programs"]] == [
-        ("ACT", "pokes you in the ribs."),
-        ("SPEECH", "i wish to see the baron"),
-        ("ACT", "flees"),
-        ("SPEECH", "necromancer witch"),
-        ("GIVE", "rotting heart necromancer"),
+    programs = payload["mobs"][7]["mob_programs"]
+    assert [(entry["trigger"], entry["phrase"], entry["group"]) for entry in programs] == [
+        ("ACT", "pokes you in the ribs.", 0),
+        ("SPEECH", "i wish to see the baron", 1),
+        ("ACT", "flees", 2),
+        ("SPEECH", "witch", 3),
+        ("SPEECH", "necromancer", 3),
+        ("SPEECH", "witch", 3),
+        ("GIVE", "rotting heart necromancer", 4),
+    ]
+    assert [entry["lines"] for entry in programs[3:6]] == [["spit", "mpslay $n"]] * 3
+    assert payload["diagnostics"] == [
+        {"kind": "untranslated_mobprog_line", "mob": 7, "trigger": "SPEECH", "line": "mpslay $n"},
+    ]
+    assert payload["mobs"][7]["programs"][3]["argument"] == "witch necromancer  witch "
+
+
+def test_an_inline_phrase_trigger_without_a_phrase_is_kept_and_reported(tmp_path: Path) -> None:
+    area_file = load_smaug_programs(tmp_path, "> speech_prog ~\nnod\n~\n")
+
+    payload = area_file.as_dict()
+
+    assert payload["mobs"][7]["mob_programs"] == [
+        {"trigger": "SPEECH", "phrase": "", "lines": ["nod"], "source": "inline", "vnum": None, "group": 0},
     ]
     assert payload["diagnostics"] == [
-        {"kind": "untranslated_mobprog_phrase", "mob": 7, "trigger": "SPEECH", "phrase": "necromancer witch"},
+        {"kind": "untranslated_mobprog_phrase", "mob": 7, "trigger": "SPEECH", "phrase": ""},
     ]
 
 
@@ -407,7 +454,14 @@ def test_fuss_inline_programs_are_normalized(tmp_path: Path) -> None:
     payload = area_file.as_dict()
 
     assert payload["mobs"][5]["mob_programs"] == [
-        {"trigger": "GREET", "phrase": "100", "lines": ["mob echo $I nods."], "source": "inline", "vnum": None},
+        {
+            "trigger": "GREET",
+            "phrase": "100",
+            "lines": ["mob echo $I nods."],
+            "source": "inline",
+            "vnum": None,
+            "group": 0,
+        },
     ]
     assert payload["mobs"][5]["programs"][0]["progtype"] == "greet_prog"
     assert payload["diagnostics"] == []
