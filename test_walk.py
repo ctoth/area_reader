@@ -65,6 +65,17 @@ def test_walk_shows_who_is_in_a_room_and_what_they_have(saltworks) -> None:
     assert "program on greet '100':" in text
 
 
+def test_walk_names_the_room_a_program_sends_someone_to(saltworks) -> None:
+    area = saltworks.areas[0].area
+    lines = [line for line in text_of(saltworks).splitlines() if "mob transfer $n" in line]
+
+    assert lines
+    for line in lines:
+        vnum = int(line.split("mob transfer $n")[1].split()[0])
+        assert f"<- {vnum} is [" in line
+        assert line.rstrip().endswith(area.rooms[vnum].name)
+
+
 def test_walk_shows_what_a_container_holds(saltworks) -> None:
     lines = text_of(saltworks).splitlines()
     inside = [position for position, line in enumerate(lines) if line.lstrip().startswith("inside: ")]

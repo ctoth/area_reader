@@ -166,6 +166,8 @@ def run(command: list[str], *, timeout: int) -> subprocess.CompletedProcess[str]
         encoding="utf-8",
         errors="replace",
         timeout=timeout,
+        # On Windows, wsl started from a windowless parent would open a console and take focus.
+        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
     )
 
 

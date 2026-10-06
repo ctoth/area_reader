@@ -133,7 +133,24 @@ def object_lines(carried, indent, label):
     return lines
 
 
-def mob_lines(area, present, count):
+def program_text(atlas, numbers, code):
+    """Program code with each vnum a "mob" command names followed by what it is: rooms are numbered by vnum
+    in the code and in walk order everywhere else in the walk."""
+    lines = code.rstrip("\n").splitlines()
+    for number, _text, command, vnum, _reason in area_reader.atlas.program_commands(code):
+        family = area_reader.atlas.KINDS[area_reader.atlas.PROGRAM_COMMANDS[command][1]]
+        if vnum is None or vnum not in getattr(atlas, family):
+            continue
+        record = getattr(atlas, family)[vnum][1]
+        if family == "rooms":
+            named = f"[{numbers[vnum]}] {record.name}" if vnum in numbers else f"{record.name} (another area)"
+        else:
+            named = record.short_desc
+        lines[number - 1] += f"    <- {vnum} is {named}"
+    return "\n".join(lines)
+
+
+def mob_lines(atlas, area, numbers, present, count):
     mob = present.mob
     times = f"  (x{count})" if count > 1 else ""
     lines = [f"  {mob.long_desc.strip()}{times}"]
@@ -152,7 +169,8 @@ def mob_lines(area, present, count):
             lines.append(f"      special: {special.arg2}")
     for program in mob.mprogs:
         lines.append(f"      program on {program.trig_type} {program.trig_phrase!r}:")
-        lines.extend(indented(area.mobprogs.get(program.vnum, "(program not defined)"), "          "))
+        code = area.mobprogs.get(program.vnum, "(program not defined)")
+        lines.extend(indented(program_text(atlas, numbers, code), "          "))
     return lines
 
 
@@ -175,7 +193,7 @@ def room_lines(atlas, area, numbers, occupancy, doors, vnum):
         for present in here.mobs:
             counted.setdefault(present.mob.vnum, [present, 0])[1] += 1
         for present, count in counted.values():
-            lines.extend(mob_lines(area, present, count))
+            lines.extend(mob_lines(atlas, area, numbers, present, count))
     if here.objects:
         lines.append("Things:")
         for carried in here.objects:
