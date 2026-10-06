@@ -1,0 +1,121 @@
+# Things. `long` is what is seen when the object lies on the floor. Each item
+# type has a named form for its values (weapon:, armor:, container: ...);
+# `values: [..five raw ROM values..]` is always accepted instead.
+objects:
+  boat-hook:
+    keywords: hook boat-hook boathook
+    short: a long boat-hook
+    long: A boat-hook as long as a man lies here.
+    material: ash
+    type: weapon
+    level: 10
+    weight: 120                      # tenths of a pound
+    cost: 300
+    wear: [take, wield]
+    weapon: {class: polearm, dice: 2d5, attack: pierce, flags: [two_hands]}
+    extras:
+      "hook boat-hook boathook": |
+        An ash pole shod with an iron spike and a back-curved hook, for
+        fending off barges and for pulling men out of the pans.
+
+  leather-apron:
+    keywords: apron leather
+    short: a tarred leather apron
+    long: A leather apron, stiff with tar, has been dropped here.
+    material: leather
+    type: armor
+    level: 6
+    weight: 60
+    cost: 90
+    wear: [take, body]
+    armor: {pierce: 4, bash: 5, slash: 4, exotic: 1}
+    affects:
+      - {apply: con, modifier: 1}
+      - {to: resist, bits: [fire]}   # an F line: the wearer resists fire
+
+  store-key:
+    keywords: key iron store
+    short: the key to the salt store
+    long: A heavy iron key lies here, white with salt.
+    material: iron
+    type: key
+    weight: 10
+    wear: [take, hold]
+
+  salt-chest:
+    keywords: chest oak
+    short: an oak chest
+    long: An oak chest stands on a stone shelf, banded with green copper.
+    material: oak
+    type: container
+    weight: 500
+    extra: [nopurge]
+    # No `take` in wear: it cannot be picked up.
+    container:
+      capacity: 200
+      flags: [closeable, closed, locked]
+      key: store-key
+      max_item_weight: 100
+
+  coin-purse:
+    keywords: purse coins takings
+    short: the day's takings
+    long: A canvas purse lies here, heavy for its size.
+    type: money
+    wear: [take]
+    money: {silver: 240, gold: 3}
+
+  salt-block:
+    keywords: block salt
+    short: a block of pressed salt
+    long: A block of pressed salt the size of a brick sits here.
+    material: salt
+    type: treasure                   # a type with no values of its own
+    weight: 40
+    cost: 40
+    wear: [take, hold]
+
+  salt-fish:
+    keywords: fish salt string
+    short: a string of salt fish
+    long: A string of salt fish lies here, stiff as kindling.
+    material: fish
+    type: food
+    weight: 15
+    cost: 9
+    wear: [take]
+    food: {hours_full: 6, hours_hunger: 8}
+
+  water-flask:
+    keywords: flask water leather
+    short: a leather water-flask
+    long: A leather flask with a horn stopper has been left here.
+    material: leather
+    type: drink
+    weight: 20
+    cost: 12
+    wear: [take]
+    drink: {capacity: 20, amount: 20, liquid: water}
+
+  brine-pump:
+    keywords: pump brine well spout
+    short: the brine pump
+    long: The brine pump stands over its well, the handle worn pale.
+    material: wood
+    type: fountain
+    fountain: {liquid: salt water}
+    extras:
+      "handle spout": |
+        The handle is as long as an oar.  Whatever comes out of the spout,
+        you would not want to drink much of it.
+
+  tallow-lantern:
+    keywords: lantern tallow
+    short: a tallow lantern
+    long: A horn-paned lantern sits here, smelling of mutton fat.
+    material: horn
+    type: light
+    weight: 30
+    cost: 30
+    wear: [take]
+    light: {hours: 48}

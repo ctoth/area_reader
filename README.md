@@ -138,6 +138,118 @@ field edits are authoritative over the read-side `raw_text` and `raw_data`
 views. The six upstream example and skill catalogs have semantic and canonical
 fixed points and are accepted by CoffeeMud's native MOB/item loaders.
 
+## Writing new areas
+
+A new ROM 2.4 area is written as a directory of YAML files and compiled to one
+`.are` file. Nobody writes vnums, bit values, reset lines or wear-location
+numbers: records have ids, flags have names, and what stands in a room is
+written on the room. This needs PyYAML (`pip install area-reader[authoring]`).
+
+```
+area-reader build SRC [-o OUT.are] [--set DIR ...] [--show-defaults]
+area-reader unbuild AREA.are -o SRC
+```
+
+`test/authoring/saltworks` is a complete ten-room example that uses every
+feature; read it first. In outline:
+
+```yaml
+# area.yaml: the header. Every other *.yaml, *.yml or *.json file below the
+# directory may hold rooms, mobs, objects and helps, and they are merged.
+area:
+  name: The Salt Works
+  filename: saltworks.are
+  levels: [5, 15]
+  builders: Claude
+  vnums: {first: 30000, size: 100}
+
+rooms:
+  gatehouse:
+    name: The Gatehouse
+    description: |
+      Two stumpy towers of tarred timber flank a tunnel.
+    sector: city
+    flags: [indoors, law]
+    exits:
+      north: yard                    # makes yard's south exit too
+      east: {to: tally-office, door: closed, keyword: door oak}
+      west: 3001                     # a vnum in another area
+      up: {look: The towers go up into the smoke.}
+    mobs:
+      - mob: gate-warden
+        wears: {wield: boat-hook}
+        carries: [store-key]
+    objects:
+      - object: salt-chest
+        contains: [coin-purse]
+
+mobs:
+  gate-warden:
+    keywords: warden gate guard
+    short: the gate warden
+    long: The gate warden leans on a boat-hook, counting carts.
+    race: human
+    level: 12                        # hit, mana, damage and ac follow from the level
+    act: [sentinel, stay_area]
+    special: spec_guard
+
+objects:
+  boat-hook:
+    keywords: hook boat-hook
+    short: a long boat-hook
+    long: A boat-hook as long as a man lies here.
+    type: weapon
+    wear: [take, wield]
+    weapon: {class: polearm, dice: 2d5, attack: pierce, flags: [two_hands]}
+```
+
+- **Ids and vnums.** An id is a lowercase slug, unique among the area's rooms,
+  mobs or objects. `build` numbers ids from the header's block in the order
+  they are first defined and records the numbers in `vnums.lock.yaml`, so a
+  later record never renumbers an earlier one. `vnum:` on a record pins its
+  number. A reference is an id, a bare vnum (any area), or `DIRNAME:id` for an
+  id of another source directory named with `--set`.
+- **Exits.** An exit to a room of the same area also makes the opposite exit,
+  with the same door, keyword and key; `back:` overrides its description.
+  `oneway: true` makes one side only. When both rooms write the exit they must
+  agree on destination, door and key. `door` is `open`, `closed`, `locked`, or
+  `reset_open` (opened again at each reset); closed and locked doors get their
+  `D` resets on both sides.
+- **Placements.** A room's `mobs` and `objects` become its `M`, `G`, `E`, `O`
+  and `P` resets. `count` loads a mob several times; `limit`, `max_in_room`
+  and `max_in_world` set the reset limits, which otherwise allow everything
+  written. `random_exits: N` is an `R` reset.
+- **Mobs.** A shop, a special procedure and mob programs are written on the
+  mob. Omitted `hit`, `damage` and `ac` are the values recommended for the
+  level in ROM's builder guide (Rom2.4.doc, Appendix A, with its adjustments
+  for the four class flags); omitted `mana` is the median of the stock mobiles
+  of that level; omitted `form` and `parts` are the race's. `--show-defaults`
+  prints each filled value. In program code `@room:id`, `@mob:id` and
+  `@object:id` become vnums.
+- **Objects.** Each item type with meaningful values has a named form
+  (`weapon`, `armor`, `container`, `drink`, `fountain`, `food`, `light`,
+  `money`, `potion`, `pill`, `scroll`, `wand`, `staff`, `portal`, `furniture`);
+  `values: [..five..]` is accepted for any type.
+- **Raw escapes.** A flag list may be a number or a ROM letter string, and may
+  hold numbers beside names. Top-level `resets`, `shops`, `specials` and
+  `mobprogs` take raw records, emitted after the compiled ones.
+- **Errors.** A fault raises `SourceError` naming the file and the key path,
+  such as `rooms.gatehouse.exits.east.key`. `build` parses its own output with
+  the ROM reader and writes nothing unless the result equals what it compiled.
+
+`unbuild` writes any ROM area the reader parses in this form: ids slugged from
+names, every vnum pinned, two-way exits collapsed, resets hung on their rooms.
+For the 48 stock areas with rooms, building the unbuilt directory gives back
+the parsed area up to `area_reader.authoring.NORMALIZATIONS` (reset order,
+line comments, and a few values the engine never reads), and unbuilding that
+gives the same files again. Resets the form cannot express stay in `raw.yaml`.
+
+Stock ROM 2.4b6 reads neither `#AREADATA` nor mob programs (they come with
+the OLC and MOBprogram patches) and keeps vnums in 16 bits, so an area meant
+for it uses `header: rom`, no `programs`, and a block below 32768.
+`scripts/verify_rom_writer.py UPSTREAM AREA.are --new` boots the real engine
+with a new area and fails on any bug the engine logs because of it.
+
 ## Questions about a set of areas
 
 `area-reader atlas` loads several ROM or Merc area files together and answers

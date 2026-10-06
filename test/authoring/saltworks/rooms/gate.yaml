@@ -1,0 +1,86 @@
+# The way in: the causeway from the Midgaard road, the gatehouse and the
+# tally office, and the outfall channel under the pans.
+rooms:
+  causeway:
+    name: The Shingle Causeway
+    description: |
+      A bank of grey shingle has been raised above the mud and floored with
+      split logs, wide enough for one cart.  On either side the flats run out
+      to a line of white water, and the wind brings the smell of woodsmoke and
+      brine from the north, where a squat gatehouse stands across the track.
+      Eastward the causeway meets the old road.
+    sector: field
+    exits:
+      north: gatehouse               # short form: a plain two-way exit
+      east: 3001                     # a vnum in another area; that area owns its side
+    extras:
+      "logs causeway floor": |
+        The logs are black with tar and worn into two ruts by cartwheels.
+        Salt has dried white in every crack.
+
+  gatehouse:
+    name: The Gatehouse
+    description: |
+      Two stumpy towers of tarred timber flank a tunnel just wide enough for a
+      salt cart.  A tariff board is nailed up beside a door in the east wall,
+      its chalked figures rubbed out and rewritten so often that the wood has
+      gone grey.  The tunnel opens north onto the yard of the works and south
+      onto the causeway.
+    sector: city
+    flags: [indoors, law]
+    exits:
+      north: yard
+      east:
+        to: tally-office
+        door: closed                 # a door, shut again at every reset
+        keyword: door oak
+        description: A door of salt-bleached oak, its latch polished by hands.
+        back:                        # what the other side says of the same door
+          description: The gate tunnel lies beyond the door.
+      up:
+        look: |
+          The towers go up into the smoke.  Someone has left a lantern
+          burning in the western one.
+    extras:
+      "tariff board figures": |
+        SALT, the bushel . . . . . 4 silver
+        SALT FISH, the string . .  9 silver
+        Carters pay at the office.  No credit.
+    mobs:
+      - mob: gate-warden
+        wears:
+          wield: boat-hook
+          body: leather-apron
+
+  tally-office:
+    name: The Tally Office
+    description: |
+      A high desk, a stool and a wall of pigeonholes fill most of this narrow
+      room.  Every surface carries a tally stick or a string of them, notched
+      for bushels made and bushels sold.  A hatch in the north wall lets the
+      tallyman watch the yard without getting up.
+    sector: inside
+    flags: [indoors]
+    # The west exit is not written here: the gatehouse's east exit makes it.
+    extras:
+      "tally sticks strings": |
+        Each stick is split down its length, half for the works and half for
+        the buyer, so that neither can add a notch alone.
+      hatch: Through the hatch you can see the yard and the door of the store.
+    mobs:
+      - mob: tallyman
+        carries: [salt-fish, water-flask, tallow-lantern]   # a shopkeeper's stock
+
+  outfall:
+    name: The Outfall Channel
+    description: |
+      You stand ankle-deep in a timber-lined channel under the brine pans.
+      Bitter water drains down the boards behind you in a steady sheet, far
+      too slick to climb.  The channel runs east between banks of mud toward
+      the foot of the causeway, where the shingle would give a handhold.
+    sector: water_swim
+    exits:
+      east:
+        to: causeway
+        oneway: true                 # the causeway has no exit back down here
+        description: The channel ends in a bank of shingle you could scramble up.

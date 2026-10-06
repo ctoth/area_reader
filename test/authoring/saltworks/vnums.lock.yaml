@@ -1,0 +1,30 @@
+# Vnums area-reader build has assigned. Keep this file with the source: it is why adding a record
+# never renumbers another. An id that is no longer defined keeps its number reserved.
+rooms:
+  causeway: 30000
+  gatehouse: 30001
+  tally-office: 30002
+  outfall: 30003
+  yard: 30004
+  store: 30005
+  boiling-house: 30006
+  drying-loft: 30007
+  pump-house: 30008
+  brine-pans: 30009
+mobs:
+  gate-warden: 30000
+  tallyman: 30001
+  foreman: 30002
+  salt-boiler: 30003
+  yard-dog: 30004
+objects:
+  boat-hook: 30000
+  leather-apron: 30001
+  store-key: 30002
+  salt-chest: 30003
+  coin-purse: 30004
+  salt-block: 30005
+  salt-fish: 30006
+  water-flask: 30007
+  brine-pump: 30008
+  tallow-lantern: 30009

@@ -59,7 +59,7 @@ class Source:
     lock = attr(default=Factory(dict))
 
 
-class UniqueKeyLoader(yaml.SafeLoader):
+class UniqueKeyLoader(getattr(yaml, "CSafeLoader", yaml.SafeLoader)):
     """YAML keeps the last of two equal keys; a source file must not define a thing twice."""
 
     def construct_mapping(self, node, deep=False):
