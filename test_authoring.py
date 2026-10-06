@@ -560,7 +560,7 @@ def test_example_area_lock_keeps_vnums_when_a_room_is_added(tmp_path: Path) -> N
 
     for family in ("rooms", "mobs", "objects"):
         assert {identifier: second.lock[family][identifier] for identifier in first.lock[family]} == first.lock[family]
-    assert second.lock["rooms"]["annex"] == 30010
+    assert second.lock["rooms"]["annex"] == 12010
     assert {number: room.name for number, room in first.area.rooms.items()}.items() <= {
         number: room.name for number, room in second.area.rooms.items()
     }.items()
@@ -568,7 +568,7 @@ def test_example_area_lock_keeps_vnums_when_a_room_is_added(tmp_path: Path) -> N
     # Without the lock the new room takes the first number and every other room moves.
     (source / LOCK_NAME).unlink()
     unlocked = authoring.build(source, tmp_path / "unlocked.are")
-    assert unlocked.lock["rooms"]["annex"] == 30000
+    assert unlocked.lock["rooms"]["annex"] == 12000
     assert unlocked.lock["rooms"]["causeway"] != first.lock["rooms"]["causeway"]
 
 
@@ -583,7 +583,7 @@ def test_example_area_header(saltworks) -> None:
         9,
     )
     assert area.metadata == "{ 5 15} Claude  The Salt Works"
-    assert (area.first_vnum, area.last_vnum) == (30000, 30099)
+    assert (area.first_vnum, area.last_vnum) == (12000, 12099)
     assert authoring.parse(saltworks.text).area == area
     assert saltworks.output.read_text(encoding="latin-1") == saltworks.text
 
@@ -729,8 +729,8 @@ def test_example_area_mob_programs(saltworks) -> None:
 
     (greet,) = warden.mprogs
     (speech,) = foreman.mprogs
-    assert (greet.trig_type, greet.trig_phrase, greet.vnum) == ("greet", "100", 30000)
-    assert (speech.trig_type, speech.trig_phrase, speech.vnum) == ("speech", "pans", 30001)
+    assert (greet.trig_type, greet.trig_phrase, greet.vnum) == ("greet", "100", 12000)
+    assert (speech.trig_type, speech.trig_phrase, speech.vnum) == ("speech", "pans", 12001)
     # An inline program.
     assert area.mobprogs[greet.vnum].startswith("if ispc $n\n  say Carts to the yard")
     # A program from a file, with @room: replaced by the room's vnum.

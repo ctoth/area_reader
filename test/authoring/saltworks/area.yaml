@@ -11,5 +11,5 @@ area:
   filename: saltworks.are
   levels: [5, 15]            # with builders and name, makes the credits line
   builders: Claude
-  vnums: {first: 30000, size: 100}
+  vnums: {first: 12000, size: 100}   # ROM keeps vnums in 16 bits: stay below 32768
   security: 9
