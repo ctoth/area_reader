@@ -12,7 +12,10 @@ rooms:
     sector: field
     exits:
       north: gatehouse               # short form: a plain two-way exit
-      east: 3001                     # a vnum in another area; that area owns its side
+      # A vnum in another area (Midgaard's temple). That area owns its side, so
+      # this is one-way. ROM logs a bug at boot for a one-way exit into a room
+      # whose opposite exit leads somewhere else; the temple has no west exit.
+      east: 3001
     extras:
       "logs causeway floor": |
         The logs are black with tar and worn into two ruts by cartwheels.

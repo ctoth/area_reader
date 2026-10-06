@@ -4,6 +4,7 @@ import shutil
 from pathlib import Path
 
 import pytest
+import yaml
 
 import area_reader.cli
 import area_reader.dialects.rom
@@ -199,7 +200,13 @@ def test_stock_round_trip_is_not_vacuous() -> None:
         assert phrase in rooms, phrase
     for phrase in ("shop:", "special: spec_", "buys: [", "position: {start: "):
         assert phrase in mobs, phrase
-    for phrase in ("{apply: hitroll, modifier: ", "{to: affects, bits: [", "weapon: {class: ", "container: {", "values: ["):
+    for phrase in (
+        "{apply: hitroll, modifier: ",
+        "{to: affects, bits: [",
+        "weapon: {class: ",
+        "container: {",
+        "values: [",
+    ):
         assert phrase in objects, phrase
     assert {path.name: len(raw_resets(unbuilt(path))) for path in STOCK_AREAS if raw_resets(unbuilt(path))} == (
         STOCK_RAW_RESETS
@@ -266,6 +273,267 @@ S
 
     with pytest.raises(SourceError, match="has no earlier reset to belong to"):
         authoring.unbuild(load_rom(path).area)
+
+
+@pytest.mark.parametrize("name", ["help.are", "group.are", "rom.are"])
+def test_stock_help_file_round_trips(tmp_path: Path, name: str) -> None:
+    area_file = load_rom(Path("test/rom") / name)
+    files = authoring.unbuild(area_file.area, area_file.skipped_sections)
+    authoring.write_files(tmp_path / "source", files)
+
+    built = authoring.build(tmp_path / "source", tmp_path / name)
+
+    assert sorted(files) == ["area.yaml", "helps.yaml"]
+    assert len(built.area.helps) == len(area_file.area.helps) > 0
+    assert authoring.normalized(built.area) == authoring.normalized(area_file.area)
+    assert authoring.unbuild(built.area) == files
+
+
+def test_unbuild_refuses_sections_the_reader_does_not_model() -> None:
+    socials = load_rom(Path("test/rom/social.are"))
+
+    with pytest.raises(SourceError, match="#SOCIALS"):
+        authoring.unbuild(socials.area, socials.skipped_sections)
+
+
+# What the stock set does not have: an #AREADATA header, mob programs, nested containers, repeated extra
+# keywords, shops and specials that cannot sit on a mob, and object values the named forms cannot say.
+OLC_AREA = """#AREADATA
+Name Proof~
+Filename proof.are~
+Builders Tester~
+VNUMs 200 299
+Credits { 1  5} Tester  Proof~
+Security 5
+End
+#MOBILES
+#200
+keeper~
+a keeper~
+A keeper stands here.
+~
+~
+human~
+ABG 0 300 0
+5 0 2d6+60 2d9+100 1d6+1 punch
+5 5 5 9
+0 0 0 0
+stand stand male 10
+AHMV ABCDEFGHIJK medium 0
+M greet 200 100~
+M speech 201 hello there~
+#201
+crier~
+a crier~
+A crier shouts here.
+~
+~
+human~
+AB 0 0 0
+3 0 2d6+35 1d9+100 1d6+0 none
+7 7 7 9
+0 0 0 0
+stand stand female 0
+AHMV ABCDEFGHIJK medium 0
+M greet 200 50~
+M act 999 waves~
+#0
+#OBJECTS
+#200
+chest oak~
+an oak chest~
+A chest is here.~
+oak~
+container 0 0
+100 AC 0 50 100
+0 100 0 P
+#201
+bag~
+a bag~
+A bag is here.~
+cloth~
+container 0 A
+20 0 0 10 100
+0 10 0 P
+#202
+coin~
+a coin~
+A coin is here.~
+gold~
+money 0 A
+1 0 0 0 0
+0 1 0 P
+#203
+gem~
+a gem~
+A gem is here.~
+gem~
+gem 0 A
+0 0 0 0 0
+0 1 50 P
+#204
+spear~
+a spear~
+A spear lies here.~
+wood~
+weapon G AN
+spear 2 4 pierce D
+5 50 100 P
+A
+18 1
+F
+R 5 2 H
+E
+blade~
+Sharp.
+~
+E
+blade~
+Very sharp.
+~
+#0
+#ROOMS
+#200
+The Proof Room~
+A bare room.
+~
+0 D 0
+D0
+A door.
+~
+door~
+1 -1 201
+E
+sign~
+One.
+~
+E
+sign~
+Two.
+~
+S
+#201
+The Other Room~
+~
+0 0 0
+D2
+~
+door~
+1 -1 200
+S
+#0
+#RESETS
+O 0 200 1 200
+P 1 201 1 200 1
+P 1 202 -1 201 3
+P 1 203 2 200 1
+M 0 200 1 200 1
+G 1 201 -1
+P 1 202 -1 201 1
+E 1 204 -1 16
+S
+#SHOPS
+200 5 0 9 0 0 110 90 0 23
+3000 1 2 3 4 5 100 100 6 20
+0
+#SPECIALS
+M 200 spec_guard
+M 200 spec_thief
+M 3000 spec_fido
+S
+#MOBPROGS
+#200
+say Welcome.
+~
+#201
+say Hello yourself.
+~
+#777
+say Nobody runs this.
+~
+#0
+#$
+"""
+
+
+def test_unbuild_writes_what_the_stock_set_lacks(tmp_path: Path) -> None:
+    path = tmp_path / "proof.are"
+    path.write_text(OLC_AREA, encoding="latin-1")
+    area = load_rom(path).area
+
+    files = authoring.unbuild_file(path, tmp_path / "source")
+    built = authoring.build(tmp_path / "source", tmp_path / "built.are")
+
+    assert authoring.normalized(built.area) == authoring.normalized(area)
+    assert authoring.unbuild(built.area) == files
+    assert built.area.header_format == "areadata"
+
+    def read(name):
+        return load_yaml(files[name], name)
+
+    assert read("area.yaml")["area"] == {
+        "name": "Proof",
+        "filename": "proof.are",
+        "credits": "{ 1  5} Tester  Proof",
+        "builders": "Tester",
+        "vnums": {"first": 200, "size": 100},
+        "security": 5,
+        "header": "areadata",
+    }
+    mobs = read("mobs.yaml")["mobs"]
+    # A program body is written with its first use; a program without a body in the file keeps its vnum.
+    assert mobs["keeper"]["programs"] == [
+        {"trigger": "greet", "phrase": "100", "vnum": 200, "code": "say Welcome.\n"},
+        {"trigger": "speech", "phrase": "hello there", "vnum": 201, "code": "say Hello yourself.\n"},
+    ]
+    assert mobs["crier"]["programs"] == [
+        {"trigger": "greet", "phrase": "50", "vnum": 200},
+        {"trigger": "act", "phrase": "waves", "vnum": 999},
+    ]
+    assert mobs["keeper"]["special"] == "spec_guard"
+    assert mobs["keeper"]["shop"]["buys"] == ["weapon", 0, "armor"]
+    rooms = read("rooms.yaml")["rooms"]
+    proof = rooms["proof-room"]
+    assert proof["extras"] == [{"keywords": "sign", "text": "One."}, {"keywords": "sign", "text": "Two."}]
+    # The two sides of the door differ only in the description one of them has, so it is written once.
+    assert proof["exits"] == {
+        "north": {"to": "other-room", "door": "open", "keyword": "door", "description": "A door."}
+    }
+    assert "exits" not in rooms["other-room"]
+    assert proof["objects"] == [
+        {
+            "object": "oak-chest",
+            "limit": 1,
+            "contains": [
+                {"object": "bag", "limit": 1, "contains": [{"object": "coin", "count": 3}]},
+                {"object": "gem", "limit": 2},
+            ],
+        }
+    ]
+    assert proof["mobs"] == [
+        {"mob": "keeper", "carries": [{"object": "bag", "contains": ["coin"]}], "wears": {"wield": "spear"}}
+    ]
+    spear = read("objects.yaml")["objects"]["spear"]
+    # ROM's weapon table has no "spear", so the named form cannot say it.
+    assert spear["values"] == ["spear", 2, 4, "pierce", 8]
+    assert spear["affects"] == [
+        {"apply": "hitroll", "modifier": 1},
+        {"to": "resist", "bits": ["fire"], "apply": "con", "modifier": 2},
+    ]
+    assert spear["extras"] == [{"keywords": "blade", "text": "Sharp."}, {"keywords": "blade", "text": "Very sharp."}]
+    assert read("raw.yaml") == {
+        "shops": [
+            {
+                "keeper": 3000,
+                "buys": ["light", "scroll", "wand", "staff", "weapon"],
+                "profit_buy": 100,
+                "profit_sell": 100,
+                "hours": [6, 20],
+            }
+        ],
+        "specials": [{"mob": 200, "special": "spec_thief"}, {"mob": 3000, "special": "spec_fido"}],
+        "mobprogs": {777: "say Nobody runs this.\n"},
+    }
 
 
 # The example area.
@@ -554,14 +822,21 @@ def test_ids_of_another_source_area_are_referenced_by_its_directory_name(tmp_pat
 
     (east,) = built.area.rooms[100].exits
     assert east.destination == 107
-    assert build_error(tmp_path / "unset", {"rooms.yaml": "rooms:\n  lane:\n    name: Lane\n    exits:\n      east: there:quay\n"}).key == (
-        "rooms.lane.exits.east"
-    )
+    # Without --set the other area is unknown.
+    error = build_error(tmp_path / "unset", {"rooms.yaml": (here / "rooms.yaml").read_text(encoding="utf-8")})
+    assert error.key == "rooms.lane.exits.east"
+    assert "unknown area 'there'" in error.reason
+
+
+RAT = "mobs:\n  rat:\n    keywords: rat\n    short: a rat\n    long: A rat.\n    race: unique\n    level: 1\n"
 
 
 def test_included_file_is_merged(tmp_path: Path) -> None:
-    authoring.write_files(tmp_path / "shared", {"mobs.yaml": "mobs:\n  rat:\n    keywords: rat\n    short: a rat\n    long: A rat.\n    race: unique\n    level: 1\n"})
-    source = write_source(tmp_path / "source", {"rooms.yaml": "include: [../shared/mobs.yaml]\nrooms:\n  hall:\n    name: Hall\n    mobs: [rat]\n"})
+    authoring.write_files(tmp_path / "shared", {"mobs.yaml": RAT})
+    source = write_source(
+        tmp_path / "source",
+        {"rooms.yaml": "include: [../shared/mobs.yaml]\nrooms:\n  hall:\n    name: Hall\n    mobs: [rat]\n"},
+    )
 
     built = authoring.build(source, tmp_path / "out.are")
 
@@ -570,8 +845,6 @@ def test_included_file_is_merged(tmp_path: Path) -> None:
 
 
 # Errors: each names the file and the key path.
-
-RAT = "mobs:\n  rat:\n    keywords: rat\n    short: a rat\n    long: A rat.\n    race: unique\n    level: 1\n"
 
 
 def test_error_unknown_id(tmp_path: Path) -> None:
@@ -640,7 +913,9 @@ def test_error_vnum_block_exhausted(tmp_path: Path) -> None:
 
 
 def test_error_tilde_in_text(tmp_path: Path) -> None:
-    error = build_error(tmp_path, {"rooms.yaml": "rooms:\n  hall:\n    name: Hall\n    description: About ~40 paces.\n"})
+    error = build_error(
+        tmp_path, {"rooms.yaml": "rooms:\n  hall:\n    name: Hall\n    description: About ~40 paces.\n"}
+    )
 
     assert error.file.endswith("source/rooms.yaml")
     assert error.key == "rooms.hall.description"
@@ -648,7 +923,9 @@ def test_error_tilde_in_text(tmp_path: Path) -> None:
 
 
 def test_error_unknown_item_type(tmp_path: Path) -> None:
-    error = build_error(tmp_path, {"objects.yaml": "objects:\n  thing:\n    keywords: thing\n    short: a thing\n    type: gizmo\n"})
+    error = build_error(
+        tmp_path, {"objects.yaml": "objects:\n  thing:\n    keywords: thing\n    short: a thing\n    type: gizmo\n"}
+    )
 
     assert error.file.endswith("source/objects.yaml")
     assert error.key == "objects.thing.type"
@@ -689,6 +966,13 @@ def test_error_character_outside_latin_1(tmp_path: Path) -> None:
 
     assert error.key == "rooms.hall.name"
     assert "U+2019" in error.reason
+
+
+def test_yaml_syntax_error_names_the_file(tmp_path: Path) -> None:
+    source = write_source(tmp_path / "source", {"rooms.yaml": "rooms:\n  hall: [unclosed\n"})
+
+    with pytest.raises(yaml.YAMLError, match=r"source/rooms\.yaml"):
+        authoring.build(source, tmp_path / "out.are")
 
 
 def test_error_two_exits_into_one_slot(tmp_path: Path) -> None:

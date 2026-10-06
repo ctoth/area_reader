@@ -314,8 +314,12 @@ def count_mobs(state):
                     {
                         "mob": mob,
                         "count": None if count == 1 else count,
-                        "max_in_room": None if placement["max_in_room"] == in_room[mob, room] else placement["max_in_room"],
-                        "max_in_world": None if placement["max_in_world"] == in_world[mob] else placement["max_in_world"],
+                        "max_in_room": None
+                        if placement["max_in_room"] == in_room[mob, room]
+                        else placement["max_in_room"],
+                        "max_in_world": None
+                        if placement["max_in_world"] == in_world[mob]
+                        else placement["max_in_world"],
                         **gear,
                     }
                 )
@@ -347,7 +351,9 @@ def exit_modes(state):
             slot = room.vnum, exit.door.value
             if slot in sides:
                 raise SourceError(
-                    f"room {room.vnum}", "", f"two {tables.DIRECTIONS[slot[1]]} exits cannot be written in a source room"
+                    f"room {room.vnum}",
+                    "",
+                    f"two {tables.DIRECTIONS[slot[1]]} exits cannot be written in a source room",
                 )
             sides[slot] = exit
     modes = {}
@@ -410,7 +416,9 @@ def extras_source(record):
 def room_source(state, room, modes):
     sector = getattr(room.sector_type, "value", room.sector_type)
     exits = {
-        tables.DIRECTIONS[exit.door.value]: exit_source(state, (room.vnum, exit.door.value), exit, modes[room.vnum, exit.door.value])
+        tables.DIRECTIONS[exit.door.value]: exit_source(
+            state, (room.vnum, exit.door.value), exit, modes[room.vnum, exit.door.value]
+        )
         for exit in sorted(room.exits, key=lambda exit: exit.door.value)
         if modes[room.vnum, exit.door.value] != "implied"
     }
@@ -462,7 +470,9 @@ def mob_source(state, mob, shop, special, written):
     if mob.group is None or mob.shielded_by is not None:
         raise SourceError(f"mob {mob.vnum}", "", "the ROM 2.3 and ROT mobile layouts cannot be written as area source")
     race = tables.RACES.get(mob.race)
-    position = mob.start_pos if mob.start_pos == mob.default_pos else FlowMap(start=mob.start_pos, default=mob.default_pos)
+    position = (
+        mob.start_pos if mob.start_pos == mob.default_pos else FlowMap(start=mob.start_pos, default=mob.default_pos)
+    )
     armor = mob.ac
     return without_nothing(
         {
@@ -493,7 +503,9 @@ def mob_source(state, mob, shop, special, written):
             "damtype": mob.damtype,
             "ac": FlowMap(pierce=armor.pierce, bash=armor.bash, slash=armor.slash, exotic=armor.exotic),
             "form": None if race and mob.form == tables.bits(race.form) else flag_names(mob.form, tables.FORM_FLAGS),
-            "parts": None if race and mob.parts == tables.bits(race.parts) else flag_names(mob.parts, tables.PART_FLAGS),
+            "parts": None
+            if race and mob.parts == tables.bits(race.parts)
+            else flag_names(mob.parts, tables.PART_FLAGS),
             "special": special,
             "shop": shop,
             "programs": programs_source(state, mob, written),
@@ -592,7 +604,9 @@ def unbuild(area, skipped_sections=()):
     """Return the source directory for a parsed ROM area, as a mapping from file name to text."""
     if skipped_sections:
         names = ", ".join(f"#{name.upper()}" for name, _body in skipped_sections)
-        raise SourceError(area.name, "", f"sections the reader does not model cannot be written as area source: {names}")
+        raise SourceError(
+            area.name, "", f"sections the reader does not model cannot be written as area source: {names}"
+        )
     ids = assign_ids(area)
     numbers = Numbers({family: {identifier: vnum for vnum, identifier in ids[family].items()} for family in FAMILIES})
     state = Unbuilding(area=area, ids=ids, build=Build(source=None, numbers=numbers))

@@ -269,11 +269,9 @@ def main(argv=None):
         return area_reader.atlas.main(argv[1:])
     if argv[:1] in (["build"], ["unbuild"]):
         # Imported here: the authoring package needs PyYAML, which reading areas does not.
-        import area_reader.authoring.builder
-        import area_reader.authoring.unbuilder
+        from area_reader.authoring import builder, unbuilder
 
-        module = area_reader.authoring.builder if argv[0] == "build" else area_reader.authoring.unbuilder
-        return module.main(argv[1:])
+        return (builder if argv[0] == "build" else unbuilder).main(argv[1:])
     arguments = build_parser().parse_args(argv)
     logging.basicConfig(stream=sys.stderr, level=logging.WARNING)
     dialect = None if arguments.type == "auto" else arguments.type

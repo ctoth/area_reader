@@ -22,7 +22,7 @@ from area_reader.authoring.source import (
     load_source,
     read_text,
 )
-from area_reader.constants import EXIT_FLAGS, ROM_ACT_TYPES, SECTOR_TYPES, flag_convert
+from area_reader.constants import EXIT_FLAGS, ROM_ACT_TYPES, flag_convert
 from area_reader.dialects.rom import (
     RomAffectData,
     RomArea,
@@ -650,7 +650,9 @@ def armor_class(value, at):
     for name in ("pierce", "bash", "slash", "exotic"):
         values[name] = take(value, at, name, integer)
         if values[name] % 10:
-            raise (at / name).error(f"armor class is written in tenths of a file unit: {values[name]} is not a multiple of 10")
+            raise (at / name).error(
+                f"armor class is written in tenths of a file unit: {values[name]} is not a multiple of 10"
+            )
     return RomArmorClass(**values)
 
 
@@ -699,7 +701,9 @@ def compile_mob(build, identifier, record, at):
             take(record, at, "damage", lambda value, where: value, default("damage", damage, appendix)), at / "damage"
         ),
         damtype=take(record, at, "damtype", one_of(tables.ATTACKS, "damage type"), "none"),
-        ac=armor_class(take(record, at, "ac", lambda value, where: value, default("ac", armor_default, appendix)), at / "ac"),
+        ac=armor_class(
+            take(record, at, "ac", lambda value, where: value, default("ac", armor_default, appendix)), at / "ac"
+        ),
         off_flags=take(record, at, "offense", flags(tables.OFF_FLAGS), 0),
         imm_flags=take(record, at, "immune", flags(tables.IMM_FLAGS), 0),
         res_flags=take(record, at, "resist", flags(tables.IMM_FLAGS), 0),
@@ -1166,7 +1170,9 @@ def compile_mob_extras(build):
         if program.vnum is None:
             program.vnum = next(free, None)
             if program.vnum is None:
-                raise at.error(f"the vnum block {area.first_vnum}..{area.last_vnum} has no number left for this program")
+                raise at.error(
+                    f"the vnum block {area.first_vnum}..{area.last_vnum} has no number left for this program"
+                )
         if code is None:
             continue
         if bodies.setdefault(program.vnum, code) != code:
@@ -1228,7 +1234,10 @@ def first_difference(built, parsed, path="area"):
     if type(built) is not type(parsed):
         return f"{path}: built {built!r}, parsed {parsed!r}"
     if has(type(built)):
-        pairs = [(attribute.name, getattr(built, attribute.name), getattr(parsed, attribute.name)) for attribute in fields(type(built))]
+        pairs = [
+            (attribute.name, getattr(built, attribute.name), getattr(parsed, attribute.name))
+            for attribute in fields(type(built))
+        ]
     elif isinstance(built, dict):
         if list(built) != list(parsed):
             return f"{path}: built keys {list(built)!r}, parsed keys {list(parsed)!r}"
@@ -1275,9 +1284,7 @@ def build(directory, output=None, sets=()):
     parsed = parse(text)
     difference = first_difference(compiled.area, parsed.area)
     if difference is not None or parsed.area != compiled.area:
-        raise SourceError(
-            label(directory), "", f"the built area does not read back as it was written ({difference})"
-        )
+        raise SourceError(label(directory), "", f"the built area does not read back as it was written ({difference})")
     output = Path(output) if output is not None else Path(compiled.area.original_filename)
     write_area(output, text)
     if any(compiled.lock[family] for family in FAMILIES):

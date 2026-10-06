@@ -1,5 +1,6 @@
 """Reading and writing the files of an area source directory."""
 
+import io
 import re
 from pathlib import Path
 
@@ -69,7 +70,9 @@ class UniqueKeyLoader(getattr(yaml, "CSafeLoader", yaml.SafeLoader)):
             for key_node, _value in node.value:
                 key = self.construct_object(key_node, deep=True)
                 if key in seen:
-                    raise SourceError(self.name, "", f"key {key!r} is written twice (line {key_node.start_mark.line + 1})")
+                    raise SourceError(
+                        self.name, "", f"key {key!r} is written twice (line {key_node.start_mark.line + 1})"
+                    )
                 seen.add(key)
         return mapping
 
@@ -117,8 +120,16 @@ def dump_yaml(data):
     return yaml.dump(data, Dumper=SourceDumper, sort_keys=False, allow_unicode=True, width=100000)
 
 
+class NamedText(io.StringIO):
+    """Text that knows its file, so that a YAML syntax error names it."""
+
+    def __init__(self, text, name):
+        super().__init__(text)
+        self.name = name
+
+
 def load_yaml(text, name):
-    loader = UniqueKeyLoader(text)
+    loader = UniqueKeyLoader(NamedText(text, str(name)))
     loader.name = str(name)
     data = loader.get_single_data()
     loader.dispose()
@@ -198,7 +209,9 @@ def merge_file(source, path, seen):
             if not isinstance(identifier, str) or not ID.fullmatch(identifier):
                 raise where.error("an id is a lowercase slug: a letter, then letters, digits, '_' or '-'")
             if identifier in merged:
-                raise where.error(f"{SINGULAR[family]} id {identifier!r} is already defined in {merged[identifier][1].file}")
+                raise where.error(
+                    f"{SINGULAR[family]} id {identifier!r} is already defined in {merged[identifier][1].file}"
+                )
             merged[identifier] = (record, where)
     for name in RECORD_LISTS:
         records = data.get(name) or []
@@ -210,7 +223,9 @@ def merge_file(source, path, seen):
         raise (at / "mobprogs").error("expected a mapping from program vnum to code")
     for vnum, code in mobprogs.items():
         if vnum in source.mobprogs:
-            raise (at / "mobprogs" / vnum).error(f"program {vnum} is already written in {source.mobprogs[vnum][1].file}")
+            raise (at / "mobprogs" / vnum).error(
+                f"program {vnum} is already written in {source.mobprogs[vnum][1].file}"
+            )
         source.mobprogs[vnum] = (code, at / "mobprogs" / vnum)
 
     includes = data.get("include") or []
