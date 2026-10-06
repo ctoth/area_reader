@@ -7,6 +7,7 @@ import re
 import sys
 from pathlib import Path
 
+import area_reader.atlas
 import area_reader.dialects.ack
 import area_reader.dialects.circle
 import area_reader.dialects.coffeemud
@@ -263,6 +264,9 @@ def build_parser():
 
 
 def main(argv=None):
+    argv = sys.argv[1:] if argv is None else list(argv)
+    if argv[:1] == ["atlas"]:
+        return area_reader.atlas.main(argv[1:])
     arguments = build_parser().parse_args(argv)
     logging.basicConfig(stream=sys.stderr, level=logging.WARNING)
     dialect = None if arguments.type == "auto" else arguments.type

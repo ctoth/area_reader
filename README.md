@@ -138,6 +138,41 @@ field edits are authoritative over the read-side `raw_text` and `raw_data`
 views. The six upstream example and skill catalogs have semantic and canonical
 fixed points and are accepted by CoffeeMud's native MOB/item loaders.
 
+## Questions about a set of areas
+
+`area-reader atlas` loads several ROM or Merc area files together and answers
+one question about the set. Each path is an area file, or a directory whose
+`*.are` files are all loaded. Answers are text; `--json` prints the same
+answer as JSON. A file that does not parse stops the command with the parser's
+error.
+
+```
+area-reader atlas summary test/rom
+area-reader atlas reach --from 3001 [--rooms] [--with-portals] [--with-progs] test/rom
+area-reader atlas links [--rooms] test/rom
+area-reader atlas dangling test/rom
+area-reader atlas depends test/rom
+area-reader atlas path 3001 3472 test/rom
+area-reader atlas find mota test/rom
+```
+
+- `summary`: counts per file, totals, and vnum ranges that overlap between files.
+- `reach`: what a walk over exits from one room reaches, and what can walk
+  back. `--with-portals` adds portals that an `O` reset places in a room;
+  `--with-progs` adds `mob transfer` and `mob gtransfer` from the room an `M`
+  reset loads the mob in.
+- `links`: which areas have exits to which, and the links with no exit back.
+- `dangling`: references to vnums no file defines (exits, keys, resets, shop
+  keepers, specials, mob programs, portals, and vnums in `mob transfer`,
+  `gtransfer`, `otransfer`, `goto`, `at`, `mload` and `oload` lines), and the
+  exits whose destination is 0 or less.
+- `depends`: the other areas each area refers to, by kind of reference.
+- `path`: the shortest path between two rooms.
+- `find`: rooms, mobs and objects by name or short description.
+
+The same questions are functions of `area_reader.atlas`, each returning the
+dictionary that `--json` prints.
+
 ## Documentation
 
 - `PROJECT.md` — the larger goal: a shared "virtual world algebra" across MUD dialects.
