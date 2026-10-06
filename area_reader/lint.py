@@ -10,7 +10,15 @@ from functools import partial
 from attr import attr, attributes
 
 import area_reader.atlas
-from area_reader.constants import EXIT_DIRECTIONS, EXIT_FLAGS, ROM_ACT_TYPES, ROM_LIQUIDS, ROM_ROOM_FLAGS
+from area_reader.constants import (
+    EXIT_DIRECTIONS,
+    EXIT_FLAGS,
+    IMM_FLAGS,
+    ROM_ACT_TYPES,
+    ROM_LIQUIDS,
+    ROM_ROOM_FLAGS,
+    WEAR_FLAGS,
+)
 
 SEVERITIES = ("error", "warning", "info")
 
@@ -370,6 +378,42 @@ STAT_RATIO_HIGH = 2.0
 # Armor class is compared in the file's units (tenths of the in-game value), averaged over pierce, bash and slash.
 AC_TOLERANCE = 5
 
+# ROM src/merc.h declares every index's vnum as sh_int.
+VNUM_LIMIT = 32767
+# ROM src/merc.h WEAR_ locations, with the ITEM_ wear flag src/act_obj.c wear_obj asks for; the light slot takes
+# an object of type light.  src/db.c reset_area equips an E reset's object without looking at its flags.
+WEAR_SLOTS = {
+    0: ("light", None),
+    1: ("left finger", WEAR_FLAGS.FINGER),
+    2: ("right finger", WEAR_FLAGS.FINGER),
+    3: ("first neck", WEAR_FLAGS.NECK),
+    4: ("second neck", WEAR_FLAGS.NECK),
+    5: ("body", WEAR_FLAGS.BODY),
+    6: ("head", WEAR_FLAGS.HEAD),
+    7: ("legs", WEAR_FLAGS.LEGS),
+    8: ("feet", WEAR_FLAGS.FEET),
+    9: ("hands", WEAR_FLAGS.HANDS),
+    10: ("arms", WEAR_FLAGS.ARMS),
+    11: ("shield", WEAR_FLAGS.SHIELD),
+    12: ("about", WEAR_FLAGS.ABOUT),
+    13: ("waist", WEAR_FLAGS.WAIST),
+    14: ("left wrist", WEAR_FLAGS.WRIST),
+    15: ("right wrist", WEAR_FLAGS.WRIST),
+    16: ("wield", WEAR_FLAGS.WIELD),
+    17: ("hold", WEAR_FLAGS.HOLD),
+    18: ("float", WEAR_FLAGS.FLOAT),
+}
+# ROM doc/Rom2.4.doc: shopkeepers should be "immune to summon, charm, magic, and weapons (immunity flag ABCD)".
+KEEPER_IMMUNITIES = {
+    "summon": IMM_FLAGS.SUMMON,
+    "charm": IMM_FLAGS.CHARM,
+    "magic": IMM_FLAGS.MAGIC,
+    "weapons": IMM_FLAGS.WEAPON,
+}
+OLDSTYLE = "oldstyle"
+TOLD_FEELING = re.compile(r"\byou\s+(?:feel|think|can't\s+help|cannot\s+help)\b", re.IGNORECASE)
+SECOND_PERSON = re.compile(r"\byou\b", re.IGNORECASE)
+
 LINE_LIMIT = 79
 ROOM_DESCRIPTION_MIN_LINES = 2
 # 120 characters fires on 23% of the stock ROM rooms; 80 on 9%.
@@ -439,9 +483,11 @@ def gather(atlas):
                 keys.add(item.value[position])
         for code in entry.area.mobprogs.values():
             for _number, words in program_lines(code):
-                if len(words) > 2 and words[0].lower() == "mob" and rom_lookup(words[1], PROGRAM_COMMANDS) == "call":
-                    if words[2].isdigit():
-                        used_programs.add(int(words[2]))
+                calls = (
+                    len(words) > 2 and words[0].lower() == "mob" and rom_lookup(words[1], PROGRAM_COMMANDS) == "call"
+                )
+                if calls and words[2].isdigit():
+                    used_programs.add(int(words[2]))
     forward, backward = area_reader.atlas.adjacency(
         list(area_reader.atlas.exit_links(atlas)) + area_reader.atlas.extra_links(atlas, True, True)
     )
@@ -1027,6 +1073,124 @@ def description_direction_no_exit(atlas, entry, facts):
             yield found("room", f"description speaks of a way {direction}, where the room has no exit", room.vnum)
 
 
+def vnum_above_rom_limit(atlas, entry, facts):
+    del atlas, facts
+    area = entry.area
+    families = (area.rooms, area.mobs, area.objects, area.mobprogs)
+    high = [vnum for family in families for vnum in family if vnum > VNUM_LIMIT]
+    if high:
+        yield found(
+            "area", f"{len(high)} vnums are above {VNUM_LIMIT}, the most ROM can hold; the highest is {max(high)}"
+        )
+
+
+def equip_wear_flag_mismatch(atlas, entry, facts):
+    del facts
+    for position, reset in enumerate(commands(entry.area)):
+        if reset.command != "E" or reset.arg1 not in atlas.objects or reset.arg3 not in WEAR_SLOTS:
+            continue
+        item = atlas.objects[reset.arg1][1]
+        slot, flag = WEAR_SLOTS[reset.arg3]
+        allowed = item.item_type == "light" if flag is None else bool(item.wear_flags & flag)
+        if not allowed:
+            needs = "is not a light" if flag is None else f"lacks the {flag.name.lower()} wear flag"
+            yield found("reset", f"E reset puts object {reset.arg1} in the {slot} slot, but it {needs}", index=position)
+
+
+def door_states(atlas):
+    """The state the last D reset of the set gives each ``(room, direction number)``."""
+    states = {}
+    for entry in atlas.areas:
+        for reset in commands(entry.area):
+            if reset.command == "D":
+                states[reset.arg1, reset.arg2] = reset.arg3
+    return states
+
+
+def door_no_reset(atlas, entry, facts):
+    del facts
+    states = door_states(atlas)
+    for room in entry.area.rooms.values():
+        for room_exit in room.exits:
+            if is_door(room_exit) and (room.vnum, room_exit.door.value) not in states:
+                direction = area_reader.atlas.direction_name(room_exit.door)
+                yield found("room", f"door {direction} has no D reset; it starts open and is never reset", room.vnum)
+
+
+def door_reset_mismatch(atlas, entry, facts):
+    del facts
+    states = door_states(atlas)
+    for room, room_exit, direction, back in returning_exits(atlas, entry):
+        # A side without a D reset is as ROM src/db.c load_rooms leaves it: open, state 0.
+        near = states.get((room.vnum, room_exit.door.value), 0)
+        far = states.get((room_exit.destination, back.door.value), 0)
+        if is_door(room_exit) and is_door(back) and near != far:
+            yield found(
+                "room",
+                f"door {direction} to {room_exit.destination} is reset to state {near}, its far side to state {far}",
+                room.vnum,
+            )
+
+
+def door_no_keyword(atlas, entry, facts):
+    del atlas, facts
+    for room in entry.area.rooms.values():
+        for room_exit in room.exits:
+            if is_door(room_exit) and not room_exit.keyword.strip():
+                direction = area_reader.atlas.direction_name(room_exit.door)
+                yield found("room", f"door {direction} has no keyword; it opens by direction only", room.vnum)
+
+
+def extra_keyword_not_in_description(atlas, entry, facts):
+    del atlas, facts
+    for room in entry.area.rooms.values():
+        text = room.description.lower()
+        for extra in room.extra_descriptions:
+            keywords = extra.keyword.lower().split()
+            if keywords and not any(keyword in text for keyword in keywords):
+                yield found(
+                    "room", f"extra description {extra.keyword!r} is named nowhere in the description", room.vnum
+                )
+
+
+def mob_aggressive_wimpy(atlas, entry, facts):
+    del atlas, facts
+    both = ROM_ACT_TYPES.AGGRESSIVE | ROM_ACT_TYPES.WIMPY
+    for mob in entry.area.mobs.values():
+        if mob.act & both == both:
+            yield found("mob", "aggressive and wimpy: it attacks only sleeping players", mob.vnum)
+
+
+def shop_keeper_killable(atlas, entry, facts):
+    del facts
+    for position, shop in enumerate(entry.area.shops):
+        if shop.keeper in atlas.mobs:
+            held = atlas.mobs[shop.keeper][1].imm_flags
+            missing = [name for name, flag in KEEPER_IMMUNITIES.items() if not held & flag]
+            if missing:
+                yield found("shop", f"keeper is not immune to {', '.join(missing)}", shop.keeper, position)
+
+
+def oldstyle_leftover(atlas, entry, facts):
+    del atlas, facts
+    for mob in entry.area.mobs.values():
+        if OLDSTYLE in mob.name.lower().split():
+            yield found("mob", f"keyword {OLDSTYLE!r} is left over from a format conversion", mob.vnum)
+    for item in entry.area.objects.values():
+        if item.material.strip().lower() == OLDSTYLE:
+            yield found("object", f"material {OLDSTYLE!r} is left over from a format conversion", item.vnum)
+
+
+def room_description_told_feeling(atlas, entry, facts):
+    del atlas, facts
+    for room in entry.area.rooms.values():
+        phrases = {" ".join(match.group(0).lower().split()) for match in TOLD_FEELING.finditer(room.description)}
+        if phrases:
+            yield found(
+                "room", f"description tells the reader a feeling or thought: {', '.join(sorted(phrases))}", room.vnum
+            )
+
+
 # Each rule: its severity and a function of (atlas, entry, facts) yielding found(...) tuples.
 RULES = {
     **{
@@ -1119,6 +1283,16 @@ RULES = {
     "short-desc-capital-article": ("warning", short_desc_capital_article),
     "short-desc-no-keyword": ("warning", short_desc_no_keyword),
     "description-direction-no-exit": ("info", description_direction_no_exit),
+    "vnum-above-rom-limit": ("warning", vnum_above_rom_limit),
+    "equip-wear-flag-mismatch": ("warning", equip_wear_flag_mismatch),
+    "door-no-reset": ("info", door_no_reset),
+    "door-reset-mismatch": ("info", door_reset_mismatch),
+    "door-no-keyword": ("warning", door_no_keyword),
+    "extra-keyword-not-in-description": ("info", extra_keyword_not_in_description),
+    "mob-aggressive-wimpy": ("info", mob_aggressive_wimpy),
+    "shop-keeper-killable": ("info", shop_keeper_killable),
+    "oldstyle-leftover": ("info", oldstyle_leftover),
+    "room-description-told-feeling": ("warning", room_description_told_feeling),
 }
 
 
@@ -1157,6 +1331,7 @@ def metrics(area):
         "rooms_with_extra_description": fraction(sum(1 for room in rooms if room.extra_descriptions), len(rooms)),
         "distinct_room_names": fraction(len({room.name.strip() for room in rooms}), len(rooms)),
         "distinct_room_descriptions": fraction(len({room.description.strip() for room in rooms}), len(rooms)),
+        "second_person_share": fraction(sum(1 for room in rooms if SECOND_PERSON.search(room.description)), len(rooms)),
         "mobs_with_program_or_special": fraction(
             sum(1 for mob in mobs if mob.mprogs or mob.vnum in special_mobs), len(mobs)
         ),

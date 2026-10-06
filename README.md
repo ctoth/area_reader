@@ -202,15 +202,21 @@ error finding, else 0.
 - Warnings are defects ROM runs with: one-way exits, doors that disagree
   between their two sides, rooms cut off from the rest, mobs, objects, keys
   and programs nothing loads or uses, shops without stock, mob hit points,
-  damage and armor class far from the table in ROM's builder guide, and prose
-  that is short, repeated, too wide or miscapitalized.
+  damage and armor class far from the table in ROM's builder guide, vnums
+  above 32767 (ROM holds a vnum in a short), equipment reset into a slot its
+  wear flags do not allow, doors without a keyword, and prose that is short,
+  repeated, too wide, miscapitalized or tells the reader what they feel.
 - Info notes levels outside the area's `{low high}` range, exits to nowhere,
-  and descriptions that say a way leads where the room has no exit.
+  descriptions that say a way leads where the room has no exit, door sides
+  with no `D` reset or reset to a different state than the far side, extra
+  descriptions the room text never names, mobs both aggressive and wimpy,
+  shopkeepers that can be killed, and `oldstyle` conversion leftovers.
 - Metrics, per file: record counts, exits per room, room description length,
   the shares of rooms with an extra description, of distinct room names and
-  descriptions and of mobs with a program or spec function, doors, locked
-  doors and keys, item type and sector counts, the mob level spread, and the
-  type-token ratio of all description words.
+  descriptions, of room descriptions that say "you", and of mobs with a
+  program or spec function, doors, locked doors and keys, item type and
+  sector counts, the mob level spread, and the type-token ratio of all
+  description words.
 
 `area_reader.lint.RULES` maps each rule id to its severity and its function;
 `area_reader.lint.lint(atlas, targets)` returns the dictionary that `--json`

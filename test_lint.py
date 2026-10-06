@@ -14,12 +14,19 @@ SHOP = "Bolts of cloth and coils of rope hang from pegs above a long counter\nwo
 GREETING = "if ispc $n\n  say Welcome.\n  mob echo The guard nods.\nelse\n  mob echoat $n The guard stares.\nendif\n"
 
 
-def way(door, destination, locks=0, key=-1, description=""):
-    return {"door": door, "destination": destination, "locks": locks, "key": key, "description": description}
+def way(door, destination, locks=0, key=-1, description="", keyword=None):
+    return {
+        "door": door,
+        "destination": destination,
+        "locks": locks,
+        "key": key,
+        "description": description,
+        "keyword": ("door" if locks else "") if keyword is None else keyword,
+    }
 
 
-def room(name, description, exits=(), flags="0"):
-    return {"name": name, "description": description, "exits": list(exits), "flags": flags}
+def room(name, description, exits=(), flags="0", extras=()):
+    return {"name": name, "description": description, "exits": list(exits), "flags": flags, "extras": list(extras)}
 
 
 def mob(name, short_desc, long_desc, description, **fields):
@@ -38,13 +45,15 @@ def mob(name, short_desc, long_desc, description, **fields):
         "default_pos": "stand",
         "sex": "male",
         "size": "medium",
+        "act": "AB",
+        "imm": "0",
         "programs": [],
     }
     record.update(fields)
     return record
 
 
-def item(name, short_desc, description, item_type="trash", values="0 0 0 0 0", level=0):
+def item(name, short_desc, description, item_type="trash", values="0 0 0 0 0", level=0, wear="A", material="stuff"):
     return {
         "name": name,
         "short_desc": short_desc,
@@ -52,6 +61,8 @@ def item(name, short_desc, description, item_type="trash", values="0 0 0 0 0", l
         "item_type": item_type,
         "values": values,
         "level": level,
+        "wear": wear,
+        "material": material,
     }
 
 
@@ -75,11 +86,15 @@ def tidy():
                 "He looks neat and alert.\n",
                 programs=[("GREET", 120, "100")],
             ),
-            111: mob("clerk", "the clerk", "A clerk waits behind the counter.\n", "She is counting coins.\n"),
+            111: mob(
+                "clerk", "the clerk", "A clerk waits behind the counter.\n", "She is counting coins.\n", imm="ABCD"
+            ),
         },
         "objects": {
             150: item("key brass", "a brass key", "A brass key lies here.", "key"),
-            151: item("sword short", "a short sword", "A short sword lies here.", "weapon", "sword 1 6 slash 0", 3),
+            151: item(
+                "sword short", "a short sword", "A short sword lies here.", "weapon", "sword 1 6 slash 0", 3, wear="AN"
+            ),
             152: item("waterskin skin", "a waterskin", "A waterskin lies here.", "drink", "10 10 'water' 0 0"),
             153: item("chest oak", "an oak chest", "An oak chest stands here.", "container", "10 0 150 0 0"),
         },
@@ -104,23 +119,25 @@ def tidy():
 
 def room_text(vnum, record):
     exits = "".join(
-        "D{door}\n{description}~\n~\n{locks} {key} {destination}\n".format(**room_exit) for room_exit in record["exits"]
+        "D{door}\n{description}~\n{keyword}~\n{locks} {key} {destination}\n".format(**room_exit)
+        for room_exit in record["exits"]
     )
-    return f"#{vnum}\n{record['name']}~\n{record['description']}~\n0 {record['flags']} 1\n{exits}S\n"
+    extras = "".join(f"E\n{keyword}~\n{text}~\n" for keyword, text in record["extras"])
+    return f"#{vnum}\n{record['name']}~\n{record['description']}~\n0 {record['flags']} 1\n{exits}{extras}S\n"
 
 
 def mob_text(vnum, record):
     programs = "".join(f"M {trigger} {program} {phrase}~\n" for trigger, program, phrase in record["programs"])
     return (
         "#{vnum}\n{name}~\n{short_desc}~\n{long_desc}~\n{description}~\n{race}~\n"
-        "AB 0 0 0\n{level} 0 {hit} 1d1+1 {damage} {damtype}\n{ac} {ac} {ac} {ac}\n0 0 0 0\n"
+        "{act} 0 0 0\n{level} 0 {hit} 1d1+1 {damage} {damtype}\n{ac} {ac} {ac} {ac}\n0 {imm} 0 0\n"
         "{start_pos} {default_pos} {sex} 0\n0 0 {size} unknown\n"
     ).format(vnum=vnum, **record) + programs
 
 
 def item_text(vnum, record):
     return (
-        "#{vnum}\n{name}~\n{short_desc}~\n{description}~\nstuff~\n{item_type} 0 0\n{values}\n{level} 1 1 P\n"
+        "#{vnum}\n{name}~\n{short_desc}~\n{description}~\n{material}~\n{item_type} 0 {wear}\n{values}\n{level} 1 1 P\n"
     ).format(vnum=vnum, **record)
 
 
@@ -298,6 +315,21 @@ FIRING = [
     ("short-desc-capital-article", change("objects", 150, short_desc="A brass key")),
     ("short-desc-no-keyword", guard(name="sentinel")),
     ("description-direction-no-exit", change("rooms", 102, description=SHOP + "A passage leads north.\n")),
+    ("vnum-above-rom-limit", put("programs", 32768, "say Too high.\n")),
+    ("equip-wear-flag-mismatch", change("objects", 151, wear="A")),
+    ("equip-wear-flag-mismatch", more("resets", "M 0 110 2 100 2", "E 0 151 0 0")),
+    ("door-no-reset", less("resets", "D 0 101 2 1")),
+    ("door-reset-mismatch", less("resets", "D 0 101 2 1")),
+    ("door-reset-mismatch", more("resets", "D 0 101 2 2")),
+    ("door-no-keyword", exits(101, way(2, 100, locks=1, key=150, keyword=""))),
+    ("extra-keyword-not-in-description", change("rooms", 102, extras=[("plaque brass", "It is blank.\n")])),
+    ("mob-aggressive-wimpy", guard(act="ABFH")),
+    ("shop-keeper-killable", change("mobs", 111, imm="ABC")),
+    ("oldstyle-leftover", guard(name="oldstyle guard tidy")),
+    ("oldstyle-leftover", change("objects", 150, material="oldstyle")),
+    ("room-description-told-feeling", change("rooms", 102, description=SHOP + "You feel watched.\n")),
+    ("room-description-told-feeling", change("rooms", 102, description=SHOP + "It is, you\nthink, a trap.\n")),
+    ("room-description-told-feeling", change("rooms", 102, description=SHOP + "You can't help but stare.\n")),
 ]
 
 # Changes that look like a defect to one rule and are not.
@@ -346,6 +378,22 @@ QUIET = [
     ("short-desc-no-keyword", guard(name="sentinel GUARD")),
     ("description-direction-no-exit", change("rooms", 102, description=SHOP + "A passage leads west.\n")),
     ("description-direction-no-exit", change("rooms", 102, description=SHOP + "The hills lie to the north-east.\n")),
+    (
+        "vnum-above-rom-limit",
+        lambda spec: (spec.update(last=32767), spec["programs"].update({32767: "mob call 120\n"})),
+    ),
+    ("equip-wear-flag-mismatch", more("resets", "M 0 110 2 100 2", "E 0 151 0 99")),
+    ("door-no-reset", exits(102, way(3, 100), way(2, 999, keyword="gap"))),
+    ("door-reset-mismatch", less("resets", "D 0 100 0 1", "D 0 101 2 1")),
+    ("door-no-keyword", exits(102, way(3, 100, keyword=""))),
+    ("extra-keyword-not-in-description", change("rooms", 102, extras=[("plaque counter", "It is worn.\n")])),
+    ("mob-aggressive-wimpy", guard(act="ABF")),
+    ("shop-keeper-killable", guard(imm="0")),
+    ("oldstyle-leftover", guard(name="oldstyles guard tidy")),
+    (
+        "room-description-told-feeling",
+        change("rooms", 102, description=SHOP + "You see a door. Thinkers feel at home.\n"),
+    ),
 ]
 
 
@@ -490,6 +538,7 @@ def test_metrics_of_the_tidy_area(tmp_path):
     assert metrics["rooms_with_extra_description"] == 0
     assert metrics["distinct_room_names"] == 1
     assert metrics["distinct_room_descriptions"] == 1
+    assert metrics["second_person_share"] == 0
     assert metrics["mobs_with_program_or_special"] == 0.5
     assert metrics["doors"] == 2
     assert metrics["locked_doors"] == 2
