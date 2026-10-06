@@ -68,6 +68,9 @@ class SmaugAreaFile(area_reader.dialects.rom.RomAreaFile):
         self.read_and_verify_letter("|")
         return programs
 
+    def inline_mob_programs(self, mob):
+        return [(program.trigger, program.argument, program.commands) for program in mob.programs]
+
     def load_sections(self):
         readers = {
             "area": self.read_area_metadata,

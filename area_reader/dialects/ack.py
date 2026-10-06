@@ -344,6 +344,9 @@ class AckAreaFile(area_reader.parser.AreaFile):
         with open(path, mode="wt", encoding="latin-1", newline="\n") as area_file:
             area_file.write(self.dumps())
 
+    def inline_mob_programs(self, mob):
+        return [(program.trigger, program.arguments, program.commands) for program in mob.mobprogs]
+
     def section_readers(self):
         readers = super().section_readers()
         readers["objfuns"] = self.load_objfuns

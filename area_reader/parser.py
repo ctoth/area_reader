@@ -8,6 +8,7 @@ import re
 
 from attr import fields
 
+import area_reader.mobprogs
 import area_reader.model
 import area_reader.serialization
 import area_reader.values
@@ -403,9 +404,31 @@ class AreaFile:
     def surrounding_text(self, window=50):
         return self.data[self.index - window : self.index + window]
 
+    def inline_mob_programs(self, mob):
+        """Return ``(trigger, argument, commands)`` for each program written inline on ``mob``."""
+        del mob
+        return []
+
+    def mob_programs(self):
+        """Return each mob's programs in the normalized ROM 2.4 shape, by vnum, and their diagnostics."""
+        programs = {}
+        diagnostics = []
+        for vnum, mob in self.area.mobs.items():
+            joined, missing = area_reader.mobprogs.rom_programs(
+                vnum, getattr(mob, "mprogs", None) or [], self.area.mobprogs
+            )
+            translated, untranslated = area_reader.mobprogs.inline_programs(vnum, self.inline_mob_programs(mob))
+            programs[vnum] = joined + translated
+            diagnostics.extend(missing)
+            diagnostics.extend(untranslated)
+        return programs, diagnostics
+
     def as_dict(self):
         result = area_reader.serialization.EnumNameConverter().unstructure(self.area)
-        result["diagnostics"] = [dict(diagnostic) for diagnostic in self.diagnostics]
+        programs, diagnostics = self.mob_programs()
+        for vnum, entries in programs.items():
+            result["mobs"][vnum]["mob_programs"] = entries
+        result["diagnostics"] = [dict(diagnostic) for diagnostic in self.diagnostics] + diagnostics
         return result
 
     def as_json(self, indent=None):
