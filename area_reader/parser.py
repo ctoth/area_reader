@@ -280,6 +280,11 @@ class AreaFile:
         }
 
     def load_sections(self):
+        self.read_sections()
+        # Program bodies and mobiles arrive in separate sections, so their diagnostics wait for the whole file.
+        self.diagnostics.extend(self.mob_programs()[1])
+
+    def read_sections(self):
         readers = self.section_readers()
         while True:
             section_name = self.read_section_name()
@@ -425,10 +430,9 @@ class AreaFile:
 
     def as_dict(self):
         result = area_reader.serialization.EnumNameConverter().unstructure(self.area)
-        programs, diagnostics = self.mob_programs()
-        for vnum, entries in programs.items():
+        for vnum, entries in self.mob_programs()[0].items():
             result["mobs"][vnum]["mob_programs"] = entries
-        result["diagnostics"] = [dict(diagnostic) for diagnostic in self.diagnostics] + diagnostics
+        result["diagnostics"] = [dict(diagnostic) for diagnostic in self.diagnostics]
         return result
 
     def as_json(self, indent=None):

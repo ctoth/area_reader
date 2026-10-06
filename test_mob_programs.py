@@ -124,6 +124,35 @@ def test_a_trigger_without_a_program_body_is_reported(tmp_path: Path) -> None:
         {"kind": "missing_mobprog", "mob": 101, "trigger": "DEATH", "vnum": 151},
     ]
     assert area_file.as_dict()["diagnostics"] == payload["diagnostics"]
+    assert area_file.diagnostics == payload["diagnostics"]
+
+
+def test_mob_program_diagnostics_are_collected_with_the_parse_diagnostics(tmp_path: Path) -> None:
+    rom = load_rom(tmp_path, ROM_MISSING.replace("#$\n", "#SOCIALS\nsmile~\n#$\n"))
+    smaug = load_smaug_programs(tmp_path, "> time_prog 12~\nmpslay $n\n~\n")
+    fuss = load(
+        area_reader.dialects.swr.SwrAreaFile,
+        tmp_path,
+        "#FUSSAREA\n#AREADATA\nVersion      1\nName         Programs~\n#ENDAREADATA\n\n"
+        "#MOBILE\nVnum       5\nKeywords   test mob~\n"
+        "#MUDPROG\nProgtype  greet_prog~\nArglist   100~\nComlist   mprestore self 50\n~\n#ENDPROG\n\n"
+        "#ENDMOBILE\n\n#ENDAREA\n",
+    )
+
+    assert rom.diagnostics == [
+        {"kind": "skipped_section", "section": "socials"},
+        {"kind": "missing_mobprog", "mob": 100, "trigger": "SPEECH", "vnum": 150},
+        {"kind": "missing_mobprog", "mob": 101, "trigger": "DEATH", "vnum": 151},
+    ]
+    assert smaug.diagnostics == [
+        {"kind": "unknown_mobprog_trigger", "mob": 7, "trigger": "TIME_PROG"},
+        {"kind": "untranslated_mobprog_line", "mob": 7, "trigger": "TIME_PROG", "line": "mpslay $n"},
+    ]
+    assert fuss.diagnostics == [
+        {"kind": "untranslated_mobprog_line", "mob": 5, "trigger": "GREET", "line": "mprestore self 50"},
+    ]
+    for area_file in (rom, smaug, fuss):
+        assert area_file.as_dict()["diagnostics"] == area_file.diagnostics
 
 
 def test_inline_programs_are_translated_to_rom_syntax(tmp_path: Path) -> None:
