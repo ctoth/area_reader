@@ -16,6 +16,7 @@ The exit status is 0 only when the server stays up and logs no bug it does not l
 
 import argparse
 import collections
+import re
 import shutil
 import socket
 import subprocess
@@ -28,6 +29,20 @@ from area_reader.native import render_document
 BUG = "[*****] BUG"
 STOCK_GETTIMEOFDAY = "int\tgettimeofday\targs( ( struct timeval *tp, struct timezone *tzp ) );\n"
 QUICKMUD_GETTIMEOFDAY = "int gettimeofday args ((struct timeval * tp, struct timezone * tzp));\n"
+MAX_STRING = re.compile(r"(#define\s+MAX_STRING\s+)(\d+)")
+MAX_STRING_LENGTH = re.compile(r"#define\s+MAX_STRING_LENGTH\s+(\d+)")
+STRING_SPACE_FACTOR = 4
+READY = '"ROM is ready to rock on port'
+STRING_SPACE_LINE = "String space used at boot: "
+STRING_SPACE_USED = re.compile(re.escape(STRING_SPACE_LINE) + r"(\d+)")
+STRING_SPACE_REPORTER = f"""
+void area_reader_string_space (void)
+{{
+    char buf[256];
+    sprintf (buf, "{STRING_SPACE_LINE}%ld", (long) (top_string - string_space));
+    log_string (buf);
+}}
+"""
 
 
 def source_text(root: Path, name: str) -> str:
@@ -40,6 +55,43 @@ def reads_areadata(root: Path) -> bool:
 
 def reads_programs(root: Path) -> bool:
     return (root / "src" / "mob_prog.c").is_file()
+
+
+def enlarge_string_space(root: Path) -> tuple[int, int]:
+    """Raise the tree's fixed string space and make the server log how much of it boot used.
+
+    Both trees keep every area string in one MAX_STRING-byte block (src/db.c) and exit with "Fread_string:
+    MAX_STRING exceeded" when it is full; their own areas nearly fill it. The limit is a compile-time
+    number the tree's own comment says to raise, not a property of the area format. Returns the tree's
+    own limit and the raised one.
+    """
+    db = root / "src" / "db.c"
+    text = db.read_text(encoding="latin-1")
+    define = MAX_STRING.search(text)
+    if define is None:
+        raise RuntimeError("db.c has no MAX_STRING define")
+    limit = int(define.group(2))
+    raised = limit * STRING_SPACE_FACTOR
+    text = text[: define.start(2)] + str(raised) + text[define.end(2) :] + STRING_SPACE_REPORTER
+    with db.open("w", encoding="latin-1", newline="\n") as output:
+        output.write(text)
+
+    comm = root / "src" / "comm.c"
+    comm_text = comm.read_text(encoding="latin-1")
+    # Both trees announce the port in a plain statement right after boot_db(); report just before it.
+    ready = comm_text.find(READY)
+    if ready == -1:
+        raise RuntimeError(f"comm.c has no {READY!r} statement to report string space before")
+    line_start = comm_text.rfind("\n", 0, ready) + 1
+    call = "    { extern void area_reader_string_space (void); area_reader_string_space (); }\n"
+    with comm.open("w", encoding="latin-1", newline="\n") as output:
+        output.write(comm_text[:line_start] + call + comm_text[line_start:])
+    return limit, raised
+
+
+def string_space_used(process: subprocess.CompletedProcess[str]) -> int | None:
+    used = STRING_SPACE_USED.search(process.stdout + process.stderr)
+    return None if used is None else int(used.group(1))
 
 
 def modernize(root: Path) -> None:
@@ -135,7 +187,11 @@ def boot(root: Path) -> subprocess.CompletedProcess[str]:
 def log_lines(process: subprocess.CompletedProcess[str]) -> list[str]:
     """ROM's log without its timestamps, so two boots can be compared."""
     lines = (process.stdout + process.stderr).splitlines()
-    return [line.split(" :: ", 1)[-1] for line in lines if line.strip() and "ready to rock on port" not in line]
+    return [
+        line.split(" :: ", 1)[-1]
+        for line in lines
+        if line.strip() and "ready to rock on port" not in line and STRING_SPACE_LINE not in line
+    ]
 
 
 def for_engine(area: area_reader.dialects.rom.RomArea, root: Path) -> list[str]:
@@ -208,6 +264,10 @@ def main() -> int:
                 "(pass --new for an area that is not)"
             )
         modernize(root)
+        # Before the baseline boot, so that both boots run the same server.
+        limit, raised = enlarge_string_space(root)
+        slack = int(MAX_STRING_LENGTH.search(source_text(root, "merc.h")).group(1))
+        print(f"String space: MAX_STRING raised from the tree's {limit} to {raised} for both boots of this run.")
 
         build = run(["wsl", "--cd", str(root), "make", "-C", "src", *make_arguments(root)], timeout=300)
         if build.returncode != 0:
@@ -222,6 +282,12 @@ def main() -> int:
             print("The unmodified ROM tree did not stay up through the boot window.")
             return stock.returncode or 1
         baseline = collections.Counter(log_lines(stock))
+        # The loader stops reading strings MAX_STRING_LENGTH short of the end of the block.
+        own = string_space_used(stock)
+        print(
+            f"String space: the tree's own areas use {own} bytes; under its own limit that leaves "
+            f"{limit - slack - own} for new areas."
+        )
         if args.new:
             list_area(root, source_area.name)
         with target.open("w", encoding="latin-1", newline="\n") as output:
@@ -233,6 +299,11 @@ def main() -> int:
         if booted.returncode != 124:
             print(f"ROM exited with status {booted.returncode} instead of staying up.")
             return booted.returncode or 1
+        used = string_space_used(booted)
+        print(
+            f"String space: {used} bytes used with this {source_area.name} ({used - own:+d}); "
+            f"{'it would not fit' if used > limit - slack else 'it fits'} under the tree's own limit."
+        )
 
     # The engine reports most area faults with bug() and carries on, so staying up is not enough: compare its
     # log with the unmodified tree's. Lines that are not bugs ("Err: obj ..." level warnings) come and go with
