@@ -1,0 +1,113 @@
+# The works proper: the yard and everything that opens off it.
+rooms:
+  yard:
+    name: The Works Yard
+    description: |
+      The yard is paved with clinker from the furnaces and crossed by plank
+      walks, each one leading to a door.  Smoke rolls out of the long boiling
+      house to the north.  West, the ground drops to the open pans; east
+      stands the salt store, windowless and built of stone where everything
+      else here is timber.  The gate tunnel is to the south.
+    sector: city
+    exits:
+      north: boiling-house
+      west: brine-pans
+      east:
+        to: store
+        door: locked                 # locked again at every reset
+        keyword: door iron
+        key: store-key
+        pickproof: true
+        description: An iron-bound door, its lock as big as a loaf.
+    extras:
+      "clinker paving": Glassy black lumps, crunching underfoot.
+    mobs:
+      - mob: foreman
+        carries: [store-key]
+      - mob: yard-dog
+
+  store:
+    name: The Salt Store
+    description: |
+      Salt is heaped to the rafters here in loose grey-white drifts, held back
+      from the door by a board fence.  The air is so dry it catches in your
+      throat.  A chest stands on a stone shelf out of reach of the damp.
+    sector: inside
+    flags: [indoors, dark]
+    exits:
+      # This side of the yard's east door is written out, because it has its own
+      # description. Both sides must then agree on destination, door and key.
+      west:
+        to: yard
+        door: locked
+        keyword: door iron
+        key: store-key
+        pickproof: true
+        description: The back of the door is sheeted with lead against the salt.
+    objects:
+      - object: salt-chest
+        contains: [coin-purse, salt-block, salt-block]   # two blocks: one reset loading two
+
+  boiling-house:
+    name: The Boiling House
+    description: |
+      Six lead pans the size of barn doors sit on brick flues down the length
+      of this shed, and under every one a fire is kept in day and night.  The
+      heat is a wall.  Men rake the crust to the pan sides as it forms and
+      shovel it, steaming, into wicker cones to drain.  A ladder goes up to
+      the loft, and a low door leads east to the pump.
+    sector: inside
+    flags: [indoors]
+    heal_rate: 80                    # no place to rest
+    exits:
+      up: drying-loft
+      east: pump-house
+    extras:
+      "pans lead": |
+        The brine in the nearest pan is the colour of weak tea and barely
+        moving.  A skin of white is creeping in from the edges.
+      "cones wicker": Each cone drips into a trough.  Nothing is wasted here.
+    mobs:
+      - mob: salt-boiler
+        count: 2                     # two loads, each with its own apron
+        wears: {body: leather-apron}
+
+  drying-loft:
+    name: The Drying Loft
+    description: |
+      Warm air from the flues comes up through gaps in the floor, and the loft
+      is hung from end to end with split fish on strings, stiff as boards.
+      The cones of salt finish drying on racks along the eaves.
+    sector: inside
+    flags: [indoors]
+    # No exits written: the boiling house's `up` makes the way down.
+    objects:
+      - object: salt-fish
+
+  pump-house:
+    name: The Pump House
+    description: |
+      A lean-to of tarred boards covers the brine well.  The pump is a wooden
+      barrel of a thing worked by a long handle, and from its spout a trough
+      slopes away through the wall toward the pans.  Everything in here is
+      furred with salt.
+    sector: inside
+    flags: [indoors]
+    objects:
+      - object: brine-pump
+
+  brine-pans:
+    name: The Brine Pans
+    description: |
+      Shallow clay-lined ponds step down the slope toward the sea, each one a
+      little smaller and a little whiter than the one above.  The sun and the
+      wind do the first of the work here before the brine is carried in to the
+      fires.  At the bottom of the last pond a sluice empties into a channel.
+    sector: water_swim
+    exits:
+      down:
+        to: outfall
+        oneway: true                 # down the sluice; there is no climbing back
+        description: The sluice boards are green and running with water.
+    extras:
+      sluice: A slot in the bank, shuttered with boards that lift out.

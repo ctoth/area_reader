@@ -1,0 +1,99 @@
+# Who works here. What a mob wears, carries and sells is written on the room
+# it stands in (rooms/*.yaml); what it is, is written here.
+mobs:
+  gate-warden:
+    keywords: warden gate guard
+    short: the gate warden
+    long: The gate warden leans on a boat-hook, counting carts.
+    description: |
+      He has a face like a dried plum and a leather apron stiff with tar.  The
+      hook has kept his feet out of the mud for thirty years and he holds it
+      as other men hold a walking stick.
+    race: human
+    level: 12
+    alignment: 300
+    sex: male
+    act: [sentinel, stay_area]
+    affected_by: [detect_invis]
+    offense: [bash, parry, assist_guard]
+    damtype: pierce
+    # No hit, mana, damage or ac: they are filled in from the level table.
+    # `area-reader build --show-defaults` prints what was used.
+    special: spec_guard
+    programs:
+      - trigger: greet
+        phrase: "100"                # percent chance
+        code: |
+          if ispc $n
+            say Carts to the yard, buyers to the office.  Touch nothing that steams.
+          endif
+
+  tallyman:
+    keywords: tallyman clerk
+    short: the tallyman
+    long: The tallyman sits at the high desk, notching a stick.
+    description: |
+      A neat, bloodless man with ink on his cuffs.  He does not look up, and
+      he has never once been short at the end of a day.
+    race: human
+    level: 20
+    alignment: 0
+    sex: male
+    act: [sentinel, stay_area, nopurge]
+    wealth: 2000
+    # Combat numbers written out. These are the recommended ones for level 20.
+    hitroll: 0
+    hit: 3d9+333
+    mana: 10d9+100
+    damage: 2d8+5
+    damtype: punch
+    ac: {pierce: -40, bash: -40, slash: -40, exotic: 70}   # ROM file units x 10
+    shop:                            # he sells what the tally office gives him to carry
+      buys: [food, drink, light]
+      profit_buy: 120
+      profit_sell: 60
+      hours: [6, 20]
+
+  foreman:
+    keywords: foreman woman
+    short: the foreman
+    long: The foreman crosses the yard with a ring of keys at her belt.
+    description: |
+      Broad in the shoulder and burned brown to the elbow, she watches the
+      colour of the smoke the way a sailor watches the sky.
+    race: human
+    level: 14
+    alignment: 200
+    sex: female
+    act: [stay_area, warrior]        # warrior: hit points read one level higher
+    offense: [kick, rescue]
+    wealth: 150
+    programs:
+      - trigger: speech
+        phrase: pans
+        file: progs/foreman-pans.mprog   # the body, kept in its own file
+
+  salt-boiler:
+    keywords: boiler salt man
+    short: a salt boiler
+    long: A salt boiler rakes the crust from a pan, stripped to the waist.
+    description: |
+      Sweat has cut clean lines through the soot on his arms.  He works with
+      his eyes half shut against the steam.
+    race: human
+    level: 8
+    sex: either
+    act: [sentinel]
+
+  yard-dog:
+    keywords: dog ratter
+    short: the yard dog
+    long: A lean ratter noses along the foot of the wall.
+    description: |
+      All ribs and whiskers.  One ear has been chewed down to a stump.
+    race: dog                        # form, parts and racial flags come from the race
+    level: 5
+    act: [scavenger, stay_area]
+    size: small
+    damtype: bite
+    special: spec_fido

@@ -272,6 +272,11 @@ def main(argv=None):
         from area_reader import lint
 
         return lint.main(argv[1:])
+    if argv[:1] in (["build"], ["unbuild"]):
+        # Imported here: the authoring package needs PyYAML, which reading areas does not.
+        from area_reader.authoring import builder, unbuilder
+
+        return (builder if argv[0] == "build" else unbuilder).main(argv[1:])
     arguments = build_parser().parse_args(argv)
     logging.basicConfig(stream=sys.stderr, level=logging.WARNING)
     dialect = None if arguments.type == "auto" else arguments.type
