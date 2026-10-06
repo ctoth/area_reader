@@ -62,6 +62,7 @@ name = "Shared foundations do not depend on dialects"
 type = "forbidden"
 source_modules = [
     "area_reader.constants",
+    "area_reader.mobprogs",
     "area_reader.model",
     "area_reader.native",
     "area_reader.parser",
