@@ -523,6 +523,10 @@ def compile_header(build):
     security = take(header, at, "security", integer, None)
     zone = take(header, at, "zone", integer, None)
     if area.header_format == "areadata":
+        # QuickMUD's new_load_area() has no Filename key: it steps over the line a word at a time, and a
+        # word of the name that happened to be a key ("End") would be taken for one.
+        if any(char.isspace() for char in area.original_filename):
+            raise (at / "filename").error("a file name in an #AREADATA header cannot contain whitespace")
         area.builders = builders
         area.security = security
         area.zone = zone
@@ -1148,7 +1152,7 @@ def compile_mob_extras(build):
             where = at / "programs" / index
             known_keys(entry, where, PROGRAM_KEYS)
             program = RomMobprog(
-                trig_type=take(entry, where, "trigger", string),
+                trig_type=take(entry, where, "trigger", one_of(tables.MPROG_TRIGGERS, "program trigger")),
                 vnum=take(entry, where, "vnum", integer, None),
                 trig_phrase=str(take(entry, where, "phrase", lambda value, at: value, "")),
             )

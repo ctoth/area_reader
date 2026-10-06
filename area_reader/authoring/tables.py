@@ -489,6 +489,28 @@ SECTORS = {
 # src/db2.c load_objects: the seven condition letters.
 CONDITIONS = (100, 90, 75, 50, 25, 10, 0)
 
+# Mob program trigger words. Stock ROM 2.4b6 has no mob programs; this is src/tables.c mprog_flags of
+# QuickMUD (ROM 2.4b6 with OLC and MOBprograms), https://github.com/avinson/rom24-quickmud at commit
+# 364c26f1b124e238156e3d11b4e72a8992c66b74. Its src/db2.c load_mobiles() exits on a word not in the table.
+MPROG_TRIGGERS = (
+    "act",
+    "bribe",
+    "death",
+    "entry",
+    "fight",
+    "give",
+    "greet",
+    "grall",
+    "kill",
+    "hpcnt",
+    "random",
+    "speech",
+    "exit",
+    "exall",
+    "delay",
+    "surr",
+)
+
 # src/special.c spec_table. load_specials() exits when a name is not in it.
 SPECIALS = (
     "spec_breath_any",
