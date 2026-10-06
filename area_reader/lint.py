@@ -791,6 +791,34 @@ def program_unused(atlas, entry, facts):
             yield found("program", "no mob trigger or mob call uses this program", vnum)
 
 
+def program_speech_unprompted(atlas, entry, facts):
+    """A speech program whose phrase the area never shows a visitor, so nothing prompts anyone to say it.
+
+    QuickMUD src/mob_prog.c mp_act_trigger() runs the program when the phrase is part of what was said.
+    The phrase counts as shown when it occurs, in any letter case, in a room, mob, object or help text of the
+    area or in the code of another program (where a mob would say it).
+    """
+    del atlas, facts
+    area = entry.area
+    shown = [text for _kind, _vnum, texts in record_texts(area) for text in texts]
+    shown.extend(room.name for room in area.rooms.values())
+    shown.extend(mob.short_desc for mob in area.mobs.values())
+    shown.extend(item.short_desc for item in area.objects.values())
+    shown.extend(entry.text for entry in area.helps)
+    for mob in area.mobs.values():
+        for mprog in mob.mprogs:
+            phrase = str(mprog.trig_phrase).strip().lower()
+            if rom_lookup(mprog.trig_type, PROGRAM_TRIGGERS) != "speech" or not phrase:
+                continue
+            spoken = [code for vnum, code in area.mobprogs.items() if vnum != mprog.vnum]
+            if not any(phrase in text.lower() for text in (*shown, *spoken)):
+                yield found(
+                    "mob",
+                    f"nothing in the area shows the phrase {phrase!r} that its speech program waits for",
+                    mob.vnum,
+                )
+
+
 def keeper_stock(atlas, keeper):
     """Return whether an M reset loads the keeper, whether one does so in a pet shop, and how many G resets follow."""
     loaded = False
@@ -1226,6 +1254,7 @@ RULES = {
     "program-unbalanced-if": ("error", program_unbalanced_if),
     "program-command-unknown": ("error", program_command_unknown),
     "program-check-unknown": ("error", program_check_unknown),
+    "program-speech-unprompted": ("warning", program_speech_unprompted),
     "item-type-unknown": ("error", item_type_unknown),
     "mob-race-unknown": ("warning", partial(mob_word_unknown, fields=("race",), table=RACES, what="race")),
     "mob-position-unknown": (
