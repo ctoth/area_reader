@@ -161,7 +161,7 @@ area:
   filename: saltworks.are
   levels: [5, 15]
   builders: Claude
-  vnums: {first: 30000, size: 100}
+  vnums: {first: 12000, size: 100}
 
 rooms:
   gatehouse:
@@ -244,11 +244,13 @@ the parsed area up to `area_reader.authoring.NORMALIZATIONS` (reset order,
 line comments, and a few values the engine never reads), and unbuilding that
 gives the same files again. Resets the form cannot express stay in `raw.yaml`.
 
-Stock ROM 2.4b6 reads neither `#AREADATA` nor mob programs (they come with
-the OLC and MOBprogram patches) and keeps vnums in 16 bits, so an area meant
-for it uses `header: rom`, no `programs`, and a block below 32768.
-`scripts/verify_rom_writer.py UPSTREAM AREA.are --new` boots the real engine
-with a new area and fails on any bug the engine logs because of it.
+ROM keeps vnums in 16 bits, so a block for a ROM server stays below 32768
+(`build` itself sets no limit). Stock ROM 2.4b6 reads neither `#AREADATA` nor
+mob programs; they come with the OLC and MOBprogram patches, as in QuickMUD.
+An area for the stock engine uses `header: rom` and no `programs`.
+`scripts/verify_rom_writer.py UPSTREAM AREA.are --new` builds either engine
+from its source tree, boots it with the new area, and fails on any bug the
+engine logs that it does not log without the area.
 
 ## Reading an area as a visitor
 

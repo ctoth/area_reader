@@ -1,3 +1,17 @@
+"""Build a ROM server in a temporary copy of its tree and boot it with a rendered area.
+
+    python scripts/verify_rom_writer.py UPSTREAM AREA.are [--new]
+
+UPSTREAM is one of two trees, told apart by src/mob_prog.c:
+
+- stock ROM 2.4b6. It reads neither #AREADATA nor mob programs, so with --new both are rewritten away
+  first, and the run says so.
+- QuickMUD (ROM 2.4b6 with OLC and MOBprograms), which reads both. Verified against
+  https://github.com/avinson/rom24-quickmud at commit 364c26f1b124e238156e3d11b4e72a8992c66b74.
+
+Both keep vnums in a sh_int, so an area booted here stays at or below 32767. Needs WSL with make and gcc.
+"""
+
 import argparse
 import collections
 import shutil
@@ -34,6 +48,28 @@ def modernize_header_order(root: Path) -> None:
         output.write(comm_text.replace(legacy_gettimeofday, ""))
 
 
+def is_quickmud(root: Path) -> bool:
+    return (root / "src" / "mob_prog.c").is_file()
+
+
+def modernize_quickmud(root: Path) -> None:
+    comm = root / "src" / "comm.c"
+    comm_text = comm.read_text(encoding="latin-1")
+    legacy_gettimeofday = "int gettimeofday args ((struct timeval * tp, struct timezone * tzp));\n"
+    if legacy_gettimeofday not in comm_text:
+        raise RuntimeError("Expected the QuickMUD gettimeofday declaration")
+    with comm.open("w", encoding="latin-1", newline="\n") as output:
+        output.write(comm_text.replace(legacy_gettimeofday, ""))
+
+
+def make_arguments(root: Path) -> list[str]:
+    if is_quickmud(root):
+        # The inter-MUD client is compiled in (imc.c does not build without it) but imc/imc.config ships
+        # with Autoconnect 0, so the server does not dial out.
+        return ["C_FLAGS=-O -g3 -Wall -fcommon -DIMC -DIMCROM"]
+    return ["NOCRYPT=-DNOCRYPT", "C_FLAGS=-Wall -O -g -DNOCRYPT -fcommon"]
+
+
 def available_port() -> int:
     with socket.socket() as listener:
         listener.bind(("127.0.0.1", 0))
@@ -46,6 +82,9 @@ def run(command: list[str], *, timeout: int) -> subprocess.CompletedProcess[str]
         check=False,
         capture_output=True,
         text=True,
+        # gcc quotes with UTF-8 and the area files are Latin-1; neither may stop the run.
+        encoding="utf-8",
+        errors="replace",
         timeout=timeout,
     )
 
@@ -58,7 +97,8 @@ def boot(root: Path) -> subprocess.CompletedProcess[str]:
             str(root / "area"),
             "timeout",
             "5s",
-            "../src/rom",
+            # QuickMUD's Makefile links the server into the area directory.
+            "./rom" if is_quickmud(root) else "../src/rom",
             str(available_port()),
         ],
         timeout=15,
@@ -113,8 +153,8 @@ def main() -> int:
     parser.add_argument(
         "--new",
         action="store_true",
-        help="the area is not part of the upstream tree: add it to area.lst, and rewrite what the stock "
-        "engine cannot read (#AREADATA, mob programs)",
+        help="the area is not part of the upstream tree: add it to area.lst, and for a stock ROM tree "
+        "rewrite what that engine cannot read (#AREADATA, mob programs)",
     )
     args = parser.parse_args()
 
@@ -122,35 +162,27 @@ def main() -> int:
     source_area = args.source_area.resolve()
     area_file = area_reader.dialects.rom.RomAreaFile(source_area)
     area_file.load_sections()
-    if args.new:
+    print(f"Engine: {'QuickMUD' if is_quickmud(upstream) else 'stock ROM 2.4b6'} at {upstream}")
+    if args.new and not is_quickmud(upstream):
         for change in for_stock_rom(area_file.area):
             print(f"for stock ROM 2.4b6: {change}")
     rendered = render_document(area_file.area, area_file.area.NATIVE_SECTIONS, area_file.skipped_sections)
 
     with tempfile.TemporaryDirectory(prefix="area-reader-rom-") as temporary:
         root = Path(temporary) / "Rom24b6"
-        shutil.copytree(upstream, root)
+        shutil.copytree(upstream, root, ignore=shutil.ignore_patterns(".git"))
         target = root / "area" / source_area.name
         if not args.new and not target.exists():
             raise SystemExit(
                 f"The source basename must already be listed by the upstream ROM tree: {source_area.name} "
                 "(pass --new for an area that is not)"
             )
-        modernize_header_order(root)
+        if is_quickmud(root):
+            modernize_quickmud(root)
+        else:
+            modernize_header_order(root)
 
-        build = run(
-            [
-                "wsl",
-                "--cd",
-                str(root),
-                "make",
-                "-C",
-                "src",
-                "NOCRYPT=-DNOCRYPT",
-                "C_FLAGS=-Wall -O -g -DNOCRYPT -fcommon",
-            ],
-            timeout=120,
-        )
+        build = run(["wsl", "--cd", str(root), "make", "-C", "src", *make_arguments(root)], timeout=300)
         if build.returncode != 0:
             print(build.stdout)
             print(build.stderr)
