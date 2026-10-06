@@ -969,9 +969,11 @@ def test_every_program_trigger_builds(tmp_path: Path) -> None:
     programs = "".join(
         f"      - {{trigger: {name}, phrase: '50', code: say {name}.}}\n" for name in tables.MPROG_TRIGGERS
     )
-    source = write_source(tmp_path / "source", {"mobs.yaml": RAT + "    programs:\n" + programs})
+    # Sixteen programs need sixteen numbers; the shared header's block has ten.
+    header = HEADER.replace("size: 10", "size: 20")
+    authoring.write_files(tmp_path / "source", {"area.yaml": header, "mobs.yaml": RAT + "    programs:\n" + programs})
 
-    built = authoring.build(source, tmp_path / "out.are")
+    built = authoring.build(tmp_path / "source", tmp_path / "out.are")
 
     assert [program.trig_type for program in built.area.mobs[100].mprogs] == list(tables.MPROG_TRIGGERS)
     assert len(built.area.mobprogs) == 16
