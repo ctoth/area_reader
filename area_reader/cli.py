@@ -272,6 +272,10 @@ def main(argv=None):
         from area_reader import lint
 
         return lint.main(argv[1:])
+    if argv[:1] == ["walk"]:
+        from area_reader import walk
+
+        return walk.main(argv[1:])
     if argv[:1] in (["build"], ["unbuild"]):
         # Imported here: the authoring package needs PyYAML, which reading areas does not.
         from area_reader.authoring import builder, unbuilder

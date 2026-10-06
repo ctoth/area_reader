@@ -250,6 +250,21 @@ for it uses `header: rom`, no `programs`, and a block below 32768.
 `scripts/verify_rom_writer.py UPSTREAM AREA.are --new` boots the real engine
 with a new area and fails on any bug the engine logs because of it.
 
+## Reading an area as a visitor
+
+```
+area-reader walk [--from VNUM] [--anonymous] [--with PATH ...] AREA.are
+```
+
+`walk` writes one ROM area out room by room, in the order a walk from the way
+in meets them: each room's text, its exits with where they lead and how each
+door is left by the resets, its extra descriptions, who the resets put there
+with what they wear, carry, sell and say, and what lies on the floor with what
+is inside it. Rooms are numbered in walk order, not by vnum; rooms the walk
+never reaches are listed last. The walk starts at the first room with an exit
+out of the area, or at `--from`. `--with` loads other areas so their rooms and
+keys can be named; `--anonymous` leaves out the credits line.
+
 ## Questions about a set of areas
 
 `area-reader atlas` loads several ROM or Merc area files together and answers
