@@ -1,0 +1,3 @@
+say The pans?  Down the west walk.  Mind the sluice at the bottom.
+mob echoat $n The foreman takes your elbow and steers you across the yard.
+mob transfer $n @room:brine-pans

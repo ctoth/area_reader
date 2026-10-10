@@ -1,0 +1,15 @@
+# The Salt Works: the worked example of the area source format.
+#
+#   area-reader build test/authoring/saltworks -o saltworks.are --show-defaults
+#
+# The header is always in area.yaml. Everything else may be split across as
+# many files as is convenient; here the rooms are in rooms/, one file per
+# part of the works, and each mob program that is long enough to want its own
+# file is in progs/.
+area:
+  name: The Salt Works
+  filename: saltworks.are
+  levels: [5, 15]            # with builders and name, makes the credits line
+  builders: Claude
+  vnums: {first: 12000, size: 100}   # ROM keeps vnums in 16 bits: stay below 32768
+  security: 9

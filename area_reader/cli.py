@@ -267,6 +267,20 @@ def main(argv=None):
     argv = sys.argv[1:] if argv is None else list(argv)
     if argv[:1] == ["atlas"]:
         return area_reader.atlas.main(argv[1:])
+    if argv[:1] == ["lint"]:
+        # lint builds its rule table from atlas at import, and atlas imports this module first.
+        from area_reader import lint
+
+        return lint.main(argv[1:])
+    if argv[:1] == ["walk"]:
+        from area_reader import walk
+
+        return walk.main(argv[1:])
+    if argv[:1] in (["build"], ["unbuild"]):
+        # Imported here: the authoring package needs PyYAML, which reading areas does not.
+        from area_reader.authoring import builder, unbuilder
+
+        return (builder if argv[0] == "build" else unbuilder).main(argv[1:])
     arguments = build_parser().parse_args(argv)
     logging.basicConfig(stream=sys.stderr, level=logging.WARNING)
     dialect = None if arguments.type == "auto" else arguments.type

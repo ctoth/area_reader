@@ -23,10 +23,14 @@ Repository = "https://github.com/ctoth/area_reader"
 area-reader = "area_reader.cli:main"
 
 [project.optional-dependencies]
+authoring = [
+    "pyyaml",
+]
 test = [
     "pytest",
     "hypothesis",
     "pytest-cov",
+    "pyyaml",
 ]
 
 [tool.ruff]

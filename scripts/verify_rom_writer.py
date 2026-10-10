@@ -1,4 +1,22 @@
+"""Build a ROM server in a temporary copy of its tree and boot it with a rendered area.
+
+    python scripts/verify_rom_writer.py UPSTREAM AREA.are [--new]
+
+UPSTREAM is a ROM source tree. What its loader reads is taken from the tree itself (an "AREADATA" section
+in src/db.c, src/mob_prog.c for mob programs), and with --new only what it cannot read is rewritten away,
+which the run reports. Two trees are known to build:
+
+- stock ROM 2.4b6, which reads neither #AREADATA nor mob programs;
+- QuickMUD (ROM 2.4b6 with OLC and MOBprograms), which reads both: https://github.com/avinson/rom24-quickmud
+  at commit 364c26f1b124e238156e3d11b4e72a8992c66b74.
+
+Both keep vnums in a sh_int, so an area booted here stays at or below 32767. Needs WSL with make and gcc.
+The exit status is 0 only when the server stays up and logs no bug it does not log without the area.
+"""
+
 import argparse
+import collections
+import re
 import shutil
 import socket
 import subprocess
@@ -6,6 +24,85 @@ import tempfile
 from pathlib import Path
 
 import area_reader.dialects.rom
+from area_reader.native import render_document
+
+BUG = "[*****] BUG"
+STOCK_GETTIMEOFDAY = "int\tgettimeofday\targs( ( struct timeval *tp, struct timezone *tzp ) );\n"
+QUICKMUD_GETTIMEOFDAY = "int gettimeofday args ((struct timeval * tp, struct timezone * tzp));\n"
+MAX_STRING = re.compile(r"(#define\s+MAX_STRING\s+)(\d+)")
+MAX_STRING_LENGTH = re.compile(r"#define\s+MAX_STRING_LENGTH\s+(\d+)")
+STRING_SPACE_FACTOR = 4
+READY = '"ROM is ready to rock on port'
+STRING_SPACE_LINE = "String space used at boot: "
+STRING_SPACE_USED = re.compile(re.escape(STRING_SPACE_LINE) + r"(\d+)")
+STRING_SPACE_REPORTER = f"""
+void area_reader_string_space (void)
+{{
+    char buf[256];
+    sprintf (buf, "{STRING_SPACE_LINE}%ld", (long) (top_string - string_space));
+    log_string (buf);
+}}
+"""
+
+
+def source_text(root: Path, name: str) -> str:
+    return (root / "src" / name).read_text(encoding="latin-1")
+
+
+def reads_areadata(root: Path) -> bool:
+    return '"AREADATA"' in source_text(root, "db.c")
+
+
+def reads_programs(root: Path) -> bool:
+    return (root / "src" / "mob_prog.c").is_file()
+
+
+def enlarge_string_space(root: Path) -> tuple[int, int]:
+    """Raise the tree's fixed string space and make the server log how much of it boot used.
+
+    Both trees keep every area string in one MAX_STRING-byte block (src/db.c) and exit with "Fread_string:
+    MAX_STRING exceeded" when it is full; their own areas nearly fill it. The limit is a compile-time
+    number the tree's own comment says to raise, not a property of the area format. Returns the tree's
+    own limit and the raised one.
+    """
+    db = root / "src" / "db.c"
+    text = db.read_text(encoding="latin-1")
+    define = MAX_STRING.search(text)
+    if define is None:
+        raise RuntimeError("db.c has no MAX_STRING define")
+    limit = int(define.group(2))
+    raised = limit * STRING_SPACE_FACTOR
+    text = text[: define.start(2)] + str(raised) + text[define.end(2) :] + STRING_SPACE_REPORTER
+    with db.open("w", encoding="latin-1", newline="\n") as output:
+        output.write(text)
+
+    comm = root / "src" / "comm.c"
+    comm_text = comm.read_text(encoding="latin-1")
+    # Both trees announce the port in a plain statement right after boot_db(); report just before it.
+    ready = comm_text.find(READY)
+    if ready == -1:
+        raise RuntimeError(f"comm.c has no {READY!r} statement to report string space before")
+    line_start = comm_text.rfind("\n", 0, ready) + 1
+    call = "    { extern void area_reader_string_space (void); area_reader_string_space (); }\n"
+    with comm.open("w", encoding="latin-1", newline="\n") as output:
+        output.write(comm_text[:line_start] + call + comm_text[line_start:])
+    return limit, raised
+
+
+def string_space_used(process: subprocess.CompletedProcess[str]) -> int | None:
+    used = STRING_SPACE_USED.search(process.stdout + process.stderr)
+    return None if used is None else int(used.group(1))
+
+
+def modernize(root: Path) -> None:
+    """Apply the fix a modern compiler needs, chosen by the declaration the tree's comm.c holds."""
+    comm = source_text(root, "comm.c")
+    if STOCK_GETTIMEOFDAY in comm:
+        modernize_header_order(root)
+    elif QUICKMUD_GETTIMEOFDAY in comm:
+        modernize_quickmud(root)
+    else:
+        raise RuntimeError("comm.c has neither the ROM 2.4b6 nor the QuickMUD gettimeofday declaration")
 
 
 def modernize_header_order(root: Path) -> None:
@@ -30,6 +127,29 @@ def modernize_header_order(root: Path) -> None:
         output.write(comm_text.replace(legacy_gettimeofday, ""))
 
 
+def modernize_quickmud(root: Path) -> None:
+    comm = root / "src" / "comm.c"
+    comm_text = comm.read_text(encoding="latin-1")
+    legacy_gettimeofday = "int gettimeofday args ((struct timeval * tp, struct timezone * tzp));\n"
+    if legacy_gettimeofday not in comm_text:
+        raise RuntimeError("Expected the QuickMUD gettimeofday declaration")
+    with comm.open("w", encoding="latin-1", newline="\n") as output:
+        output.write(comm_text.replace(legacy_gettimeofday, ""))
+
+
+def make_arguments(root: Path) -> list[str]:
+    if (root / "src" / "imc.c").is_file():
+        # QuickMUD: the inter-MUD client is compiled in (imc.c does not build without it), but
+        # imc/imc.config ships with Autoconnect 0, so the server does not dial out.
+        return ["C_FLAGS=-O -g3 -Wall -fcommon -DIMC -DIMCROM"]
+    return ["NOCRYPT=-DNOCRYPT", "C_FLAGS=-Wall -O -g -DNOCRYPT -fcommon"]
+
+
+def server(root: Path) -> str:
+    """The server's path from the area directory: QuickMUD's Makefile links it there, ROM's into src."""
+    return "./rom" if "../area/rom" in source_text(root, "Makefile") else "../src/rom"
+
+
 def available_port() -> int:
     with socket.socket() as listener:
         listener.bind(("127.0.0.1", 0))
@@ -42,8 +162,71 @@ def run(command: list[str], *, timeout: int) -> subprocess.CompletedProcess[str]
         check=False,
         capture_output=True,
         text=True,
+        # gcc quotes with UTF-8 and the area files are Latin-1; neither may stop the run.
+        encoding="utf-8",
+        errors="replace",
         timeout=timeout,
+        # On Windows, wsl started from a windowless parent would open a console and take focus.
+        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
     )
+
+
+def boot(root: Path) -> subprocess.CompletedProcess[str]:
+    return run(
+        [
+            "wsl",
+            "--cd",
+            str(root / "area"),
+            "timeout",
+            "5s",
+            server(root),
+            str(available_port()),
+        ],
+        timeout=15,
+    )
+
+
+def log_lines(process: subprocess.CompletedProcess[str]) -> list[str]:
+    """ROM's log without its timestamps, so two boots can be compared."""
+    lines = (process.stdout + process.stderr).splitlines()
+    return [
+        line.split(" :: ", 1)[-1]
+        for line in lines
+        if line.strip() and "ready to rock on port" not in line and STRING_SPACE_LINE not in line
+    ]
+
+
+def for_engine(area: area_reader.dialects.rom.RomArea, root: Path) -> list[str]:
+    """Rewrite what the tree's loader cannot read, and say what was changed.
+
+    Stock ROM 2.4b6 knows neither #AREADATA nor mob programs (src/db.c boot_db() has no such sections and
+    src/db2.c load_mobiles() no M line); both come from the OLC and MOBprogram patches.
+    """
+    changes = []
+    if area.header_format == "areadata" and not reads_areadata(root):
+        area.header_format = "rom"
+        area.builders = ""
+        area.security = None
+        area.zone = None
+        changes.append("#AREADATA header written as #AREA (builders and security dropped)")
+    programs = sum(len(mob.mprogs) for mob in area.mobs.values())
+    if (programs or area.mobprogs) and not reads_programs(root):
+        for mob in area.mobs.values():
+            mob.mprogs = []
+        changes.append(f"{programs} mob program triggers and {len(area.mobprogs)} program bodies dropped")
+        area.mobprogs.clear()
+    return changes
+
+
+def list_area(root: Path, name: str) -> None:
+    """Add an area file to area.lst, before the line that ends the list."""
+    listing = root / "area" / "area.lst"
+    names = listing.read_text(encoding="latin-1").split()
+    if name in names:
+        raise SystemExit(f"{name} is already listed by the upstream ROM tree; run without --new")
+    names.insert(names.index("$"), name)
+    with listing.open("w", encoding="latin-1", newline="\n") as output:
+        output.write("\n".join(names) + "\n")
 
 
 def main() -> int:
@@ -52,60 +235,92 @@ def main() -> int:
     )
     parser.add_argument("upstream", type=Path)
     parser.add_argument("source_area", type=Path)
+    parser.add_argument(
+        "--new",
+        action="store_true",
+        help="the area is not part of the upstream tree: add it to area.lst, and rewrite away what that "
+        "tree's loader cannot read (#AREADATA, mob programs)",
+    )
     args = parser.parse_args()
 
     upstream = args.upstream.resolve()
     source_area = args.source_area.resolve()
     area_file = area_reader.dialects.rom.RomAreaFile(source_area)
     area_file.load_sections()
-    rendered = area_file.dumps()
+    print(
+        f"Engine tree {upstream}: #AREADATA {'read' if reads_areadata(upstream) else 'not read'}, "
+        f"mob programs {'read' if reads_programs(upstream) else 'not read'}"
+    )
+    if args.new:
+        for change in for_engine(area_file.area, upstream):
+            print(f"for this engine: {change}")
+    rendered = render_document(area_file.area, area_file.area.NATIVE_SECTIONS, area_file.skipped_sections)
 
     with tempfile.TemporaryDirectory(prefix="area-reader-rom-") as temporary:
         root = Path(temporary) / "Rom24b6"
-        shutil.copytree(upstream, root)
+        shutil.copytree(upstream, root, ignore=shutil.ignore_patterns(".git"))
         target = root / "area" / source_area.name
-        if not target.exists():
-            raise SystemExit(f"The source basename must already be listed by the upstream ROM tree: {source_area.name}")
-        with target.open("w", encoding="latin-1", newline="\n") as output:
-            output.write(rendered)
-        modernize_header_order(root)
+        if not args.new and not target.exists():
+            raise SystemExit(
+                f"The source basename must already be listed by the upstream ROM tree: {source_area.name} "
+                "(pass --new for an area that is not)"
+            )
+        modernize(root)
+        # Before the baseline boot, so that both boots run the same server.
+        limit, raised = enlarge_string_space(root)
+        slack = int(MAX_STRING_LENGTH.search(source_text(root, "merc.h")).group(1))
+        print(f"String space: MAX_STRING raised from the tree's {limit} to {raised} for both boots of this run.")
 
-        build = run(
-            [
-                "wsl",
-                "--cd",
-                str(root),
-                "make",
-                "-C",
-                "src",
-                "NOCRYPT=-DNOCRYPT",
-                "C_FLAGS=-Wall -O -g -DNOCRYPT -fcommon",
-            ],
-            timeout=120,
-        )
+        build = run(["wsl", "--cd", str(root), "make", "-C", "src", *make_arguments(root)], timeout=300)
         if build.returncode != 0:
             print(build.stdout)
             print(build.stderr)
             return build.returncode
 
-        port = available_port()
-        boot = run(
-            [
-                "wsl",
-                "--cd",
-                str(root / "area"),
-                "timeout",
-                "5s",
-                "../src/rom",
-                str(port),
-            ],
-            timeout=15,
+        stock = boot(root)
+        if stock.returncode != 124:
+            print(stock.stdout)
+            print(stock.stderr)
+            print("The unmodified ROM tree did not stay up through the boot window.")
+            return stock.returncode or 1
+        baseline = collections.Counter(log_lines(stock))
+        # The loader stops reading strings MAX_STRING_LENGTH short of the end of the block.
+        own = string_space_used(stock)
+        print(
+            f"String space: the tree's own areas use {own} bytes; under its own limit that leaves "
+            f"{limit - slack - own} for new areas."
         )
-        print(boot.stdout)
-        print(boot.stderr)
-        if boot.returncode != 124:
-            return boot.returncode or 1
+        if args.new:
+            list_area(root, source_area.name)
+        with target.open("w", encoding="latin-1", newline="\n") as output:
+            output.write(rendered)
 
+        booted = boot(root)
+        print(booted.stdout)
+        print(booted.stderr)
+        if booted.returncode != 124:
+            print(f"ROM exited with status {booted.returncode} instead of staying up.")
+            return booted.returncode or 1
+        used = string_space_used(booted)
+        print(
+            f"String space: {used} bytes used with this {source_area.name} ({used - own:+d}); "
+            f"{'it would not fit' if used > limit - slack else 'it fits'} under the tree's own limit."
+        )
+
+    # The engine reports most area faults with bug() and carries on, so staying up is not enough: compare its
+    # log with the unmodified tree's. Lines that are not bugs ("Err: obj ..." level warnings) come and go with
+    # the resets' dice, so only bug lines decide the result.
+    logged = collections.Counter(log_lines(booted))
+    for title, lines in (
+        (f"with this {source_area.name} and not with the upstream tree", logged - baseline),
+        (f"with the upstream tree and not with this {source_area.name}", baseline - logged),
+    ):
+        print(f"Log lines ROM wrote {title}: {sum(lines.values())}")
+        for line, count in lines.items():
+            print(f"  {line}" + (f"  (x{count})" if count > 1 else ""))
+    if any(BUG in line for line in logged - baseline):
+        print(f"ROM logged bugs for {source_area.name}.")
+        return 1
     print(f"ROM accepted {source_area} and remained live through the boot window.")
     return 0
 

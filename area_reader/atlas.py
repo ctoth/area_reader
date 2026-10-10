@@ -60,6 +60,7 @@ class AreaEntry:
     label = attr(type=str)
     path = attr(type=Path)
     area = attr()
+    diagnostics = attr(default=Factory(list))
 
 
 @attributes
@@ -90,8 +91,8 @@ def load(paths, dialect=None):
     """Parse every area file into one ``Atlas``.  A file that does not parse raises the parser's error."""
     atlas = Atlas()
     for path in area_paths(paths):
-        area = area_reader.cli.load_area(path, dialect).area
-        entry = AreaEntry(label=path.name, path=path, area=area)
+        area_file = area_reader.cli.load_area(path, dialect)
+        entry = AreaEntry(label=path.name, path=path, area=area_file.area, diagnostics=area_file.diagnostics)
         atlas.areas.append(entry)
         for family, index in (
             ("rooms", atlas.rooms),
@@ -99,7 +100,7 @@ def load(paths, dialect=None):
             ("objects", atlas.objects),
             ("mobprogs", atlas.programs),
         ):
-            for vnum, record in getattr(area, family).items():
+            for vnum, record in getattr(entry.area, family).items():
                 index.setdefault(vnum, (entry.label, record))
     return atlas
 
