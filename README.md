@@ -146,7 +146,7 @@ numbers: records have ids, flags have names, and what stands in a room is
 written on the room. This needs PyYAML (`pip install area-reader[authoring]`).
 
 ```
-area-reader build SRC [-o OUT.are] [--set DIR ...] [--show-defaults]
+area-reader build SRC [-o OUT] [--format rom|json] [--set DIR ...] [--show-defaults]
 area-reader unbuild AREA.are -o SRC
 ```
 
@@ -236,6 +236,44 @@ objects:
 - **Errors.** A fault raises `SourceError` naming the file and the key path,
   such as `rooms.gatehouse.exits.east.key`. `build` parses its own output with
   the ROM reader and writes nothing unless the result equals what it compiled.
+
+### Beyond ROM: `--format json`
+
+`build --format json` writes the area as JSON in place of the `.are` file: the
+same JSON `area-reader AREA.are` prints for the built area, so a program that
+reads one reads the other. The JSON can also carry what a ROM area file has no
+place for, for a world that is not a ROM server:
+
+```yaml
+area:
+  name: The Castle
+  vnums: {first: 12000, size: 100}
+  properties: {gravity: 0.9}
+
+rooms:
+  landing:
+    name: The Upper Landing
+    kind: echoing                    # what the room is, to the world that loads it
+    with: {decay: 3}                 # the kind's parameters
+    properties: {ceiling: 12}        # set on the room as written
+    exits:
+      north: {to: corridor, kind: guarded, with: {phrase: open sesame}}
+      hatch: {to: loft, keyword: hatch, kind: guarded}
+```
+
+- **`kind`, `with`, `properties`** may be written on the header, a room, a mob,
+  an object and an exit. `kind` is a slug; `with` needs a `kind`. They appear
+  under the same names on the record in the JSON. `build` does not know which
+  kinds a world has: any slug is accepted.
+- **Named exits.** An exit whose name is not one of the six directions is any
+  slug. It has one side and takes `to`, `keyword`, `description` and the three
+  keys above, with no door or key: what stands in its way is its kind's
+  business. In the JSON it is one more entry of the room's `exits`, with the
+  name as its `door`.
+- The ROM part of the area is still rendered, parsed back and compared before
+  anything is written. `--format rom` refuses a source that uses any of this,
+  naming the first place it does. `lint`, `walk` and `unbuild` read area
+  files, not this JSON.
 
 `unbuild` writes any ROM area the reader parses in this form: ids slugged from
 names, every vnum pinned, two-way exits collapsed, resets hung on their rooms.
