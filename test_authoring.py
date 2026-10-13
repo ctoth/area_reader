@@ -1,5 +1,6 @@
 import collections
 import functools
+import json
 import shutil
 from pathlib import Path
 
@@ -1034,3 +1035,124 @@ def test_build_fails_when_the_reader_parses_something_else_back(tmp_path: Path) 
     with pytest.raises(SourceError, match="does not read back as it was written"):
         authoring.build(source, tmp_path / "out.are")
     assert not (tmp_path / "out.are").exists()
+
+
+# The JSON output: the reader's own JSON, and what a ROM area file cannot hold.
+
+EXTENDED = {
+    "area.yaml": HEADER + "  kind: castle\n  properties: {gravity: 0.9}\n",
+    "rooms.yaml": "rooms:\n"
+    "  landing:\n"
+    "    name: The Landing\n"
+    "    kind: echoing\n"
+    "    with: {decay: 3}\n"
+    "    properties: {ceiling: 12, banners: [red, gold]}\n"
+    "    exits:\n"
+    "      north: {to: hall, kind: guarded, with: {phrase: open sesame}}\n"
+    "      portrait-hole: {to: hall, keyword: portrait, description: A round hole., kind: guarded}\n"
+    "      trapdoor: hall\n"
+    "    mobs: [porter]\n"
+    "    objects: [lamp]\n"
+    "  hall:\n"
+    "    name: The Hall\n",
+    "mobs.yaml": RAT.replace("rat", "porter") + "    kind: routine\n    with: {rounds: [landing, hall]}\n",
+    "objects.yaml": "objects:\n  lamp:\n    keywords: lamp\n    short: a lamp\n    type: light\n"
+    "    light: {hours: -1}\n    properties: {colour: green}\n",
+}
+
+
+def test_json_of_a_plain_source_is_what_the_reader_prints_for_its_area_file(tmp_path: Path) -> None:
+    source = copy_example(tmp_path)
+    authoring.build(source, tmp_path / "saltworks.are")
+
+    built = authoring.build(source, tmp_path / "saltworks.json", output_format="json")
+
+    printed = json.loads(area_reader.cli.load_area(tmp_path / "saltworks.are").as_json())
+    written = json.loads((tmp_path / "saltworks.json").read_text(encoding="utf-8"))
+    assert written == printed
+    assert written == json.loads(json.dumps(built.document))
+    assert len(written["rooms"]) == 10
+
+
+def test_json_carries_kinds_properties_and_named_exits(tmp_path: Path) -> None:
+    source = write_source(tmp_path / "source", EXTENDED)
+
+    built = authoring.build(source, tmp_path / "out.json", output_format="json")
+
+    area = json.loads((tmp_path / "out.json").read_text(encoding="utf-8"))
+    assert (area["kind"], area["properties"]) == ("castle", {"gravity": 0.9})
+    assert "with" not in area
+    landing = area["rooms"][str(vnum(built, "rooms", "landing"))]
+    hall = vnum(built, "rooms", "hall")
+    assert (landing["kind"], landing["with"]) == ("echoing", {"decay": 3})
+    assert landing["properties"] == {"ceiling": 12, "banners": ["red", "gold"]}
+    north, portrait_hole, trapdoor = landing["exits"]
+    assert north["door"] == "EXIT_DIRECTIONS.NORTH"
+    assert (north["kind"], north["with"]) == ("guarded", {"phrase": "open sesame"})
+    assert portrait_hole == {
+        "keyword": "portrait",
+        "description": "A round hole.\n",
+        "door": "portrait-hole",
+        "exit_info": "EXIT_FLAGS.NONE",
+        "rs_flags": 0,
+        "key": -1,
+        "destination": hall,
+        "kind": "guarded",
+    }
+    assert (trapdoor["door"], trapdoor["destination"]) == ("trapdoor", hall)
+    # A compass exit still makes its other side; a named exit has one side, and neither side copies a kind.
+    (south,) = area["rooms"][str(hall)]["exits"]
+    assert (south["door"], south["destination"]) == ("EXIT_DIRECTIONS.SOUTH", 100)
+    assert "kind" not in south
+    assert "with" not in south
+    porter = area["mobs"][str(vnum(built, "mobs", "porter"))]
+    assert (porter["kind"], porter["with"]) == ("routine", {"rounds": ["landing", "hall"]})
+    assert area["objects"][str(vnum(built, "objects", "lamp"))]["properties"] == {"colour": "green"}
+    # The ROM part is untouched by the extensions: the model holds two rooms and the two compass exits.
+    assert [len(room.exits) for room in built.area.rooms.values()] == [1, 1]
+
+
+def test_rom_format_refuses_what_a_rom_area_file_cannot_hold(tmp_path: Path) -> None:
+    kind = build_error(tmp_path / "kind", {"rooms.yaml": "rooms:\n  hall:\n    name: Hall\n    kind: echoing\n"})
+    named = build_error(
+        tmp_path / "named", {"rooms.yaml": "rooms:\n  hall:\n    name: Hall\n    exits: {trapdoor: hall}\n"}
+    )
+
+    assert kind.key == "rooms.hall.kind"
+    assert "--format json" in kind.reason
+    assert named.key == "rooms.hall.exits.trapdoor"
+    assert "six directions" in named.reason
+    assert not (tmp_path / "kind" / "out.are").exists()
+
+
+@pytest.mark.parametrize(
+    ("room", "key", "reason"),
+    [
+        ("with: {decay: 3}", "rooms.hall.with", "name the `kind`"),
+        ("kind: Echoing Hall", "rooms.hall.kind", "lowercase slug"),
+        ("kind: echoing\n    with: [3]", "rooms.hall.with", "expected a mapping"),
+        ("properties: {1: one}", "rooms.hall.properties.1", "text key"),
+        ("exits: {trapdoor: {to: hall, door: closed}}", "rooms.hall.exits.trapdoor.door", "unknown key"),
+        ("exits: {Trap Door: hall}", "rooms.hall.exits.Trap Door", "lowercase slug"),
+        ("exits: {trapdoor: {keyword: trap}}", "rooms.hall.exits.trapdoor.to", "is required"),
+    ],
+)
+def test_error_in_an_extension(tmp_path: Path, room: str, key: str, reason: str) -> None:
+    source = write_source(tmp_path / "source", {"rooms.yaml": f"rooms:\n  hall:\n    name: Hall\n    {room}\n"})
+
+    with pytest.raises(SourceError) as caught:
+        authoring.build(source, tmp_path / "out.json", output_format="json")
+
+    assert caught.value.key == key
+    assert reason in caught.value.reason
+    assert not (tmp_path / "out.json").exists()
+
+
+def test_build_command_writes_json_beside_the_header_filename(tmp_path: Path, capsys, monkeypatch) -> None:
+    source = write_source(tmp_path / "source", EXTENDED)
+    monkeypatch.chdir(tmp_path)
+
+    assert area_reader.cli.main(["build", str(source), "--format", "json"]) == 0
+
+    assert "source.json: 2 rooms, 1 mobs, 1 objects" in capsys.readouterr().out
+    assert json.loads((tmp_path / "source.json").read_text(encoding="utf-8"))["rooms"]["100"]["kind"] == "echoing"

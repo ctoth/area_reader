@@ -1,6 +1,7 @@
 """Compile an area source directory to a ROM 2.4 area."""
 
 import argparse
+import json
 import re
 import tempfile
 from pathlib import Path
@@ -11,6 +12,7 @@ import area_reader.model
 from area_reader.authoring import tables
 from area_reader.authoring.source import (
     FAMILIES,
+    ID,
     LOCK_NAME,
     SINGULAR,
     At,
@@ -33,6 +35,7 @@ from area_reader.dialects.rom import (
     RomMobprog,
 )
 from area_reader.native import render_document
+from area_reader.serialization import EnumNameConverter
 
 MISSING = object()
 UNREPRESENTABLE = object()
@@ -50,7 +53,24 @@ NO_LIMIT = -1
 NO_KEY = -1
 MAX_LEVEL = 60
 
-AREA_KEYS = ("name", "filename", "credits", "levels", "builders", "vnums", "security", "zone", "header")
+FORMATS = ("rom", "json")
+# What a ROM area file cannot hold. A record's kind names what it is to the world that loads the area, `with`
+# gives the kind its parameters, and `properties` are set on the thing as written.
+EXTENSION_KEYS = ("kind", "with", "properties")
+NAMED_EXIT_KEYS = ("to", "keyword", "description", *EXTENSION_KEYS)
+
+AREA_KEYS = (
+    "name",
+    "filename",
+    "credits",
+    "levels",
+    "builders",
+    "vnums",
+    "security",
+    "zone",
+    "header",
+    *EXTENSION_KEYS,
+)
 ROOM_KEYS = (
     "vnum",
     "name",
@@ -67,8 +87,21 @@ ROOM_KEYS = (
     "mobs",
     "objects",
     "random_exits",
+    *EXTENSION_KEYS,
 )
-EXIT_KEYS = ("to", "look", "door", "keyword", "description", "key", "pickproof", "nopass", "oneway", "back")
+EXIT_KEYS = (
+    "to",
+    "look",
+    "door",
+    "keyword",
+    "description",
+    "key",
+    "pickproof",
+    "nopass",
+    "oneway",
+    "back",
+    *EXTENSION_KEYS,
+)
 BACK_KEYS = ("keyword", "description", "pickproof", "nopass")
 MOB_PLACEMENT_KEYS = ("mob", "count", "max_in_room", "max_in_world", "wears", "carries")
 MOB_KEYS = (
@@ -103,6 +136,7 @@ MOB_KEYS = (
     "special",
     "shop",
     "programs",
+    *EXTENSION_KEYS,
 )
 OBJECT_KEYS = (
     "vnum",
@@ -120,6 +154,7 @@ OBJECT_KEYS = (
     "values",
     "affects",
     "extras",
+    *EXTENSION_KEYS,
 )
 SHOP_KEYS = ("buys", "profit_buy", "profit_sell", "hours")
 PROGRAM_KEYS = ("trigger", "phrase", "code", "file", "vnum")
@@ -175,6 +210,10 @@ class Build:
     defaults = attr(default=Factory(list))
     door_states = attr(default=Factory(dict))
     lock = attr(default=Factory(dict))
+    # What the source says that the ROM model cannot hold, as (target, values, at). A target is ("area",),
+    # (family, vnum), ("exits", room vnum, direction number) or, for an exit ROM has no direction for,
+    # ("named_exits", room vnum, name); the values of that last one are the whole exit.
+    extensions = attr(default=Factory(list))
 
 
 # Values
@@ -220,6 +259,41 @@ def paragraph(value, at):
     """Text ROM shows on lines of its own: it ends with a newline unless it is empty."""
     value = string(value, at)
     return value if not value or value.endswith("\n") else value + "\n"
+
+
+def slug(value, at):
+    if not isinstance(value, str) or not ID.fullmatch(value):
+        raise at.error(f"expected a lowercase slug (a letter, then letters, digits, '_' or '-'), got {value!r}")
+    return value
+
+
+def mapping(value, at):
+    if not isinstance(value, dict):
+        raise at.error(f"expected a mapping, got {value!r}")
+    for key in value:
+        if not isinstance(key, str):
+            raise (at / key).error(f"expected a text key, got {key!r}")
+    return value
+
+
+def extension(record, at):
+    """Return the extension keys a record writes: its kind, the kind's parameters, and plain properties."""
+    written = {}
+    if record.get("kind") is not None:
+        written["kind"] = take(record, at, "kind", slug)
+    if record.get("with") is not None:
+        if "kind" not in written:
+            raise (at / "with").error("`with` gives a kind its parameters; name the `kind`")
+        written["with"] = take(record, at, "with", mapping)
+    if record.get("properties") is not None:
+        written["properties"] = take(record, at, "properties", mapping)
+    return written
+
+
+def note_extension(build, target, record, at):
+    written = extension(record, at)
+    if written:
+        build.extensions.append((target, written, at / next(key for key in EXTENSION_KEYS if key in written)))
 
 
 def one_of(options, what):
@@ -503,6 +577,7 @@ def raw_values(item_type, value, at):
 def compile_header(build):
     header, at = build.source.area, build.source.area_at
     known_keys(header, at, AREA_KEYS)
+    note_extension(build, ("area",), header, at)
     area = build.area
     area.name = take(header, at, "name", string)
     area.original_filename = take(header, at, "filename", string, f"{build.source.name}.are")
@@ -814,6 +889,7 @@ def compile_records(build):
             compiled = COMPILERS[family](build, identifier, record, at)
             compiled.vnum = build.numbers.vnums[family][identifier]
             collection[compiled.vnum] = compiled
+            note_extension(build, (family, compiled.vnum), record, at)
 
 
 # Exits
@@ -823,6 +899,7 @@ def written_door(build, room, direction, value, at):
     if not isinstance(value, dict):
         return Door(room, direction, build.numbers.resolve(value, at, "rooms"), at=at)
     known_keys(value, at, EXIT_KEYS)
+    note_extension(build, ("exits", room, direction), value, at)
     if value.get("look") is not None:
         if value.get("to") is not None or value.get("description") is not None:
             raise (at / "look").error("a look-only exit leads nowhere and `look` is its description")
@@ -870,13 +947,32 @@ def implied_door(door):
     )
 
 
+def named_exit(build, room, name, value, at):
+    """Note an exit ROM has no direction for. It has one side, and what stands in its way is its kind's business."""
+    if not isinstance(value, dict):
+        value = {"to": value}
+    known_keys(value, at, NAMED_EXIT_KEYS)
+    exit = area_reader.model.Exit(
+        keyword=take(value, at, "keyword", string, ""),
+        description=take(value, at, "description", paragraph, ""),
+        key=NO_KEY,
+        destination=build.numbers.resolve(take(value, at, "to", lambda item, where: item), at / "to", "rooms"),
+    )
+    written = {**EnumNameConverter().unstructure(exit), "door": name, **extension(value, at)}
+    build.extensions.append((("named_exits", room, name), written, at))
+
+
 def compile_exits(build):
     written = {}
     for identifier, (record, at) in build.source.rooms.items():
         room = build.numbers.vnums["rooms"][identifier]
         exits = record.get("exits") or {}
-        known_keys(exits, at / "exits", tables.DIRECTIONS)
+        if not isinstance(exits, dict):
+            raise (at / "exits").error(f"expected a mapping, got {exits!r}")
         for name, value in exits.items():
+            if name not in tables.DIRECTIONS:
+                named_exit(build, room, slug(name, at / "exits" / name), value, at / "exits" / name)
+                continue
             direction = tables.DIRECTIONS.index(name)
             written[room, direction] = written_door(build, room, direction, value, at / "exits" / name)
 
@@ -1259,6 +1355,22 @@ def first_difference(built, parsed, path="area"):
     return None
 
 
+def document(compiled, parsed):
+    """Return the area as the reader prints it, with what the source says beyond ROM laid over it."""
+    result = parsed.as_dict()
+    for target, written, _at in compiled.extensions:
+        if target[0] == "area":
+            result.update(written)
+        elif target[0] == "named_exits":
+            result["rooms"][target[1]]["exits"].append(written)
+        elif target[0] == "exits":
+            doors = [exit.door.value for exit in compiled.area.rooms[target[1]].exits]
+            result["rooms"][target[1]]["exits"][doors.index(target[2])].update(written)
+        else:
+            result[target[0]][target[1]].update(written)
+    return result
+
+
 @attributes
 class Built:
     area = attr()
@@ -1266,6 +1378,7 @@ class Built:
     output = attr()
     defaults = attr()
     lock = attr()
+    document = attr(default=None)
 
 
 def lock_text(lock):
@@ -1276,28 +1389,46 @@ def lock_text(lock):
     )
 
 
-def build(directory, output=None, sets=()):
-    """Compile ``directory`` to a ROM area file and return what was built.
+def build(directory, output=None, sets=(), output_format="rom"):
+    """Compile ``directory`` and return what was built.
 
-    The rendered text is parsed back with the ROM reader, and nothing is written unless the parsed area
-    equals the compiled one.
+    The rendered ROM text is parsed back with the ROM reader, and nothing is written unless the parsed area
+    equals the compiled one. ``output_format`` "rom" writes that text, and refuses a source that says something a
+    ROM area file cannot hold. "json" writes the parsed area as the reader prints it, with each record's
+    ``kind``, ``with`` and ``properties`` and the named exits added.
     """
+    if output_format not in FORMATS:
+        raise ValueError(f"unknown format {output_format!r}; expected one of {', '.join(FORMATS)}")
     source = load_source(directory)
     compiled = compile_source(source, [load_source(other) for other in sets])
+    if output_format == "rom" and compiled.extensions:
+        target, _written, at = compiled.extensions[0]
+        what = "an exit that is not one of ROM's six directions" if target[0] == "named_exits" else "this"
+        raise at.error(f"a ROM area file cannot hold {what}; build with --format json")
     text = render(compiled.area)
     parsed = parse(text)
     difference = first_difference(compiled.area, parsed.area)
     if difference is not None or parsed.area != compiled.area:
         raise SourceError(label(directory), "", f"the built area does not read back as it was written ({difference})")
-    output = Path(output) if output is not None else Path(compiled.area.original_filename)
-    write_area(output, text)
+    built = None
+    if output_format == "json":
+        built = document(compiled, parsed)
+        text = json.dumps(built, indent=2, ensure_ascii=False) + "\n"
+        output = Path(output) if output is not None else Path(compiled.area.original_filename).with_suffix(".json")
+        with open(output, "w", encoding="utf-8", newline="\n") as json_file:
+            json_file.write(text)
+    else:
+        output = Path(output) if output is not None else Path(compiled.area.original_filename)
+        write_area(output, text)
     if any(compiled.lock[family] for family in FAMILIES):
         lock_path = source.directory / LOCK_NAME
         text_of_lock = lock_text(compiled.lock)
         if not lock_path.is_file() or read_text(lock_path) != text_of_lock:
             with open(lock_path, "w", encoding="utf-8", newline="\n") as lock_file:
                 lock_file.write(text_of_lock)
-    return Built(area=compiled.area, text=text, output=output, defaults=compiled.defaults, lock=compiled.lock)
+    return Built(
+        area=compiled.area, text=text, output=output, defaults=compiled.defaults, lock=compiled.lock, document=built
+    )
 
 
 def defaults_report(defaults):
@@ -1320,6 +1451,13 @@ def main(argv=None):
     parser.add_argument("source", help="the source directory (holds area.yaml)")
     parser.add_argument("-o", "--output", help="the area file to write (default: the header's filename, here)")
     parser.add_argument(
+        "--format",
+        choices=FORMATS,
+        default="rom",
+        help="rom: a ROM 2.4 area file (default). json: the area as area-reader prints it, with what ROM cannot "
+        "hold (kinds, properties, named exits) added",
+    )
+    parser.add_argument(
         "--set",
         dest="sets",
         action="append",
@@ -1331,7 +1469,7 @@ def main(argv=None):
         "--show-defaults", action="store_true", help="print every mob value that was filled in because it was omitted"
     )
     arguments = parser.parse_args(argv)
-    built = build(arguments.source, arguments.output, arguments.sets)
+    built = build(arguments.source, arguments.output, arguments.sets, arguments.format)
     area = built.area
     print(
         f"{built.output}: {len(area.rooms)} rooms, {len(area.mobs)} mobs, {len(area.objects)} objects, "
