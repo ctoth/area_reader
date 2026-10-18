@@ -157,6 +157,29 @@ OBJECT_KEYS = (
     *EXTENSION_KEYS,
 )
 SHOP_KEYS = ("buys", "profit_buy", "profit_sell", "hours")
+# A quest is written in the fields of the MOO's $quest (notes/quests.md section 5a in the Mongoose hub), with
+# rooms, mobs and objects named by id. Each text key becomes the property `<key>_text`, a list of lines.
+QUEST_TEXTS = ("offer", "accept", "done", "abandon", "fail")
+QUEST_KEYS = (
+    "name",
+    "aliases",
+    "giver",
+    *QUEST_TEXTS,
+    "eligible",
+    "repeatable",
+    "time_limit",
+    "roles",
+    "stages",
+    "rewards",
+    "solution",
+)
+STAGE_KEYS = ("name", "text", "after", "needs", "objectives", "of")
+OBJECTIVE_KEYS = ("event", "match", "count", "state", "args", "text")
+# The engine's state kinds; for all but `level` the first argument is a role.
+QUEST_STATES = ("holds", "at", "near", "gone", "level")
+# Match words with a meaning of their own, and the role the loader binds to the giver.
+MATCH_WORDS = ("*", "@party")
+GIVER_ROLE = "giver"
 PROGRAM_KEYS = ("trigger", "phrase", "code", "file", "vnum")
 RESET_KEYS = ("command", "if_flag", "arg1", "arg2", "arg3", "arg4", "comment")
 
@@ -214,6 +237,8 @@ class Build:
     # (family, vnum), ("exits", room vnum, direction number) or, for an exit ROM has no direction for,
     # ("named_exits", room vnum, name); the values of that last one are the whole exit.
     extensions = attr(default=Factory(list))
+    # Each quest as the JSON output writes it, by id, and where it was written.
+    quests = attr(default=Factory(dict))
 
 
 # Values
@@ -1293,6 +1318,179 @@ def compile_helps(build):
         )
 
 
+# Quests
+
+
+def lines(value, at):
+    """Text as the list of lines a $quest property holds."""
+    return string(value, at).rstrip("\n").split("\n") if value else []
+
+
+def a_list(value, at):
+    if not isinstance(value, list):
+        raise at.error(f"expected a list, got {value!r}")
+    return value
+
+
+def text_list(value, at):
+    return [string(item, at / index) for index, item in enumerate(a_list(value, at))]
+
+
+def role_reference(build, value, at):
+    """A role names one room, mob or object: ``{mob: rat}``. A mob or object role matches every copy of it."""
+    if not isinstance(value, dict) or len(value) != 1 or next(iter(value)) not in REFERENCE_FAMILIES:
+        raise at.error(f"expected one of {{room: id}}, {{mob: id}} or {{object: id}}, got {value!r}")
+    ((kind, identifier),) = value.items()
+    return {kind: build.numbers.resolve(identifier, at / kind, REFERENCE_FAMILIES[kind])}
+
+
+def count(value, at, most=None):
+    value = integer(value, at)
+    if value < 1 or (most is not None and value > most):
+        raise at.error(f"expected a number from 1 to {most}" if most is not None else "expected 1 or more")
+    return value
+
+
+def objective(entry, at, roles):
+    known_keys(entry, at, OBJECTIVE_KEYS)
+    if ("event" in entry) == ("state" in entry):
+        raise at.error("an objective is either an `event` that must happen or a `state` that must hold")
+    written = {}
+    if "event" in entry:
+        written["event"] = take(entry, at, "event", slug)
+        match = take(entry, at, "match", text_list, [])
+        for index, word in enumerate(match):
+            if word.startswith("@") and word not in MATCH_WORDS:
+                raise (at / "match" / index).error(f"unknown match word {word!r}; expected one of {MATCH_WORDS}")
+        written["match"] = match
+        written["count"] = take(entry, at, "count", count, 1)
+        if "args" in entry:
+            raise (at / "args").error("an event objective has `match` and `count`, not `args`")
+    else:
+        written["state"] = take(entry, at, "state", one_of(QUEST_STATES, "state"))
+        args = take(entry, at, "args", a_list, [])
+        if written["state"] != "level" and (not args or args[0] not in roles):
+            raise (at / "args").error(f"the first argument of `{written['state']}` names a role: one of {sorted(roles)}")
+        written["args"] = args
+        for key in ("match", "count"):
+            if key in entry:
+                raise (at / key).error("a state objective has `args`, not `match` or `count`")
+    written["text"] = take(entry, at, "text", string, "")
+    return written
+
+
+def stage_order(stages, at):
+    """Refuse an `after` that names no stage, or that makes stages wait on each other in a ring."""
+    names = {stage["name"]: index for index, stage in enumerate(stages)}
+    for index, stage in enumerate(stages):
+        for position, name in enumerate(stage["after"]):
+            if name not in names:
+                raise (at / index / "after" / position).error(f"no stage is named {name!r}")
+    done = set()
+    while len(done) < len(stages):
+        ready = [stage["name"] for stage in stages if stage["name"] not in done and set(stage["after"]) <= done]
+        if not ready:
+            waiting = [stage["name"] for stage in stages if stage["name"] not in done]
+            raise at.error(f"stages {', '.join(waiting)} wait on each other and none can open")
+        done.update(ready)
+
+
+def compile_stage(entry, at, roles):
+    known_keys(entry, at, STAGE_KEYS)
+    stage = {
+        "name": take(entry, at, "name", slug),
+        "text": take(entry, at, "text", string, ""),
+        "after": take(entry, at, "after", text_list, []),
+    }
+    if entry.get("needs") is not None:
+        stage["needs"] = take(entry, at, "needs", lambda value, where: count(value, where, len(stage["after"])))
+    objectives = entry.get("objectives")
+    if not isinstance(objectives, list) or not objectives:
+        raise (at / "objectives").error("a stage needs a list of one or more objectives")
+    stage["objectives"] = [objective(item, at / "objectives" / index, roles) for index, item in enumerate(objectives)]
+    if entry.get("of") is not None:
+        stage["of"] = take(entry, at, "of", lambda value, where: count(value, where, len(objectives)))
+    return stage
+
+
+def carried(build, quest, at):
+    """A `moved` objective whose thing is an object of this area needs that object to have the take flag."""
+    for index, stage in enumerate(quest["stages"]):
+        for position, goal in enumerate(stage["objectives"]):
+            thing = goal.get("match", [None])[0] if goal.get("event") == "moved" else None
+            vnum = quest["roles"].get(thing, {}).get("object")
+            item = build.area.objects.get(vnum)
+            if item is not None and not item.wear_flags & tables.WEAR_FLAGS["take"]:
+                raise (at / index / "objectives" / position).error(
+                    f"role {thing!r} must be carried, but its object has no `take` in `wear`"
+                )
+
+
+def reward(entry, at, giver):
+    written = dict(mapping(entry, at))
+    written["kind"] = take(entry, at, "kind", slug)
+    if written["kind"] == "credits":
+        known_keys(entry, at, ("kind", "amount"))
+        written["amount"] = take(entry, at, "amount", count)
+        if giver is None:
+            raise at.error("credits are paid from the giver's wallet; this quest has no giver")
+    return written
+
+
+def compile_quest(build, identifier, record, at):
+    known_keys(record, at, QUEST_KEYS)
+    quest = {"id": identifier, "name": take(record, at, "name", string)}
+    quest["aliases"] = take(record, at, "aliases", text_list, [])
+    giver = take(record, at, "giver", lambda value, where: build.numbers.resolve(value, where, "mobs"), None)
+    if giver is not None:
+        quest["giver"] = {"mob": giver}
+    for key in QUEST_TEXTS:
+        quest[f"{key}_text"] = take(record, at, key, lines, [])
+    roles = take(record, at, "roles", mapping, {})
+    if GIVER_ROLE in roles:
+        raise (at / "roles" / GIVER_ROLE).error("the giver role is the quest's giver; name the mob in `giver`")
+    quest["roles"] = {}
+    for name, value in roles.items():
+        slug(name, at / "roles" / name)
+        quest["roles"][name] = role_reference(build, value, at / "roles" / name)
+    known_roles = {*quest["roles"], *([GIVER_ROLE] if giver is not None else [])}
+    eligible = take(record, at, "eligible", a_list, [])
+    quest["eligible"] = []
+    for index, entry in enumerate(eligible):
+        where = at / "eligible" / index
+        if not isinstance(entry, dict) or "state" not in entry:
+            raise where.error("an eligibility condition is a state: {state: level, args: [1, 30]}")
+        condition = objective(entry, where, known_roles)
+        del condition["text"]
+        quest["eligible"].append(condition)
+    quest["repeatable"] = int(take(record, at, "repeatable", boolean, False))
+    quest["time_limit"] = take(record, at, "time_limit", integer, 0)
+    if quest["time_limit"] < 0:
+        raise (at / "time_limit").error("expected seconds, 0 for none")
+    stages = record.get("stages")
+    if not isinstance(stages, list) or not stages:
+        raise (at / "stages").error("a quest needs a list of one or more stages")
+    quest["stages"] = [compile_stage(entry, at / "stages" / index, known_roles) for index, entry in enumerate(stages)]
+    names = [stage["name"] for stage in quest["stages"]]
+    for index, name in enumerate(names):
+        if name in names[:index]:
+            raise (at / "stages" / index / "name").error(f"stage name {name!r} is used twice")
+    stage_order(quest["stages"], at / "stages")
+    carried(build, quest, at / "stages")
+    rewards = take(record, at, "rewards", a_list, [])
+    quest["rewards"] = [reward(entry, at / "rewards" / index, giver) for index, entry in enumerate(rewards)]
+    # A quest ships with the commands that complete it, so that a character can be made to type them.
+    quest["solution"] = take(record, at, "solution", text_list)
+    if not quest["solution"]:
+        raise (at / "solution").error("write the commands that complete the quest")
+    return quest
+
+
+def compile_quests(build):
+    for identifier, (record, at) in build.source.quests.items():
+        build.quests[identifier] = (compile_quest(build, identifier, record, at), at)
+
+
 # Build
 
 
@@ -1307,6 +1505,7 @@ def compile_source(source, sets=()):
     compile_resets(build)
     compile_mob_extras(build)
     compile_helps(build)
+    compile_quests(build)
     return build
 
 
@@ -1368,6 +1567,8 @@ def document(compiled, parsed):
             result["rooms"][target[1]]["exits"][doors.index(target[2])].update(written)
         else:
             result[target[0]][target[1]].update(written)
+    if compiled.quests:
+        result["quests"] = {identifier: quest for identifier, (quest, _at) in compiled.quests.items()}
     return result
 
 
@@ -1405,6 +1606,9 @@ def build(directory, output=None, sets=(), output_format="rom"):
         target, _written, at = compiled.extensions[0]
         what = "an exit that is not one of ROM's six directions" if target[0] == "named_exits" else "this"
         raise at.error(f"a ROM area file cannot hold {what}; build with --format json")
+    if output_format == "rom" and compiled.quests:
+        _quest, at = next(iter(compiled.quests.values()))
+        raise at.error("a ROM area file cannot hold a quest; build with --format json")
     text = render(compiled.area)
     parsed = parse(text)
     difference = first_difference(compiled.area, parsed.area)
