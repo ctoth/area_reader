@@ -13,7 +13,7 @@ SOURCE_SUFFIXES = (".yaml", ".yml", ".json")
 FAMILIES = ("rooms", "mobs", "objects")
 SINGULAR = {"rooms": "room", "mobs": "mob", "objects": "object"}
 RECORD_LISTS = ("helps", "resets", "shops", "specials")
-TOP_LEVEL_KEYS = ("area", *FAMILIES, *RECORD_LISTS, "mobprogs", "include")
+TOP_LEVEL_KEYS = ("area", *FAMILIES, *RECORD_LISTS, "mobprogs", "quests", "include")
 ID = re.compile(r"[a-z][a-z0-9_-]*")
 
 
@@ -57,6 +57,7 @@ class Source:
     shops = attr(default=Factory(list))
     specials = attr(default=Factory(list))
     mobprogs = attr(default=Factory(dict))
+    quests = attr(default=Factory(dict))
     lock = attr(default=Factory(dict))
 
 
@@ -227,6 +228,16 @@ def merge_file(source, path, seen):
                 f"program {vnum} is already written in {source.mobprogs[vnum][1].file}"
             )
         source.mobprogs[vnum] = (code, at / "mobprogs" / vnum)
+    quests = data.get("quests") or {}
+    if not isinstance(quests, dict):
+        raise (at / "quests").error("expected a mapping from quest id to quest")
+    for identifier, record in quests.items():
+        where = at / "quests" / identifier
+        if not isinstance(identifier, str) or not ID.fullmatch(identifier):
+            raise where.error("an id is a lowercase slug: a letter, then letters, digits, '_' or '-'")
+        if identifier in source.quests:
+            raise where.error(f"quest id {identifier!r} is already defined in {source.quests[identifier][1].file}")
+        source.quests[identifier] = (record, where)
 
     includes = data.get("include") or []
     if not isinstance(includes, list):
