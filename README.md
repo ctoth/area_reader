@@ -275,6 +275,45 @@ rooms:
   naming the first place it does. `lint`, `walk` and `unbuild` read area
   files, not this JSON.
 
+#### Quests
+
+A top-level `quests` key maps a quest id to a quest, in the fields of the
+Mongoose MOO's `$quest`. Rooms, mobs and objects are named by id, as anywhere
+else in the source:
+
+```yaml
+quests:
+  ledger:
+    name: The Lost Ledger
+    aliases: [ledger]
+    giver: clerk                     # a mob; credits are paid from its wallet
+    offer: |                         # also accept, done, abandon, fail
+      I have lost the ledger somewhere in the cellar.
+    eligible: [{state: level, args: [1, 5]}]
+    time_limit: 0                    # seconds, 0 for none
+    repeatable: false
+    roles: {item: {object: ledger}}  # {room: id}, {mob: id} or {object: id}
+    stages:
+      - name: find
+        objectives: [{event: moved, match: [item, '*', '@party'], text: ledger found}]
+      - name: return
+        after: [find]                # opens when `needs` (default: all) of these are done
+        objectives: [{event: moved, match: [item, '@party', giver]}]
+    rewards: [{kind: credits, amount: 5}]
+    solution: [quest accept ledger, down, get ledger, up, give ledger to clerk]
+```
+
+An objective is an `event` that must happen `count` times, its data lined up
+with `match` from the left (`*` is anything, `@party` a participant, a role
+name that role's thing), or a `state` that must hold (`holds`, `at`, `near`,
+`gone`, `level`), whose first argument names a role. `solution` is required: it
+is the list of commands that completes the quest, for a character to type in a
+loaded world. `build` refuses an unknown id, a stage `after` that names no stage
+or makes stages wait on each other, credits with no giver, and a `moved`
+objective whose object cannot be taken. In the JSON, `quests` maps each id to
+the record, with each reference as `{"mob": vnum}` and so on, and each text as
+a list of lines (`offer_text`, …). `--format rom` refuses a quest.
+
 `unbuild` writes any ROM area the reader parses in this form: ids slugged from
 names, every vnum pinned, two-way exits collapsed, resets hung on their rooms.
 For the 48 stock areas with rooms, building the unbuilt directory gives back

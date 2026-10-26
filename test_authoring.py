@@ -13,7 +13,7 @@ from area_reader import authoring
 from area_reader.authoring import SourceError, tables
 from area_reader.authoring.builder import first_difference, recommended
 from area_reader.authoring.normal import reset_key
-from area_reader.authoring.source import LOCK_NAME, load_yaml
+from area_reader.authoring.source import LOCK_NAME, dump_yaml, load_yaml
 from area_reader.constants import EXIT_FLAGS
 from area_reader.model import Dice, Reset
 
@@ -1146,6 +1146,172 @@ def test_error_in_an_extension(tmp_path: Path, room: str, key: str, reason: str)
     assert caught.value.key == key
     assert reason in caught.value.reason
     assert not (tmp_path / "out.json").exists()
+
+
+# Quests: written in the fields of the MOO's $quest, with rooms, mobs and objects named by id.
+
+QUEST_AREA = {
+    "rooms.yaml": "rooms:\n"
+    "  barracks:\n    name: The Barracks\n    exits: {north: cellar}\n    mobs: [recruit]\n"
+    "  cellar:\n    name: The Cellar\n    mobs: [{mob: mouse, count: 3}]\n",
+    "mobs.yaml": RAT.replace("rat", "recruit") + RAT.replace("mobs:\n  rat:", "  mouse:"),
+    "quests.yaml": "quests:\n"
+    "  mice:\n"
+    "    name: Kill the Mice!\n"
+    "    aliases: [mice]\n"
+    "    giver: recruit\n"
+    "    offer: |\n      The cellar is full of mice.\n      Kill three of them.\n"
+    "    done: Well done!\n"
+    "    eligible: [{state: level, args: [1, 5]}]\n"
+    "    time_limit: 600\n"
+    "    roles: {target: {mob: mouse}, place: {room: cellar}}\n"
+    "    stages:\n"
+    "      - name: down\n"
+    "        text: Go down to the cellar.\n"
+    "        objectives: [{state: at, args: [place], text: the cellar}]\n"
+    "      - name: hunt\n"
+    "        after: [down]\n"
+    "        objectives: [{event: killed, match: ['@party', target], count: 3, text: mice killed}]\n"
+    "    rewards: [{kind: credits, amount: 10}]\n"
+    "    solution: [quest accept mice, north, kill mouse, kill mouse, kill mouse]\n",
+}
+
+
+def test_json_carries_a_quest_with_ids_turned_into_vnums(tmp_path: Path) -> None:
+    source = write_source(tmp_path / "source", QUEST_AREA)
+
+    built = authoring.build(source, tmp_path / "out.json", output_format="json")
+
+    quest = json.loads((tmp_path / "out.json").read_text(encoding="utf-8"))["quests"]["mice"]
+    assert quest == {
+        "id": "mice",
+        "name": "Kill the Mice!",
+        "aliases": ["mice"],
+        "giver": {"mob": vnum(built, "mobs", "recruit")},
+        "offer_text": ["The cellar is full of mice.", "Kill three of them."],
+        "accept_text": [],
+        "done_text": ["Well done!"],
+        "abandon_text": [],
+        "fail_text": [],
+        "eligible": [{"state": "level", "args": [1, 5]}],
+        "repeatable": 0,
+        "time_limit": 600,
+        "roles": {"target": {"mob": vnum(built, "mobs", "mouse")}, "place": {"room": vnum(built, "rooms", "cellar")}},
+        "stages": [
+            {
+                "name": "down",
+                "text": "Go down to the cellar.",
+                "after": [],
+                "objectives": [{"state": "at", "args": ["place"], "text": "the cellar"}],
+            },
+            {
+                "name": "hunt",
+                "text": "",
+                "after": ["down"],
+                "objectives": [{"event": "killed", "match": ["@party", "target"], "count": 3, "text": "mice killed"}],
+            },
+        ],
+        "rewards": [{"kind": "credits", "amount": 10}],
+        "solution": ["quest accept mice", "north", "kill mouse", "kill mouse", "kill mouse"],
+    }
+
+
+def test_rom_format_refuses_a_quest(tmp_path: Path) -> None:
+    error = build_error(tmp_path, QUEST_AREA)
+
+    assert error.key == "quests.mice"
+    assert "--format json" in error.reason
+    assert not (tmp_path / "out.are").exists()
+
+
+def quest_with(**changes):
+    """QUEST_AREA's quest with the given top-level keys replaced (a value of None removes the key)."""
+    quest = yaml.safe_load(QUEST_AREA["quests.yaml"])["quests"]["mice"]
+    for key, value in changes.items():
+        if value is None:
+            quest.pop(key)
+        else:
+            quest[key] = value
+    return {**QUEST_AREA, "quests.yaml": dump_yaml({"quests": {"mice": quest}})}
+
+
+HUNT = {"name": "hunt", "objectives": [{"event": "killed", "match": ["@party", "target"]}]}
+
+
+@pytest.mark.parametrize(
+    ("changes", "key", "reason"),
+    [
+        ({"giver": "nobody"}, "quests.mice.giver", "unknown mob id"),
+        ({"roles": {"target": {"mob": "rat"}}}, "quests.mice.roles.target.mob", "unknown mob id"),
+        ({"roles": {"target": "mouse"}}, "quests.mice.roles.target", "{mob: id}"),
+        ({"roles": {"giver": {"mob": "recruit"}}}, "quests.mice.roles.giver", "name the mob in `giver`"),
+        ({"stages": []}, "quests.mice.stages", "one or more stages"),
+        ({"stages": [{"name": "hunt", "objectives": []}]}, "quests.mice.stages.0.objectives", "one or more"),
+        (
+            {"stages": [{"name": "hunt", "objectives": [{"event": "killed", "state": "at"}]}]},
+            "quests.mice.stages.0.objectives.0",
+            "either an `event`",
+        ),
+        (
+            {"stages": [{"name": "hunt", "objectives": [{"state": "at", "args": ["cellar"]}]}]},
+            "quests.mice.stages.0.objectives.0.args",
+            "names a role",
+        ),
+        (
+            {"stages": [{"name": "hunt", "objectives": [{"event": "killed", "match": ["@killer"]}]}]},
+            "quests.mice.stages.0.objectives.0.match.0",
+            "unknown match word",
+        ),
+        ({"stages": [HUNT, HUNT]}, "quests.mice.stages.1.name", "used twice"),
+        ({"stages": [{**HUNT, "after": ["down"]}]}, "quests.mice.stages.0.after.0", "no stage is named"),
+        (
+            {"stages": [{**HUNT, "after": ["b"]}, {**HUNT, "name": "b", "after": ["hunt"]}]},
+            "quests.mice.stages",
+            "wait on each other",
+        ),
+        ({"stages": [{**HUNT, "of": 2}]}, "quests.mice.stages.0.of", "from 1 to 1"),
+        ({"giver": None}, "quests.mice.rewards.0", "no giver"),
+        ({"solution": None}, "quests.mice.solution", "is required"),
+        ({"solution": []}, "quests.mice.solution", "commands that complete"),
+        ({"reward": []}, "quests.mice.reward", "unknown key"),
+    ],
+)
+def test_error_in_a_quest(tmp_path: Path, changes: dict, key: str, reason: str) -> None:
+    source = write_source(tmp_path / "source", quest_with(**changes))
+
+    with pytest.raises(SourceError) as caught:
+        authoring.build(source, tmp_path / "out.json", output_format="json")
+
+    assert caught.value.key == key
+    assert reason in caught.value.reason
+    assert not (tmp_path / "out.json").exists()
+
+
+FETCH = {
+    "objects.yaml": "objects:\n  ledger:\n    keywords: ledger\n    short: a ledger\n    type: treasure\n",
+    "quests.yaml": "quests:\n  fetch:\n    name: Fetch\n    roles: {item: {object: ledger}}\n"
+    "    stages: [{name: get, objectives: [{event: moved, match: [item, '*', '@party']}]}]\n"
+    "    solution: [get ledger]\n",
+}
+
+
+def test_a_quest_item_that_must_be_carried_needs_the_take_flag(tmp_path: Path) -> None:
+    source = write_source(tmp_path / "untakeable", FETCH)
+
+    with pytest.raises(SourceError) as caught:
+        authoring.build(source, tmp_path / "out.json", output_format="json")
+
+    assert caught.value.key == "quests.fetch.stages.0.objectives.0"
+    assert "`take`" in caught.value.reason
+    takeable = {**FETCH, "objects.yaml": FETCH["objects.yaml"] + "    wear: [take]\n"}
+    authoring.build(write_source(tmp_path / "takeable", takeable), tmp_path / "out.json", output_format="json")
+
+
+def test_two_files_cannot_define_one_quest(tmp_path: Path) -> None:
+    error = build_error(tmp_path, {**QUEST_AREA, "more.yaml": QUEST_AREA["quests.yaml"]})
+
+    assert error.key == "quests.mice"
+    assert "already defined" in error.reason
 
 
 def test_build_command_writes_json_beside_the_header_filename(tmp_path: Path, capsys, monkeypatch) -> None:
