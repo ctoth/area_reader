@@ -314,6 +314,18 @@ objective whose object cannot be taken. In the JSON, `quests` maps each id to
 the record, with each reference as `{"mob": vnum}` and so on, and each text as
 a list of lines (`offer_text`, …). `--format rom` refuses a quest.
 
+Stage dependencies follow the live MOO: `needs: 1` opens after any one listed
+predecessor finishes; `needs: 0` is unconditional. A cycle is accepted only when
+the thresholds allow every stage to open from an initial stage. Duplicate or
+unknown predecessors are errors. A local giver must have a mob placement, and
+both `moved` and `holds` objectives require takeable local objects. State arguments
+are checked before output: `holds` takes a role and optional positive quantity,
+`at`/`near` take one role, `gone` takes a role and optional bound room role
+(default `place`), and `level` takes low/high integers and an optional default.
+These are structural checks, not proof that the solution commands work: play the
+clue and item handoffs in the actual destination engine, including wrong actions,
+repeat visits, and another player taking a shared key first.
+
 `unbuild` writes any ROM area the reader parses in this form: ids slugged from
 names, every vnum pinned, two-way exits collapsed, resets hung on their rooms.
 For the 48 stock areas with rooms, building the unbuilt directory gives back
