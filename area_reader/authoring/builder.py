@@ -1369,8 +1369,29 @@ def objective(entry, at, roles):
     else:
         written["state"] = take(entry, at, "state", one_of(QUEST_STATES, "state"))
         args = take(entry, at, "args", a_list, [])
-        if written["state"] != "level" and (not args or args[0] not in roles):
+        state = written["state"]
+        if state != "level" and (not args or not isinstance(args[0], str) or args[0] not in roles):
             raise (at / "args").error(f"the first argument of `{written['state']}` names a role: one of {sorted(roles)}")
+        if state in ("at", "near") and len(args) != 1:
+            raise (at / "args").error("this state takes exactly one role")
+        if state == "holds":
+            if len(args) not in (1, 2):
+                raise (at / "args").error("expected [role] or [role, quantity]")
+            if len(args) == 2:
+                count(args[1], at / "args" / 1)
+        if state == "gone":
+            if len(args) not in (1, 2):
+                raise (at / "args").error("expected [role] or [role, room_role]")
+            place = args[1] if len(args) == 2 else "place"
+            if not isinstance(place, str) or place not in roles:
+                raise (at / "args" / 1).error("gone needs a bound room role (default: place)")
+        if state == "level":
+            if len(args) not in (2, 3):
+                raise (at / "args").error("expected [low, high] or [low, high, default_level]")
+            for index, value in enumerate(args):
+                integer(value, at / "args" / index)
+            if args[0] > args[1]:
+                raise (at / "args").error("expected low, high with low <= high")
         written["args"] = args
         for key in ("match", "count"):
             if key in entry:
@@ -1380,15 +1401,21 @@ def objective(entry, at, roles):
 
 
 def stage_order(stages, at):
-    """Refuse an `after` that names no stage, or that makes stages wait on each other in a ring."""
+    """Check whether every stage can open under the MOO's predecessor thresholds."""
     names = {stage["name"]: index for index, stage in enumerate(stages)}
     for index, stage in enumerate(stages):
         for position, name in enumerate(stage["after"]):
             if name not in names:
                 raise (at / index / "after" / position).error(f"no stage is named {name!r}")
+            if name in stage["after"][:position]:
+                raise (at / index / "after" / position).error(f"predecessor {name!r} is used twice")
     done = set()
     while len(done) < len(stages):
-        ready = [stage["name"] for stage in stages if stage["name"] not in done and set(stage["after"]) <= done]
+        ready = [
+            stage["name"] for stage in stages
+            if stage["name"] not in done
+            and len(set(stage["after"]) & done) >= stage.get("needs", len(stage["after"]))
+        ]
         if not ready:
             waiting = [stage["name"] for stage in stages if stage["name"] not in done]
             raise at.error(f"stages {', '.join(waiting)} wait on each other and none can open")
@@ -1403,7 +1430,10 @@ def compile_stage(entry, at, roles):
         "after": take(entry, at, "after", text_list, []),
     }
     if entry.get("needs") is not None:
-        stage["needs"] = take(entry, at, "needs", lambda value, where: count(value, where, len(stage["after"])))
+        needs = take(entry, at, "needs", integer)
+        if not 0 <= needs <= len(stage["after"]):
+            raise (at / "needs").error(f"expected from 0 to {len(stage['after'])}")
+        stage["needs"] = needs
     objectives = entry.get("objectives")
     if not isinstance(objectives, list) or not objectives:
         raise (at / "objectives").error("a stage needs a list of one or more objectives")
@@ -1414,10 +1444,12 @@ def compile_stage(entry, at, roles):
 
 
 def carried(build, quest, at):
-    """A `moved` objective whose thing is an object of this area needs that object to have the take flag."""
+    """Moved and held quest objects of this area must support being carried."""
     for index, stage in enumerate(quest["stages"]):
         for position, goal in enumerate(stage["objectives"]):
-            thing = goal.get("match", [None])[0] if goal.get("event") == "moved" else None
+            thing = goal["match"][0] if goal.get("event") == "moved" and goal["match"] else None
+            if goal.get("state") == "holds":
+                thing = goal["args"][0]
             vnum = quest["roles"].get(thing, {}).get("object")
             item = build.area.objects.get(vnum)
             if item is not None and not item.wear_flags & tables.WEAR_FLAGS["take"]:
@@ -1444,6 +1476,10 @@ def compile_quest(build, identifier, record, at):
     giver = take(record, at, "giver", lambda value, where: build.numbers.resolve(value, where, "mobs"), None)
     if giver is not None:
         quest["giver"] = {"mob": giver}
+        if giver in build.area.mobs and not any(
+            reset.command == "M" and reset.arg1 == giver for reset in build.area.resets
+        ):
+            raise (at / "giver").error("the quest giver has no mob placement; put it in a room's mobs")
     for key in QUEST_TEXTS:
         quest[f"{key}_text"] = take(record, at, key, lines, [])
     roles = take(record, at, "roles", mapping, {})

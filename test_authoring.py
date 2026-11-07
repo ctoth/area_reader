@@ -1322,3 +1322,70 @@ def test_build_command_writes_json_beside_the_header_filename(tmp_path: Path, ca
 
     assert "source.json: 2 rooms, 1 mobs, 1 objects" in capsys.readouterr().out
     assert json.loads((tmp_path / "source.json").read_text(encoding="utf-8"))["rooms"]["100"]["kind"] == "echoing"
+
+
+def test_alternative_predecessor_can_open_a_cycle(tmp_path: Path) -> None:
+    # The entry clue opens either branch. The live MOO requires one predecessor,
+    # not a topological ordering of every listed edge.
+    stages = [
+        {**HUNT, "name": "entry"},
+        {**HUNT, "name": "witness", "after": ["entry", "evidence"], "needs": 1},
+        {**HUNT, "name": "evidence", "after": ["witness"]},
+    ]
+    source = write_source(tmp_path / "source", quest_with(stages=stages))
+    authoring.build(source, tmp_path / "out.json", output_format="json")
+    quest = json.loads((tmp_path / "out.json").read_text(encoding="utf-8"))["quests"]["mice"]
+    assert quest["stages"][1]["needs"] == 1
+
+
+def test_zero_predecessor_threshold_is_unconditional(tmp_path: Path) -> None:
+    stages = [{**HUNT, "name": "entry", "after": ["hunt"], "needs": 0}, {**HUNT, "after": ["entry"]}]
+    source = write_source(tmp_path / "source", quest_with(stages=stages))
+    authoring.build(source, tmp_path / "out.json", output_format="json")
+
+
+@pytest.mark.parametrize(
+    ("changes", "key", "reason"),
+    [
+        (
+            {"stages": [{**HUNT, "name": "entry"}, {**HUNT, "after": ["entry", "entry"]}]},
+            "quests.mice.stages.1.after.1", "used twice",
+        ),
+        ({"eligible": [{"state": "level", "args": [5]}]}, "quests.mice.eligible.0.args", "low, high"),
+        ({"eligible": [{"state": "level", "args": [5, 1]}]}, "quests.mice.eligible.0.args", "low, high"),
+        ({"eligible": [{"state": "level", "args": [1, True]}]}, "quests.mice.eligible.0.args.1", "whole number"),
+        (
+            {"stages": [{"name": "visit", "objectives": [{"state": "at", "args": ["place", 1]}]}]},
+            "quests.mice.stages.0.objectives.0.args", "one role",
+        ),
+        (
+            {"stages": [{"name": "visit", "objectives": [{"state": "gone", "args": ["target", "missing"]}]}]},
+            "quests.mice.stages.0.objectives.0.args.1", "room role",
+        ),
+    ],
+)
+def test_quest_contract_errors_precede_output(tmp_path: Path, changes: dict, key: str, reason: str) -> None:
+    source = write_source(tmp_path / "source", quest_with(**changes))
+    with pytest.raises(SourceError) as caught:
+        authoring.build(source, tmp_path / "out.json", output_format="json")
+    assert caught.value.key == key
+    assert reason in caught.value.reason
+    assert not (tmp_path / "out.json").exists()
+
+
+def test_quest_giver_must_have_a_placement(tmp_path: Path) -> None:
+    files = {**QUEST_AREA, "rooms.yaml": QUEST_AREA["rooms.yaml"].replace("    mobs: [recruit]\n", "")}
+    source = write_source(tmp_path / "source", files)
+    with pytest.raises(SourceError, match="giver.*placement") as caught:
+        authoring.build(source, tmp_path / "out.json", output_format="json")
+    assert caught.value.key == "quests.mice.giver"
+    assert not (tmp_path / "out.json").exists()
+
+
+def test_holds_objective_needs_a_takeable_object(tmp_path: Path) -> None:
+    files = {**FETCH, "quests.yaml": FETCH["quests.yaml"].replace(
+        "event: moved, match: [item, '*', '@party']", "state: holds, args: [item]"
+    )}
+    source = write_source(tmp_path / "source", files)
+    with pytest.raises(SourceError, match="`take`"):
+        authoring.build(source, tmp_path / "out.json", output_format="json")
